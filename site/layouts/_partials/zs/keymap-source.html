@@ -1,0 +1,35 @@
+{{- /*
+  Reads config/eyelash_sofle.keymap (mounted into assets/config/) and returns
+  a dict for the keymap shortcodes:
+    text    the whole file, comments removed
+    layers  layer names in keymap order (display-name), so index = layer number
+    base    the BASE layer's legend for each key position (0-63), e.g. "Q",
+            "S" for `&hml LALT S`, "\" for `&kp BSLH`
+*/ -}}
+{{- $res := resources.Get "config/eyelash_sofle.keymap" -}}
+{{- if not $res -}}
+  {{- errorf "keymap shortcodes: config/eyelash_sofle.keymap is not mounted (see module.mounts in hugo.toml)" -}}
+{{- end -}}
+{{- /* Comments out first, so a comment that names a property (ralt_mt's
+  "No hold-trigger-key-positions") isn't read as the property. */ -}}
+{{- $text := $res.Content | replaceRE `(?s)/\*.*?\*/` "" | replaceRE `//[^\n]*` "" -}}
+{{- $layers := slice -}}
+{{- range findRESubmatch `display-name = "([^"]+)"` $text -}}
+  {{- $layers = $layers | append (index . 1) -}}
+{{- end -}}
+{{- /* The first layer's bindings block, one `&...` token per key position. */ -}}
+{{- $block := index (findRESubmatch `(?s)layer0 \{\s*bindings = <(.*?)>;` $text 1) 0 1 -}}
+{{- $names := dict
+  "BSLH" "\\" "FSLH" "/" "DOT" "." "COMMA" "," "SEMI" ";" "APOS" "'" "GRAVE" "`"
+  "MINUS" "-" "EQUAL" "=" "TAB" "Tab" "ESC" "Esc" "RET" "Enter" "BSPC" "Bksp"
+  "SPACE" "Space" "LGUI" "GUI" -}}
+{{- $base := slice -}}
+{{- range findRE `&[^&]+` $block -}}
+  {{- $f := findRE `\S+` . -}}
+  {{- $k := index $f (sub (len $f) 1) -}}
+  {{- if eq (len $f) 1 }}{{ $k = strings.TrimPrefix "&" $k }}{{ end -}}
+  {{- $k = replaceRE `^N(\d)$` "$1" $k -}}
+  {{- with index $names $k }}{{ $k = . }}{{ end -}}
+  {{- $base = $base | append $k -}}
+{{- end -}}
+{{- return dict "text" $text "layers" $layers "base" $base -}}

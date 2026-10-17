@@ -36,6 +36,8 @@ mise run draw          # re-parse keymap + render SVG (do this after every keyma
 mise run build-left    # build left half (DYA Studio enabled)
 mise run build-right   # build right half
 mise run flash-left    # copy .uf2 to mounted NICENANO (double-tap reset first)
+mise run docs          # docs site dev server on http://127.0.0.1:1313/ (site/)
+mise run docs-build    # minified docs site build into site/public/
 ```
 
 Alternatively, push to the branch and download `.uf2` artifacts from GitHub Actions
@@ -114,9 +116,11 @@ Current timing: `tapping-term-ms=280`, `require-prior-idle-ms=150`, `quick-tap-m
 ## Branch / PR conventions
 
 - Always work on a feature branch and keep an open PR — **never commit directly to `main`** unless explicitly asked
-- **Active branch: `feat/zmk-v4`** — moves the firmware from the v0.3 / Zephyr 3.5 base to cormoran's `main+dya` (ZMK main, Zephyr 4.1), vendors the shield into `config/boards/shields/`, and trims the DYA modules to `ble-management` + `runtime-sensor-rotate`. Groundwork for a Rust/ratatui status + control TUI (BLE profiles, battery, RPC), which is a separate follow-up topic.
-- Latest release is **v2.8.0** (2026-09-02); `feat/zmk-v4` is planned as **v3.0.0** (needs a settings reset + re-pair). v2.7.0 added the event-driven `zmk-rgb-layer` module (per-layer colours, switchable base moods, master brightness, reboot persistence, split resync; PR #34, closed #33). The in-repo module is built in CI via `-DZMK_EXTRA_MODULES` in `build.yaml` (see the in-repo-module CI gotchas below). Gaming mode (PR #27), Studio firmware (PR #31), and the v2.6.0 macro-based RGB feedback (PR #32, since superseded by the module) are also in `main`. The reactive per-column underglow effect is deferred to issue #35. Start a new branch/PR for the next topic.
+- **Active branch: `docs/sofleii-site`** — the sofleii docs site (`site/`, https://sofleii.dlu.one), its Pages workflow and `docs`/`docs-build` tasks; see **Docs site** below.
+- Latest release is **v3.0.0** (2026-10-17, PR #43, merged `dc7a81c`): the firmware moved from the v0.3 / Zephyr 3.5 base to cormoran's `main+dya` (ZMK main, Zephyr 4.1), the shield was vendored into `config/boards/shields/`, and the DYA modules were trimmed to `ble-management` + `runtime-sensor-rotate`. Upgrading needs a settings reset on both halves + re-pair. That is the groundwork for the planned **sofleii** Rust/ratatui CLI + TUI (epic #44, issues #45–#48). v2.8.0 (2026-09-02) added the No Man's Sky layer. v2.7.0 added the event-driven `zmk-rgb-layer` module (per-layer colours, switchable base moods, master brightness, reboot persistence, split resync; PR #34, closed #33). The in-repo module is built in CI via `-DZMK_EXTRA_MODULES` in `build.yaml` (see the in-repo-module CI gotchas below). Gaming mode (PR #27), Studio firmware (PR #31), and the v2.6.0 macro-based RGB feedback (PR #32, since superseded by the module) are also in `main`. The reactive per-column underglow effect is deferred to issue #35. Start a new branch/PR for the next topic.
 - Main branch is `main`
+- **License: MIT** (`LICENSE`, © 2026 Rodrigo Dlugokenski). Its "Third-party components" section lists what it does not cover: the vendored site parts, files with their own SPDX headers, the unlicensed files from the vendor repo `a741725193/zmk-sofle` still in the tree (`config/eyelash_sofle.json`, the shield's `eyelash_sofle-layouts.dtsi`) and `keymap_drawer.config.yaml`. The vendor's 3D model, original README and other-board renders were removed; the Hardware docs page links them in the vendor repo instead. Keep that list current when vendoring anything. The future `sofleii/` crate uses `license = "MIT"` in Cargo.toml.
+- The GitHub repo is **`rdlu/sofleii`** (renamed from `rdlu/zmk-sofle` on 2026-10-17; GitHub redirects the old name). The local checkout may still be in a `zmk-sofle/` folder. `a741725193/zmk-sofle` is the vendor's repo, a different project.
 
 ### PR description hygiene
 
@@ -131,6 +135,16 @@ After each push, post a comment on the PR documenting what happened in that inte
 gh pr comment <number> --body "..."
 ```
 Include: what the user requested, what was changed (layer/key/behavior), and any non-obvious rationale (e.g. why ralt_mt has no positional restriction). This creates a useful history of decisions for future sessions.
+
+## Docs site (sofleii)
+
+- **sofleii** = "Sofle Interactive Interface": the name of the project's site and of the planned CLI/TUI. Site at https://sofleii.dlu.one (GitHub Pages, custom domain via `site/static/CNAME`; DNS CNAME → rdlu.github.io).
+- Lives in `site/`: Hugo + Hextra v0.13.0 **vendored** in `site/themes/hextra/`, FlexSearch vendored in `site/assets/lib/flexsearch/` — the build needs no network. Template and skin come from plugii's site (`~/Projects/plugii/site/`): iA Writer Duo + 0xProto self-hosted in `site/static/fonts/`, square panes, `┌─ Title ───` headings (`site/assets/css/custom.css`).
+- `mise run docs` (dev server, 127.0.0.1:1313) / `mise run docs-build`. hugo comes from **pacman**, not mise; the version is pinned as `HUGO_VERSION` in `.mise.toml` `[env]`, which CI's `.github/scripts/install-hugo.sh` reads (checksum-verified) and the docs tasks warn about on mismatch. Bump that one value to move CI.
+- **Single source of truth via `module.mounts`** in `site/hugo.toml`: `keymap-drawer/eyelash_sofle.svg` → `assets/keymap/` (the `keymap-svg` shortcode), `config/eyelash_sofle.keymap` and `config/west.yml` → `assets/config/` (the `keymap-behaviors`, `keymap-combos` and `west-pins` shortcodes parse them on every build). **Regenerate nothing by hand** — the keymap SVG comes from `draw.yml`, and the hold-tap / combo / pin tables follow the keymap and manifest. Prose pages still describe layers in words, so a keymap change can make them stale: check `site/content/docs/reference/keymap.md` and the guides after keymap edits.
+- **Pages workflow** (`.github/workflows/pages.yml`): push to main on `site/**`, the mounted files, `.mise.toml`, or the workflow/script; plus **`workflow_run` on "Draw Keymap"** (completed, main, success only). Needed because `draw.yml` commits the SVG with `GITHUB_TOKEN`, and pushes made with `GITHUB_TOKEN` never trigger other workflows.
+- Hextra gotchas inherited from plugii: `hero-button` and `card` drop a subpath base (relURL with a leading `/`), so patched copies live in `site/layouts/`; sidebar group headings need undocumented **separator pages** (`site/content/docs/sidebar-*.md`, `sidebar.separator: true`, `build.render: never`), and the patched `pager.html` skips them; FlexSearch must stay vendored (`params.search.flexsearch.js`) or Hextra fetches it from jsDelivr.
+- The **sofleii CLI/TUI** (planned; talks to the left half over Studio RPC, USB serial or BLE) will live in **this repo**, in a top-level `sofleii/` crate directory (not created yet). Its docs page is `site/content/docs/sofleii.md`.
 
 ## Important gotchas
 

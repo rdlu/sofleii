@@ -1,0 +1,35 @@
+{{- /*
+  The combos in config/eyelash_sofle.keymap, parsed on every build: key
+  positions with their BASE legends, the binding, timeout and layers.
+*/ -}}
+{{- $km := partial "zs/keymap-source.html" . -}}
+{{- $text := $km.text -}}
+{{- $combos := index (findRESubmatch `(?s)combos \{\s*compatible = "zmk,combos";(.*?)\n    \};` $text 1) 0 1 -}}
+{{- $rows := findRESubmatch `(?s)(\w+) \{\s*bindings = <([^>]*)>;\s*key-positions = <([^>]*)>;(.*?)\};` $combos -}}
+{{- if not $rows }}{{ errorf "keymap-combos: no combos found in the keymap" }}{{ end -}}
+<div class="zs-table">
+<table>
+  <thead>
+    <tr><th>Combo</th><th>Keys (BASE legend)</th><th>Positions</th><th>Binding</th><th>Timeout</th><th>Layers</th></tr>
+  </thead>
+  <tbody>
+  {{- range $rows }}
+    {{- $pos := findRE `\S+` (index . 3) -}}
+    {{- $rest := index . 4 -}}
+    {{- $t := findRESubmatch `timeout-ms = <(\d+)>` $rest 1 -}}
+    {{- $l := findRESubmatch `layers = <([^>]*)>` $rest 1 -}}
+    <tr>
+      <td><code>{{ index . 1 }}</code></td>
+      <td>{{ range $i, $p := $pos }}{{ if $i }} + {{ end }}<kbd>{{ index $km.base (int $p) }}</kbd>{{ end }}</td>
+      <td>{{ delimit $pos " " }}</td>
+      <td><code>{{ index . 2 }}</code></td>
+      <td>{{ with $t }}{{ index . 0 1 }} ms{{ else }}default{{ end }}</td>
+      <td>{{ with $l }}{{ range $i, $n := findRE `\S+` (index . 0 1) }}{{ if $i }}, {{ end }}{{ index $km.layers (int $n) }}{{ end }}{{ else }}all{{ end }}</td>
+    </tr>
+  {{- end }}
+  </tbody>
+</table>
+</div>
+{{- with findRESubmatch `&soft_off \{ hold-time-ms = <(\d+)>; \};` $text 1 }}
+<p><code>&amp;soft_off</code> fires after the combo is held for <strong>{{ index . 0 1 }} ms</strong>.</p>
+{{- end }}

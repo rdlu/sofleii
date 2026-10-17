@@ -19,3 +19,7 @@ zmk-module-ble-management/
 
 # Claude Code local machine settings (skills in .claude/commands/ remain tracked)
 .claude/settings.local.json
+# Docs site (site/) build output, anchored so nothing else matches.
+/site/public/
+/site/resources/
+/site/.hugo_build.lock

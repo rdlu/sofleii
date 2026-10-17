@@ -1,10 +1,12 @@
 # Eyelash Sofle — ZMK Firmware
 
+> **Docs: [sofleii.dlu.one](https://sofleii.dlu.one)** — flashing, pairing, Studio, gaming mode, underglow, building, and the full keymap reference.
+
 > [!WARNING]
 > **Personal configuration — use at your own risk.**
 > Releases are experimental and built for one specific keyboard. Key layout, timing, and layer assignments are tuned to personal preference and may change without notice. If you have the same hardware, feel free to use this as a starting point, but do not expect a stable or general-purpose firmware.
 
-> Original hardware by [380465425@qq.com](mailto:380465425@qq.com) · Original README (Chinese): [README_JP.md](README_JP.md)
+> Original hardware by [380465425@qq.com](mailto:380465425@qq.com) · Original README: [Chinese](https://github.com/a741725193/zmk-sofle/blob/main/README.md) · [English](https://github.com/a741725193/zmk-sofle/blob/main/README_EN.md) · 3D case model: [sofle-3D-MODEL.zip](https://github.com/a741725193/zmk-sofle/blob/main/sofle-3D-MODEL.zip) (all in the vendor repo [a741725193/zmk-sofle](https://github.com/a741725193/zmk-sofle))
 
 ZMK firmware configuration for the **Eyelash Sofle** split keyboard (NRF52840, nice!nano v2, nice!view display). Features home row mods, an 8-layer layout (including gaming layers), and **DYA Studio** support — live keymap editing over USB **and Bluetooth** — on the left half.
 
@@ -104,7 +106,7 @@ NUM  7   8   9   -
 
 ### Gaming mode (5–7)
 
-Locked gaming layers that bypass the home-row-mod / hold-tap machinery entirely, so WASD, SPACE and the modifiers behave as pure keys. Entered explicitly and held by a toggle — no key needs to stay pressed. (See [issue #11](https://github.com/rdlu/zmk-sofle/issues/11) for the design.)
+Locked gaming layers that bypass the home-row-mod / hold-tap machinery entirely, so WASD, SPACE and the modifiers behave as pure keys. Entered explicitly and held by a toggle — no key needs to stay pressed. (See [issue #11](https://github.com/rdlu/sofleii/issues/11) for the design.)
 
 **Enter:** hold `mo(SYS|NUM)` (left thumb) → tap the **right-thumb outer key** (`&to 5`) → the **GAME?** picker opens. Then push the **joystick** to choose:
 
@@ -190,7 +192,7 @@ If the halves fail to connect to each other, clear their Bluetooth bonds and let
 
 ## Firmware memory budget
 
-Headroom available for future keymap growth, measured on `feat/zmk-v4` (CI run [39026110927](https://github.com/rdlu/zmk-sofle/actions/runs/39026110927), 2026-10-17): cormoran's ZMK fork on the ZMK-main / Zephyr 4.1 line + 2 custom-RPC modules (`ble-management`, `runtime-sensor-rotate`), plus the in-repo `zmk-rgb-layer` underglow module. The left half is the tightest because Studio + the custom-RPC modules ship on it (USB CDC-ACM + BLE GATT studio transports both compiled in); `zmk-rgb-layer` compiles central-only, so it adds to the left half only.
+Headroom available for future keymap growth, measured on `feat/zmk-v4` (CI run [39026110927](https://github.com/rdlu/sofleii/actions/runs/39026110927), 2026-10-17): cormoran's ZMK fork on the ZMK-main / Zephyr 4.1 line + 2 custom-RPC modules (`ble-management`, `runtime-sensor-rotate`), plus the in-repo `zmk-rgb-layer` underglow module. The left half is the tightest because Studio + the custom-RPC modules ship on it (USB CDC-ACM + BLE GATT studio transports both compiled in); `zmk-rgb-layer` compiles central-only, so it adds to the left half only.
 
 | Build | Flash used | Flash free | RAM used | RAM free |
 |-------|-----------:|-----------:|---------:|---------:|
@@ -291,6 +293,15 @@ mise run build-flash
 
 > If you just want to flash a release without building from source, use `mise run flash-release` instead — it downloads the latest main artifacts from GitHub Actions. See the [Flashing](#flashing) section above.
 
+### 4a. Docs site
+
+The docs at [sofleii.dlu.one](https://sofleii.dlu.one) are built from `site/` with Hugo (from pacman; the version CI uses is `HUGO_VERSION` in `.mise.toml`):
+
+```bash
+mise run docs         # dev server on http://127.0.0.1:1313/ (live reload)
+mise run docs-build   # minified build into site/public/
+```
+
 ### 4b. Print the keymap layout (PDF)
 
 The keymap-drawer SVG can be wrapped into a printable A4 PDF (header with version + footer with date and repo URL). Three sources are available depending on what you want to print:
@@ -334,3 +345,9 @@ The left half ships cormoran's ZMK-Studio fork firmware, so you can edit the key
 3. Changes apply immediately; click **Save** to persist to flash. The encoder and BLE profiles are configurable here too.
 
 > Locking is disabled, so no unlock step is needed. Rebuilding/reflashing overwrites Studio changes — export first if needed. The studio **web app** is a separate project — this repo only provides the firmware that talks to it.
+
+---
+
+## License
+
+MIT, see [LICENSE](LICENSE). Third-party parts keep their own licenses: the vendored Hextra theme, FlexSearch and fonts under `site/`, files with their own SPDX headers, and the files from the vendor's unlicensed repository listed in [LICENSE](LICENSE), which are not covered by the MIT license.

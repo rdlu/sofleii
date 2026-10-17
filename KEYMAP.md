@@ -176,7 +176,7 @@ NUM  7   8   9   -
 
 ### Gaming layers (5–8)
 
-Locked layers with **no HRM, no hold-tap, no caps_word** — WASD, SPACE and all modifiers are pure `&kp`, so holds work for movement/run/crouch. Designed in [#11](https://github.com/rdlu/zmk-sofle/issues/11).
+Locked layers with **no HRM, no hold-tap, no caps_word** — WASD, SPACE and all modifiers are pure `&kp`, so holds work for movement/run/crouch. Designed in [#11](https://github.com/rdlu/sofleii/issues/11).
 
 #### GAME? (5) — picker
 Transient launcher. Joystick selects; everything else is `&none` so a stray press can't escape.
