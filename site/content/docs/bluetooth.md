@@ -53,6 +53,14 @@ find each other again:
 A settings reset on the left half also clears its host profiles and any
 Studio edits, so re-pair your computers afterwards.
 
+## Battery levels
+
+The host sees two Battery Services: the first is the left half, and the
+second, with the user description "Peripheral 0", is the right half,
+forwarded by the left ([#45](https://github.com/rdlu/sofleii/issues/45)).
+BlueZ's `Battery1` and upower show only the first; the right half's level
+can be read over GATT, which is what [sofleii](../sofleii/) will do.
+
 ## Power
 
 - **Sleep**: after an hour without a key press, the board goes to deep sleep.
