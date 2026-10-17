@@ -384,9 +384,10 @@
         };
 
         // Game-mode entry macros: enable RGB underglow, set a solid per-game
-        // color, then activate the matching layer. The color shows on battery /
-        // BLE; CONFIG_..._AUTO_OFF_USB suppresses it when wired, so the OLED
-        // display-name ("MINECRFT" / "GAME") is the primary active-mode cue.
+        // color, then activate the matching layer. The color shows on USB and
+        // on battery alike (CONFIG_ZMK_RGB_UNDERGLOW_AUTO_OFF_USB=n since
+        // v2.6.0); the OLED display-name ("MINECRFT" / "GAME" / "NOMANSKY")
+        // is still the primary active-mode cue.
         GAME_MC_TO: GAME_MC_TO {
             compatible = "zmk,behavior-macro";
             #binding-cells = <0>;

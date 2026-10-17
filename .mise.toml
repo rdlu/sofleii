@@ -559,8 +559,16 @@ echo ""
 echo "✅ Both halves built and flashed. They will auto-reset and re-pair over BT."
 """
 
+[tasks.layout]
+description = "Regenerate config/eyelash_sofle.json from the shield's physical-layout .dtsi"
+# The .dtsi is the single source of the key geometry; the JSON (read by
+# keymap-drawer -j, draw.yml, the docs site and keymap-editor) is generated.
+# Draw Keymap's `layout` job fails on main if the committed JSON is stale.
+run = "python3 scripts/layout-to-json.py"
+
 [tasks.draw]
 description = "Regenerate keymap SVG locally using keymap-drawer"
+depends = ["layout"]
 # -j config/eyelash_sofle.json (not -z eyelash_sofle): the CI draw workflow
 # picks the layout from config/<keyboard>.json, and the two sources differ by
 # 1-2px. Using -z locally made every merge produce a [Draw] commit rewriting

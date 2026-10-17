@@ -40,17 +40,22 @@ the repository are not covered by it and keep their own terms:
    config/boards/shields/eyelash_sofle/ are MIT, (c) The ZMK Contributors and
    (c) Darryl deHaan.
 
-3. Files from the Eyelash Sofle vendor's repository (a741725193/zmk-sofle),
-   which this repository was forked from. That repository has no license, so
-   these files are (c) their original authors, all rights reserved, and are
-   NOT covered by the MIT license above:
-   - config/eyelash_sofle.json
-   - config/boards/shields/eyelash_sofle/eyelash_sofle-layouts.dtsi
-   Earlier commits in this repository's history also contain vendor files that
-   have since been removed (the 3D case model, the original README, renders of
-   other boards); those remain (c) their original authors as well.
+3. config/boards/shields/eyelash_sofle/eyelash_sofle-layouts.dtsi (and
+   config/eyelash_sofle.json, generated from it) adapts the key geometry of
+   ZMK's Sofle physical layout (app/dts/layouts/josefadamcik/sofle.dtsi),
+   Copyright (c) 2020 The ZMK Contributors, under the MIT license, whose
+   terms are the same as the license above.
 
-4. keymap_drawer.config.yaml: started by Chen Zeng, edited by Pedro Satin,
+4. This repository was forked from the Eyelash Sofle vendor's repository
+   (a741725193/zmk-sofle), which has no license. The shield files that came
+   from it carry their own MIT headers (item 2); every file without one has
+   since been replaced or removed. Earlier commits in this repository's
+   history still contain those files (the original physical layout files,
+   the 3D case model, the original README, renders of other boards); they
+   remain (c) their original authors, all rights reserved, and are NOT
+   covered by the MIT license above.
+
+5. keymap_drawer.config.yaml: started by Chen Zeng, edited by Pedro Satin,
    and borrowing technique from englmaxi's keymap-drawer config
    (github.com/englmaxi/zmk-config). (c) its original authors; not covered by
    the MIT license above.
