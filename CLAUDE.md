@@ -13,7 +13,7 @@ config/
 keymap-drawer/
   eyelash_sofle.svg      # rendered keymap image — regenerate after every edit
   eyelash_sofle.yaml     # intermediate parsed representation
-KEYMAP.md                # human-readable layer reference + hold-tap timing docs
+KEYMAP.md                # pointer to the site's keymap pages (the old hand-written reference drifted)
 .mise.toml               # tasks: setup / build-* / flash-* / draw
 keymap_drawer.config.yaml # keymap-drawer render config (icons, colors, labels)
 ```
@@ -94,16 +94,29 @@ Right-side positions: `7-12, 20-25, 33-38, 46-51, 58-63`
 
 ## Hold-tap behaviors
 
-Three behaviors defined in the `behaviors {}` block — all share the same core timing.
-See **KEYMAP.md** for the full timing reference and tuning tips.
+Five behaviors in the `behaviors {}` block. The site's **Home-row mods & timing**
+page (`site/content/keymap/hold-tap.md`) renders their table straight from the
+keymap, so treat the keymap as the source of truth for the numbers below.
 
-| Behavior | Used on | Positional restriction |
-|----------|---------|------------------------|
-| `hml` | D(LCTRL) F(LSHFT) G(LALT) | triggers only when right-side keys pressed |
-| `hmr` | H(LALT) J(RSHFT) K(RCTRL) | triggers only when left-side keys pressed |
-| `ralt_mt` | right-thumb F12 (tap = F12, hold = RALT) | none — AltGr combos span both hands and live on the thumb |
+| Behavior | Used on | Flavor | `require-prior-idle-ms` | Positional restriction |
+|----------|---------|--------|-------------------------|------------------------|
+| `hml` | S(LALT) D(LCTRL) | balanced | 230 | right-hand keys **+ left S/D/F (28–30)** |
+| `hml_idx` | F(LSHFT) | hold-preferred | 70 | same list as `hml` |
+| `hmr` | L(LALT) K(RCTRL) | balanced | 230 | left-hand keys incl. centre column 6/19/32/45 **+ right J/K/L (34–36)** |
+| `hmr_idx` | J(RSHFT) | hold-preferred | 70 | same list as `hmr` |
+| `ralt_mt` | right-thumb F12 (tap = F12, hold = RALT) | balanced | 230 | none — AltGr combos span both hands and live on the thumb |
 
-Current timing: `tapping-term-ms=280`, `require-prior-idle-ms=150`, `quick-tap-ms=175`, `flavor=balanced`.
+Shared: `tapping-term-ms=280`, `quick-tap-ms=175`. All four HRM behaviors set
+`hold-trigger-on-release`; `ralt_mt` doesn't.
+
+- **The same-hand home-row positions in each trigger list are intentional**
+  (`12fb68e`, #17): they let two mods on one hand (Ctrl+Shift on D+F or K+J)
+  resolve as holds. With `hold-trigger-on-release` the positional check runs
+  when the other key is *released*, so same-hand letter rolls still come out
+  as taps. Don't "clean them up" to a strict opposite-hand list.
+- **Index variants** (`*_idx`): a shorter idle window and `hold-preferred` so
+  Shift on F/J commits on the next key's press. A 230 ms idle made CamelCase
+  and fast rolls feel sluggish (after Sunaku's home-row-mods guide).
 
 ## After every keymap edit
 
