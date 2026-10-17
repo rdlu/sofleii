@@ -92,5 +92,6 @@ left half, and 53 KB and 15 KB on the right, even after dropping three
 modules: that is the newer Zephyr and BLE stack. `zmk-rgb-layer` takes well
 under 1 KB.
 
-The README's [memory budget](https://github.com/rdlu/sofleii#firmware-memory-budget)
-is refreshed from the build log after significant changes.
+Refresh this table after significant keymap or config changes, from the
+`Memory region` block of the latest `Build ZMK firmware` run log
+(`mise run build-flash` prints the same numbers for a local build).
