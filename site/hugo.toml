@@ -2,7 +2,7 @@
 # Eyelash Sofle firmware docs and the planned sofleii CLI/TUI.
 # https://sofleii.dlu.one/, served by GitHub Pages with a custom domain
 # (static/CNAME). Links go through relURL, so the site also works under a
-# subpath like rdlu.github.io/zmk-sofle/ if the domain goes.
+# subpath like rdlu.github.io/sofleii/ if the domain goes.
 baseURL = "https://sofleii.dlu.one/"
 title = "sofleii"
 locale = "en"
@@ -40,7 +40,7 @@ disableKinds = ["taxonomy", "term", "rss"]
     type = "theme-toggle"
 [[menu.main]]
   name = "GitHub"
-  url = "https://github.com/rdlu/zmk-sofle"
+  url = "https://github.com/rdlu/sofleii"
   weight = 4
   [menu.main.params]
     icon = "github"

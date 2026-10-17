@@ -67,7 +67,7 @@ Navigation, function keys and window-manager shortcuts.
   right.
 
 The exact Super combos, and matching config for niri, GNOME and COSMIC, are
-in [WM_KEYBINDS.md](https://github.com/rdlu/zmk-sofle/blob/main/WM_KEYBINDS.md).
+in [WM_KEYBINDS.md](https://github.com/rdlu/sofleii/blob/main/WM_KEYBINDS.md).
 
 ## CODE (2)
 

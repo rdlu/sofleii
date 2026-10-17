@@ -106,7 +106,7 @@ NUM  7   8   9   -
 
 ### Gaming mode (5–7)
 
-Locked gaming layers that bypass the home-row-mod / hold-tap machinery entirely, so WASD, SPACE and the modifiers behave as pure keys. Entered explicitly and held by a toggle — no key needs to stay pressed. (See [issue #11](https://github.com/rdlu/zmk-sofle/issues/11) for the design.)
+Locked gaming layers that bypass the home-row-mod / hold-tap machinery entirely, so WASD, SPACE and the modifiers behave as pure keys. Entered explicitly and held by a toggle — no key needs to stay pressed. (See [issue #11](https://github.com/rdlu/sofleii/issues/11) for the design.)
 
 **Enter:** hold `mo(SYS|NUM)` (left thumb) → tap the **right-thumb outer key** (`&to 5`) → the **GAME?** picker opens. Then push the **joystick** to choose:
 
@@ -192,7 +192,7 @@ If the halves fail to connect to each other, clear their Bluetooth bonds and let
 
 ## Firmware memory budget
 
-Headroom available for future keymap growth, measured on `feat/zmk-v4` (CI run [39026110927](https://github.com/rdlu/zmk-sofle/actions/runs/39026110927), 2026-10-17): cormoran's ZMK fork on the ZMK-main / Zephyr 4.1 line + 2 custom-RPC modules (`ble-management`, `runtime-sensor-rotate`), plus the in-repo `zmk-rgb-layer` underglow module. The left half is the tightest because Studio + the custom-RPC modules ship on it (USB CDC-ACM + BLE GATT studio transports both compiled in); `zmk-rgb-layer` compiles central-only, so it adds to the left half only.
+Headroom available for future keymap growth, measured on `feat/zmk-v4` (CI run [39026110927](https://github.com/rdlu/sofleii/actions/runs/39026110927), 2026-10-17): cormoran's ZMK fork on the ZMK-main / Zephyr 4.1 line + 2 custom-RPC modules (`ble-management`, `runtime-sensor-rotate`), plus the in-repo `zmk-rgb-layer` underglow module. The left half is the tightest because Studio + the custom-RPC modules ship on it (USB CDC-ACM + BLE GATT studio transports both compiled in); `zmk-rgb-layer` compiles central-only, so it adds to the left half only.
 
 | Build | Flash used | Flash free | RAM used | RAM free |
 |-------|-----------:|-----------:|---------:|---------:|

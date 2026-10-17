@@ -15,7 +15,7 @@ weight: 14
   revision is the nice!nano v2), with the **`eyelash_sofle_left`** /
   **`eyelash_sofle_right`** shield and **`nice_view`**.
 - The shield is vendored in-repo at
-  [`config/boards/shields/eyelash_sofle/`](https://github.com/rdlu/zmk-sofle/tree/main/config/boards/shields/eyelash_sofle),
+  [`config/boards/shields/eyelash_sofle/`](https://github.com/rdlu/sofleii/tree/main/config/boards/shields/eyelash_sofle),
   adapted from the vendor's v0.3-only module.
 
 ## Dependencies
@@ -76,7 +76,7 @@ From `config/eyelash_sofle.conf`:
 
 ## Memory budget
 
-Measured from CI run [39026110927](https://github.com/rdlu/zmk-sofle/actions/runs/39026110927)
+Measured from CI run [39026110927](https://github.com/rdlu/sofleii/actions/runs/39026110927)
 (2026-10-17), the v3.0.0 build:
 
 | Build | Flash used | Flash free | RAM used | RAM free |
@@ -92,5 +92,5 @@ left half, and 53 KB and 15 KB on the right, even after dropping three
 modules: that is the newer Zephyr and BLE stack. `zmk-rgb-layer` takes well
 under 1 KB.
 
-The README's [memory budget](https://github.com/rdlu/zmk-sofle#firmware-memory-budget)
+The README's [memory budget](https://github.com/rdlu/sofleii#firmware-memory-budget)
 is refreshed from the build log after significant changes.

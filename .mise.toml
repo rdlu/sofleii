@@ -312,11 +312,11 @@ WORK=$(mktemp -d)
 trap 'rm -rf "$WORK"' EXIT
 
 echo ">> Finding the last successful 'Build ZMK firmware' run on main..."
-RUN_ID=$(gh run list --repo rdlu/zmk-sofle --workflow "Build ZMK firmware" --branch main --status success --limit 1 --json databaseId --jq '.[0].databaseId')
+RUN_ID=$(gh run list --repo rdlu/sofleii --workflow "Build ZMK firmware" --branch main --status success --limit 1 --json databaseId --jq '.[0].databaseId')
 [ -n "$RUN_ID" ] || { echo "ERROR: no successful main build found."; exit 1; }
 echo "   run $RUN_ID"
 
-gh run view "$RUN_ID" --repo rdlu/zmk-sofle --log > "$WORK/log" 2>/dev/null
+gh run view "$RUN_ID" --repo rdlu/sofleii --log > "$WORK/log" 2>/dev/null
 
 # The west update output interleaves "=== updating <name> (<path>):" with the
 # following "HEAD is now at <sha> <subject>" line. Pair them up.
@@ -537,7 +537,7 @@ description = "Download latest main firmware from GH Actions and flash BOTH halv
 run = """
 set -euo pipefail
 
-REPO="rdlu/zmk-sofle"
+REPO="rdlu/sofleii"
 MOUNT="/run/media/$USER/NICENANO"
 WORK=$(mktemp -d)
 trap 'rm -rf "$WORK"' EXIT
@@ -617,7 +617,7 @@ description = "Download latest main firmware and flash settings_reset on whichev
 run = """
 set -euo pipefail
 
-REPO="rdlu/zmk-sofle"
+REPO="rdlu/sofleii"
 MOUNT="/run/media/$USER/NICENANO"
 WORK=$(mktemp -d)
 trap 'rm -rf "$WORK"' EXIT
@@ -689,7 +689,7 @@ cat > "$TMP_HTML" <<'HTML_EOF'
       vertical-align: bottom;
     }
     @bottom-center {
-      content: "Generated @@DATE@@ · github.com/rdlu/zmk-sofle · Page " counter(page) " / " counter(pages);
+      content: "Generated @@DATE@@ · github.com/rdlu/sofleii · Page " counter(page) " / " counter(pages);
       font: 9pt sans-serif;
       color: #666;
       padding-top: 6pt;

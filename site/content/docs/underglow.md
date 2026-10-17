@@ -74,4 +74,4 @@ keys.
   the steady state.
 - A reactive effect, lighting the column of the key you press, would need a
   module that drives the LED strip directly. It is deferred to
-  [issue #35](https://github.com/rdlu/zmk-sofle/issues/35).
+  [issue #35](https://github.com/rdlu/sofleii/issues/35).

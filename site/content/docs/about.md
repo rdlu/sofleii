@@ -13,7 +13,7 @@ it is a pun, not an affiliation.
 
 ## The project
 
-[rdlu/zmk-sofle](https://github.com/rdlu/zmk-sofle) is
+[rdlu/sofleii](https://github.com/rdlu/sofleii) is
 [Rodrigo Dlugokenski](https://github.com/rdlu)'s ZMK configuration for their
 Eyelash Sofle. It started from the vendor's ZMK config for the board and has
 since grown its own keymap, home-row mod tuning, gaming mode, underglow
@@ -24,7 +24,7 @@ keeping.
 Credits:
 
 - the Eyelash Sofle hardware and its original firmware, by the vendor
-  ([original README](https://github.com/rdlu/zmk-sofle/blob/main/README_JP.md));
+  ([original README](https://github.com/rdlu/sofleii/blob/main/README_JP.md));
 - [ZMK](https://zmk.dev/) and [Zephyr](https://www.zephyrproject.org/);
 - [cormoran](https://github.com/cormoran)'s ZMK fork, DYA Studio and
   custom-RPC modules;

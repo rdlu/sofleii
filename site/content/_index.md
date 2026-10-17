@@ -14,7 +14,7 @@ hero:
   - { text: "↓↘→ + P? Nah. Q + S + Z.", hold: 3000 }
 ---
 
-{{< hextra/hero-badge link="https://github.com/rdlu/zmk-sofle/releases/latest" >}}
+{{< hextra/hero-badge link="https://github.com/rdlu/sofleii/releases/latest" >}}
   <div class="hx:w-2 hx:h-2 hx:bg-primary-400"></div>
   <span>v3.0.0 · ZMK main · Zephyr 4.1</span>
   {{< icon name="arrow-circle-right" attributes="height=14" >}}
@@ -38,7 +38,7 @@ hero:
 <div class="zs-actions">
 {{< hextra/hero-button text="Get started" link="/docs/getting-started/" >}}
 {{< hextra/hero-button text="The keymap" link="/docs/reference/keymap/" >}}
-{{< hextra/hero-button text="GitHub" link="https://github.com/rdlu/zmk-sofle" >}}
+{{< hextra/hero-button text="GitHub" link="https://github.com/rdlu/sofleii" >}}
 </div>
 
 <div class="hx:mt-12"></div>
@@ -92,7 +92,7 @@ hero:
 
 <div class="hx:mt-6"></div>
 
-Planned, not released: follow the [roadmap epic (#44)](https://github.com/rdlu/zmk-sofle/issues/44).
+Planned, not released: follow the [roadmap epic (#44)](https://github.com/rdlu/sofleii/issues/44).
 
 <div class="hx:mt-6"></div>
 

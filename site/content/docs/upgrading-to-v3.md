@@ -5,7 +5,7 @@ keywords: [upgrade, v3, v3.0.0, settings reset, re-pair, bluetoothctl remove, Ze
 weight: 4
 ---
 
-[v3.0.0](https://github.com/rdlu/zmk-sofle/releases/tag/v3.0.0)
+[v3.0.0](https://github.com/rdlu/sofleii/releases/tag/v3.0.0)
 (2026-10-17) moves the firmware from ZMK v0.3 / Zephyr 3.5 onto **ZMK main
 on Zephyr 4.1**, through cormoran's `main+dya` fork. **The keymap is
 unchanged**: same layers, home-row mods, combos, gaming mode and underglow.
@@ -47,6 +47,6 @@ you want them back, redo them in [Studio](../studio/) after the upgrade.
   and BLE stack, not the keymap. There is plenty of room left; see
   [Firmware](../reference/firmware/#memory-budget).
 
-The [release notes](https://github.com/rdlu/zmk-sofle/releases/tag/v3.0.0)
+The [release notes](https://github.com/rdlu/sofleii/releases/tag/v3.0.0)
 have the full list, what was tested on hardware, and one known upstream issue
 that only affects RPC clients.

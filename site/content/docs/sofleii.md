@@ -31,7 +31,7 @@ subsystem for the encoder (see [Firmware](../reference/firmware/#modules)).
 - **Battery** levels.
 - **Output priority**: USB or BLE first.
 - **Firmware updates**: check the running firmware against the
-  [GitHub releases](https://github.com/rdlu/zmk-sofle/releases), and flash
+  [GitHub releases](https://github.com/rdlu/sofleii/releases), and flash
   from the tool.
 - **The repo's routines** as CLI subcommands and TUI actions, instead of
   remembering task names: `flash-release`, `flash-release-reset`,
@@ -40,16 +40,16 @@ subsystem for the encoder (see [Firmware](../reference/firmware/#modules)).
 
 ## Roadmap
 
-- [#44](https://github.com/rdlu/zmk-sofle/issues/44): sofleii, the
+- [#44](https://github.com/rdlu/sofleii/issues/44): sofleii, the
   Rust/ratatui CLI and TUI for status, control and repo routines (the epic).
-- [#45](https://github.com/rdlu/zmk-sofle/issues/45), firmware: forward the
+- [#45](https://github.com/rdlu/sofleii/issues/45), firmware: forward the
   right half's battery level to the host.
-- [#46](https://github.com/rdlu/zmk-sofle/issues/46), firmware: expose
+- [#46](https://github.com/rdlu/sofleii/issues/46), firmware: expose
   build and version info over Studio RPC, which is what makes update checks
   possible.
-- [#47](https://github.com/rdlu/zmk-sofle/issues/47): firmware update check
+- [#47](https://github.com/rdlu/sofleii/issues/47): firmware update check
   and flashing from the tool.
-- [#48](https://github.com/rdlu/zmk-sofle/issues/48): run the repo's
+- [#48](https://github.com/rdlu/sofleii/issues/48): run the repo's
   user-facing mise routines from the CLI and TUI.
 
 Until it exists, use [Studio](../studio/) for profiles and live keymap

@@ -71,6 +71,6 @@ comfortable to hold while the other fingers reach either side.
 | Deliberate holds feel slow | try `flavor = "tap-unless-interrupted"` |
 
 The behaviors are in the `behaviors {}` block of
-[`config/eyelash_sofle.keymap`](https://github.com/rdlu/zmk-sofle/blob/main/config/eyelash_sofle.keymap).
+[`config/eyelash_sofle.keymap`](https://github.com/rdlu/sofleii/blob/main/config/eyelash_sofle.keymap).
 After a change, run `mise run draw` and commit the keymap with the new
 render; this page picks up the new values on its next build.

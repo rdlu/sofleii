@@ -4,7 +4,7 @@ description: sofleii (Sofle Interactive Interface) - the Eyelash Sofle ZMK firmw
 ---
 
 sofleii, the Sofle Interactive Interface, is everything in
-[rdlu/zmk-sofle](https://github.com/rdlu/zmk-sofle): the ZMK firmware for an
+[rdlu/sofleii](https://github.com/rdlu/sofleii): the ZMK firmware for an
 Eyelash Sofle split keyboard, and a planned CLI/TUI to manage it. These pages
 cover getting firmware onto the halves, pairing them, editing the keymap
 live, what every layer does, and what the [sofleii tool](sofleii/) will do.

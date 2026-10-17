@@ -9,7 +9,7 @@ weight: 2
 The **Eyelash Sofle** is a wireless split keyboard. Each half runs on a
 **nice!nano v2** (nRF52840) and has a **nice!view** display. The hardware and
 its original vendor firmware come from the Eyelash Sofle vendor
-([original README](https://github.com/rdlu/zmk-sofle/blob/main/README_JP.md));
+([original README](https://github.com/rdlu/sofleii/blob/main/README_JP.md));
 this repo vendors the shield definition and builds its own keymap on top.
 
 Beyond the alpha keys, the board has:

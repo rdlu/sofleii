@@ -23,7 +23,7 @@ the right.
 | `nice_view-eyelash_sofle_right-zmk.uf2` | the right half |
 | `settings_reset.uf2` | either half: clears the Studio overlay and the Bluetooth bonds |
 
-They are attached to every [GitHub release](https://github.com/rdlu/zmk-sofle/releases/latest),
+They are attached to every [GitHub release](https://github.com/rdlu/sofleii/releases/latest),
 and every `main` build on GitHub Actions uploads them as a `firmware`
 artifact. The local build tasks name the halves `eyelash_sofle_left.uf2` and
 `eyelash_sofle_right.uf2` instead (see [Building locally](../building/)).
@@ -47,7 +47,7 @@ mounts removable drives on most Linux desktops.
 
 ## By hand (drag-and-drop)
 
-1. Download the `.uf2` files from the [latest release](https://github.com/rdlu/zmk-sofle/releases/latest).
+1. Download the `.uf2` files from the [latest release](https://github.com/rdlu/sofleii/releases/latest).
 2. Connect the **left** half over USB with a data cable (not a charge-only one).
 3. Double-tap its reset button. A `NICENANO` drive appears.
 4. Copy `eyelash_sofle_studio_left.uf2` onto it. The half reboots when the copy completes.
