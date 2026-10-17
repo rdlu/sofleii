@@ -50,7 +50,9 @@ yay -S python-west python-pykwalify   # not in the official repos
 ```
 
 `python-protobuf` and `python-pkg_resources` are for the left half's Studio
-build, which generates nanopb code. Then:
+build, which generates nanopb code. `python-pkg_resources` is the CachyOS
+package name; on plain Arch, `pkg_resources` comes with `python-setuptools`.
+Then:
 
 ```sh
 mise run setup
