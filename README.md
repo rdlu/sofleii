@@ -295,7 +295,7 @@ mise run build-flash
 
 ### 4a. Docs site
 
-The docs at [sofleii.dlu.one](https://sofleii.dlu.one) are built from `site/` with Hugo (from pacman; the version CI uses is `HUGO_VERSION` in `.mise.toml`):
+The docs at [sofleii.dlu.one](https://sofleii.dlu.one) are built from `site/` with Hugo (from pacman; the version CI uses is pinned in `site/.hugo-version`):
 
 ```bash
 mise run docs         # dev server on http://127.0.0.1:1313/ (live reload)
