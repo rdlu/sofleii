@@ -263,8 +263,10 @@ nav[aria-label="breadcrumb"],
   color: var(--p-tertiary);
 }
 
-/* Inline code. */
+/* Inline code. No ligatures: on a keymap site `|>` must read as the two
+   characters typed, not 0xProto's arrow. */
 .content :not(pre) > code {
+  font-variant-ligatures: none;
   font-family: var(--p-mono);
   font-size: 0.86em;
   color: var(--p-text);
@@ -674,3 +676,118 @@ main h2.not-prose {
 .zs-whoami-dim { color: var(--p-faint); }
 .zs-whoami a { color: inherit; text-decoration: underline; text-underline-offset: 3px; text-decoration-thickness: 1px; }
 .zs-whoami a:hover { color: var(--p-accent); }
+
+/* ── Layer grids (the `layer` shortcode) ──────────────────────────────── */
+
+/* Keys sit where config/eyelash_sofle.json puts them, in units of --u (one
+   key), so the grid is the same shape as the keymap-drawer render. Below
+   44rem it scrolls sideways rather than shrinking past readable. */
+.zs-layer {
+  margin: 1.5rem 0;
+  border: 1px solid var(--p-outline);
+  background: var(--p-panel);
+}
+.zs-layer .bar {
+  display: flex;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: 0.3rem 0.75rem;
+  font-family: var(--p-mono);
+  font-size: 0.8rem;
+  color: var(--p-muted);
+  border-bottom: 1px solid var(--p-outline);
+}
+.zs-layer .bar span:first-child {
+  color: var(--p-accent);
+}
+.zs-layer .scroll {
+  overflow-x: auto;
+}
+.zs-board {
+  container-type: inline-size;
+  min-width: 44rem;
+  padding: 0.75rem;
+}
+.zs-keys {
+  --u: calc(100cqi / var(--w));
+  position: relative;
+  width: 100%;
+  height: calc(var(--u) * var(--h));
+  font-family: var(--p-mono);
+  /* 0xProto draws |> -> => as ligature arrows; a keymap shows the keys. */
+  font-variant-ligatures: none;
+}
+.zs-k {
+  position: absolute;
+  left: calc(var(--x) * var(--u));
+  top: calc(var(--y) * var(--u));
+  width: var(--u);
+  height: var(--u);
+  padding: calc(var(--u) * 0.04);
+  transform-origin: calc(var(--ox) * var(--u)) calc(var(--oy) * var(--u));
+  transform: rotate(calc(var(--r) * 1deg));
+}
+.zs-k .cap {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 100%;
+  padding: 0 calc(var(--u) * 0.05);
+  border: 1px solid var(--p-outline);
+  border-bottom-width: 3px;
+  border-radius: 2px;
+  background: var(--p-raised);
+  color: var(--p-text);
+  font-size: calc(var(--u) * 0.26);
+  line-height: 1.05;
+  text-align: center;
+  overflow-wrap: anywhere;
+}
+.zs-k.long .cap { font-size: calc(var(--u) * 0.2); }
+.zs-k.xlong .cap { font-size: calc(var(--u) * 0.15); }
+.zs-k .s,
+.zs-k .h {
+  position: absolute;
+  left: 0;
+  right: 0;
+  font-size: calc(var(--u) * 0.17);
+  color: var(--p-faint);
+}
+.zs-k .s { top: calc(var(--u) * 0.04); }
+.zs-k .h { bottom: calc(var(--u) * 0.03); color: var(--p-secondary); }
+.zs-k.ht .t { margin-bottom: calc(var(--u) * 0.16); }
+.zs-k .g svg {
+  display: inline-block;
+  width: 1.3em;
+  height: 1.3em;
+  fill: currentColor;
+  vertical-align: middle;
+}
+.zs-k.trans .cap {
+  background: transparent;
+  border-style: dashed;
+  border-bottom-width: 1px;
+  color: var(--p-outline);
+}
+.zs-k.none .cap {
+  background: transparent;
+  color: var(--p-faint);
+}
+.zs-k.held .cap {
+  background: var(--p-accent);
+  border-color: var(--p-accent);
+  color: var(--p-on-accent);
+}
+.zs-k:hover .cap,
+.zs-k:focus-visible .cap {
+  border-color: var(--p-accent);
+  outline: none;
+}
+.zs-k:focus-visible { outline: none; }
+.zs-layer figcaption {
+  padding: 0.4rem 0.75rem;
+  font-size: 0.8rem;
+  color: var(--p-faint);
+  border-top: 1px solid var(--p-outline);
+}
