@@ -76,17 +76,22 @@ From `config/eyelash_sofle.conf`:
 
 ## Memory budget
 
-Measured from CI run [39026110927](https://github.com/rdlu/sofleii/actions/runs/39026110927)
-(2026-10-17), the v3.0.0 build:
+Left half: a **local build** (2026-10-17) with the peripheral battery proxy
+([#45](https://github.com/rdlu/sofleii/issues/45)), 468892 B of flash and
+126522 B of RAM, +928 B and +168 B over v3.0.0. Right half and settings
+reset: unchanged from v3.0.0, measured from CI run
+[39026110927](https://github.com/rdlu/sofleii/actions/runs/39026110927)
+(2026-10-17).
 
 | Build | Flash used | Flash free | RAM used | RAM free |
 | --- | ---: | ---: | ---: | ---: |
-| Left (Studio, nice!view) | 457 KB / 792 KB (57.7%) | **335 KB** | 123 KB / 256 KB (48.2%) | **133 KB** |
+| Left (Studio, nice!view; local build) | 458 KB / 792 KB (57.82%) | **334 KB** | 124 KB / 256 KB (48.26%) | **132 KB** |
 | Right (nice!view) | 323 KB / 792 KB (40.8%) | **469 KB** | 77 KB / 256 KB (30.1%) | **179 KB** |
 | Settings reset | 51 KB / 792 KB (6.5%) | | 13 KB / 256 KB (4.9%) | |
 
 The left half is the tightest: Studio, both Studio transports (USB CDC-ACM
-and BLE GATT), the custom RPC modules and `zmk-rgb-layer` are all on it. The
+and BLE GATT), the custom RPC modules, `zmk-rgb-layer` and the peripheral
+battery proxy (#45) are all on it. The
 move from Zephyr 3.5 to 4.1 cost about 47 KB of flash and 14 KB of RAM on the
 left half, and 53 KB and 15 KB on the right, even after dropping three
 modules: that is the newer Zephyr and BLE stack. `zmk-rgb-layer` takes well
