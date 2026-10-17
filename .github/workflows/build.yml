@@ -16,4 +16,4 @@ env:
 
 jobs:
   build:
-    uses: zmkfirmware/zmk/.github/workflows/build-user-config.yml@v0.3.0
+    uses: zmkfirmware/zmk/.github/workflows/build-user-config.yml@4dd95d7840eb3d5a3f59bb29fbf1ab054715ef85  # track: main (ZMK-main / Zephyr 4.1 build container)

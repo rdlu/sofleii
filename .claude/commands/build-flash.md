@@ -75,5 +75,5 @@ sudo usermod -aG uucp $USER  # then log out and back in
 ## Toolchain notes
 
 - Zephyr SDK **0.17.0** at `tools/zephyr-sdk-0.17.0` — do NOT upgrade without checking ZMK compatibility
-- ZMK is pinned to v0.3.0 (Zephyr 3.5) via `config/west.yml`
+- ZMK is cormoran's fork on the ZMK-main line (`main+dya`, Zephyr 4.1), SHA-pinned in `config/west.yml`
 - AUR `zephyr-sdk` package requires Zephyr 4.2+ and is incompatible with this ZMK version

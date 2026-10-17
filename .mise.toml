@@ -4,7 +4,7 @@ python = {version = "3.12", backend = "uv"}
 
 [env]
 _.python.venv = {path = ".venv", create = true}
-# Zephyr 3.5 errors out in FindZephyr-sdk.cmake if ZEPHYR_TOOLCHAIN_VARIANT is unset
+# Pin the toolchain explicitly (Zephyr 3.5 errored out in FindZephyr-sdk.cmake when unset; harmless on 4.1)
 ZEPHYR_TOOLCHAIN_VARIANT = "zephyr"
 ZEPHYR_SDK_INSTALL_DIR = "{{config_root}}/tools/zephyr-sdk-0.17.0"
 
@@ -14,14 +14,14 @@ run = """
 west init -l config/
 west update
 west zephyr-export
-uv pip install -r zmk/zephyr/scripts/requirements.txt
+uv pip install -r zephyr/scripts/requirements.txt
 # ZMK Studio protobuf codegen needs pkg_resources (dropped in setuptools 81)
 # and google.protobuf (nanopb generator). Neither is in Zephyr's requirements.
 uv pip install 'setuptools<81' 'protobuf>=7.35'
 """
 
 [tasks.doctor]
-description = "Check the local west workspace against config/west.yml — catches the drift that causes 'Invalid BOARD: nice_nano_v2'"
+description = "Check the local west workspace against config/west.yml — catches the drift that causes 'Invalid BOARD: nice_nano//zmk'"
 # Why this exists: on 2026-09-02 `mise run build-left` died at CMake configure
 # with "Invalid BOARD: nice_nano_v2" while CI built the same commit fine. The
 # manifest was correct; the local zmk/ clone's git remote still pointed at
@@ -81,18 +81,20 @@ west list -f '{name}|{url}|{abspath}' | while IFS='|' read -r name url path; do
 done
 
 echo ">> Build prerequisites"
-if [ ! -f zmk/app/boards/arm/nice_nano/nice_nano_v2.dts ]; then
-  echo "   FAIL  zmk/app/boards/arm/nice_nano/nice_nano_v2.dts missing"
-  echo "         Builds will abort with 'Invalid BOARD: nice_nano_v2'."
-  echo "         (A Zephyr HWMv2 tree puts the board at boards/nicekeyboards/ instead.)"
+if [ ! -f zmk/app/boards/nicekeyboards/nice_nano/nice_nano_nrf52840_zmk.dts ]; then
+  echo "   FAIL  zmk/app/boards/nicekeyboards/nice_nano/nice_nano_nrf52840_zmk.dts missing"
+  echo "         Builds will abort with 'Invalid BOARD: nice_nano//zmk'."
+  echo "         (A v0.3 / Zephyr 3.5 tree has nice_nano_v2 at boards/arm/nice_nano/ instead.)"
   echo "board" >> "$DRIFT"
+else
+  echo "   ok    board nice_nano//zmk"
 fi
 
 if [ -f zephyr/VERSION ]; then
   ZMAJ=$(sed -n 's/^VERSION_MAJOR *= *//p' zephyr/VERSION | tr -d ' ')
   ZMIN=$(sed -n 's/^VERSION_MINOR *= *//p' zephyr/VERSION | tr -d ' ')
-  if [ "$ZMAJ" != "3" ]; then
-    echo "   FAIL  Zephyr $ZMAJ.$ZMIN — the v0.3 ZMK base needs 3.5"
+  if [ "$ZMAJ.$ZMIN" != "4.1" ]; then
+    echo "   FAIL  Zephyr $ZMAJ.$ZMIN — the ZMK-main base needs 4.1"
     echo "zephyr" >> "$DRIFT"
   else
     echo "   ok    Zephyr $ZMAJ.$ZMIN"
@@ -106,7 +108,7 @@ if [ -d "$ZEPHYR_SDK_INSTALL_DIR" ]; then
   echo "   ok    Zephyr SDK at $ZEPHYR_SDK_INSTALL_DIR"
 else
   echo "   FAIL  Zephyr SDK not found at $ZEPHYR_SDK_INSTALL_DIR"
-  echo "         Do NOT substitute the AUR zephyr-sdk — it needs Zephyr 4.2+."
+  echo "         Do NOT substitute the AUR zephyr-sdk — it targets Zephyr 4.2+ (we are on 4.1)."
   echo "sdk" >> "$DRIFT"
 fi
 
@@ -351,7 +353,7 @@ echo "✅ Local checkouts match the last successful CI build."
 [tasks.build-left]
 description = "Build left half firmware (ZMK Studio enabled)"
 run = """
-west build -s zmk/app -b nice_nano_v2 --pristine -- \
+west build -s zmk/app -b nice_nano//zmk --pristine -- \
   -DZMK_CONFIG="$(pwd)/config" \
   -DZMK_EXTRA_MODULES="$(pwd)/zmk-rgb-layer" \
   -DSHIELD="eyelash_sofle_left nice_view" \
@@ -364,7 +366,7 @@ cp build/zephyr/zmk.uf2 eyelash_sofle_left.uf2
 [tasks.build-right]
 description = "Build right half firmware"
 run = """
-west build -s zmk/app -b nice_nano_v2 --pristine -- \
+west build -s zmk/app -b nice_nano//zmk --pristine -- \
   -DZMK_CONFIG="$(pwd)/config" \
   -DZMK_EXTRA_MODULES="$(pwd)/zmk-rgb-layer" \
   -DSHIELD="eyelash_sofle_right nice_view"
@@ -374,7 +376,7 @@ cp build/zephyr/zmk.uf2 eyelash_sofle_right.uf2
 [tasks.build-reset]
 description = "Build settings reset firmware (clears Bluetooth bonds)"
 run = """
-west build -s zmk/app -b nice_nano_v2 --pristine -- \
+west build -s zmk/app -b nice_nano//zmk --pristine -- \
   -DZMK_CONFIG="$(pwd)/config" \
   -DSHIELD=settings_reset
 cp build/zephyr/zmk.uf2 settings_reset.uf2
@@ -610,10 +612,10 @@ echo ">> Fetching latest successful main build..."
 RUN_ID=$(gh run list --repo "$REPO" --workflow "Build ZMK firmware" --branch main --status success --limit 1 --json databaseId --jq '.[0].databaseId')
 gh run download "$RUN_ID" --repo "$REPO" --dir "$WORK" >/dev/null
 
-GH_RESET="$WORK/firmware/settings_reset-nice_nano_v2-zmk.uf2"
+# build.yaml gives settings_reset an explicit artifact-name, so this no longer
+# depends on how the upstream workflow spells the board.
 RESET_UF2="$WORK/firmware/settings_reset.uf2"
-[ -f "$GH_RESET" ] || { echo "ERROR: $GH_RESET missing"; exit 1; }
-mv "$GH_RESET" "$RESET_UF2"
+[ -f "$RESET_UF2" ] || { echo "ERROR: $RESET_UF2 missing"; exit 1; }
 
 echo ""
 echo "==============================================="

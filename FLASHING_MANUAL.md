@@ -11,7 +11,7 @@ For the automated flow, see the [README](README.md#flashing) — `mise run flash
 - The `.uf2` firmware files from the [latest release](../../releases/latest):
   - `eyelash_sofle_studio_left.uf2` — left half (ZMK Studio enabled)
   - `nice_view-eyelash_sofle_right-zmk.uf2` — right half
-  - `settings_reset-nice_nano_v2-zmk.uf2` — settings reset (clears Studio overlay + BT bonds)
+  - `settings_reset.uf2` — settings reset (clears Studio overlay + BT bonds)
 - A USB-C cable that supports data (not charge-only)
 
 ---
@@ -43,7 +43,7 @@ If you have ever used [ZMK Studio](https://studio.zmk.dev) to edit the keymap li
 **Fix: flash `settings_reset` first, then the normal firmware on top.**
 
 ```
-1. Double-tap reset on the LEFT half → drag settings_reset-nice_nano_v2-zmk.uf2 onto NICENANO
+1. Double-tap reset on the LEFT half → drag settings_reset.uf2 onto NICENANO
 2. Wait for the left half to reboot (takes ~2 seconds)
 3. Double-tap reset on the LEFT half AGAIN → drag eyelash_sofle_studio_left.uf2 onto NICENANO
 ```
