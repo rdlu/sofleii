@@ -168,7 +168,8 @@ Include: what the user requested, what was changed (layer/key/behavior), and any
 | `site/**` (incl. `site/.hugo-version`), `.github/scripts/{install-hugo,print-keymap-pdf}.sh` | – | – | ✓ (push) |
 | `config/eyelash_sofle.keymap` | ✓ | ✓ | ✓ once, via Draw |
 | `config/west.yml` | ✓ | ✓ | ✓ once, via Draw (no Draw commit; diff check) |
-| other `config/**` (`.conf`, shield, `.json`) | ✓ | ✓ | – (diff check skips) |
+| `config/eyelash_sofle.json` / layout `.dtsi` (via `mise run layout`) | ✓ | ✓ | ✓ once, via Draw (the grids read the `.json`) |
+| other `config/**` (`.conf`, shield) | ✓ | ✓ | – (diff check skips) |
 | `zmk-rgb-layer/**`, `build.yaml` | ✓ | – | – |
 | `.mise.toml` | – | – | – |
 | docs-only markdown (README, KEYMAP.md, CLAUDE.md…) | – | – | – |
