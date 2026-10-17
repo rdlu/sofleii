@@ -1,0 +1,19 @@
+{{- /*
+  The keymap-drawer render of every layer, straight from
+  keymap-drawer/eyelash_sofle.svg (mounted into assets/keymap/ in hugo.toml).
+  draw.yml regenerates that file on every config/ change, and the Pages
+  workflow rebuilds after it, so this is never edited or copied by hand.
+*/ -}}
+{{- $svg := resources.Get "keymap/eyelash_sofle.svg" -}}
+{{- if not $svg -}}
+  {{- errorf "keymap-svg: keymap-drawer/eyelash_sofle.svg is not mounted (see module.mounts in hugo.toml)" -}}
+{{- end -}}
+{{- $size := index (findRESubmatch `<svg width="(\d+)" height="(\d+)"` $svg.Content 1) 0 -}}
+{{- $svg = $svg | fingerprint -}}
+<figure class="zs-keymap not-prose">
+  <div class="bar"><span>keymap-drawer/eyelash_sofle.svg</span><a href="{{ $svg.RelPermalink }}" target="_blank" rel="noopener">open full size ↗</a></div>
+  <div class="scroll">
+    <img src="{{ $svg.RelPermalink }}" width="{{ index $size 1 }}" height="{{ index $size 2 }}" loading="lazy"
+      alt="The Eyelash Sofle keymap, every layer from BASE to NOMANSKY, as drawn by keymap-drawer from config/eyelash_sofle.keymap." />
+  </div>
+</figure>

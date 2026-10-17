@@ -1,0 +1,14 @@
+{{- /* Who maintains sofleii, as a `whoami` in the terminal skin. Data: params.author. */ -}}
+{{- with site.Params.author -}}
+<div class="zs-whoami">
+  <div class="zs-whoami-prompt">$ whoami</div>
+  <div><span class="zs-whoami-name">{{ .name }}</span>{{ with .location }} <span class="zs-whoami-dim">— {{ . }}</span>{{ end }}</div>
+  <div class="zs-whoami-links">
+    {{- range $i, $l := .links -}}
+      {{- if $i }}<span class="zs-whoami-dim"> · </span>{{ end -}}
+      <a href="{{ $l.url }}" target="_blank" rel="noopener me">{{ $l.label }}</a>
+    {{- end -}}
+  </div>
+  <div class="zs-whoami-dim">© {{ .since }}{{ if gt now.Year .since }}–{{ now.Year }}{{ end }} {{ .name }} · source at <a href="https://github.com/rdlu/zmk-sofle" target="_blank" rel="noopener">github.com/rdlu/zmk-sofle</a></div>
+</div>
+{{- end -}}

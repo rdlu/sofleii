@@ -1,0 +1,42 @@
+{{- /*
+  The hold-tap behaviors defined in config/eyelash_sofle.keymap, with their
+  timing and where BASE uses them, parsed on every build: this table can't
+  drift from the firmware.
+*/ -}}
+{{- $km := partial "zs/keymap-source.html" . -}}
+{{- $text := $km.text -}}
+{{- $rows := findRESubmatch `(?s)(\w+): \w+ \{\s*compatible = "zmk,behavior-hold-tap";(.*?)\};` $text -}}
+{{- if not $rows }}{{ errorf "keymap-behaviors: no hold-tap behaviors found in the keymap" }}{{ end -}}
+<div class="zs-table">
+<table>
+  <thead>
+    <tr><th>Behavior</th><th>Used on (tap → hold)</th><th>flavor</th><th>tapping-term</th><th>require-prior-idle</th><th>quick-tap</th><th>Opposite hand only</th><th>Hold on release</th></tr>
+  </thead>
+  <tbody>
+  {{- range $rows }}
+    {{- $name := index . 1 -}}
+    {{- $body := index . 2 -}}
+    {{- $num := dict -}}
+    {{- range slice "tapping-term-ms" "require-prior-idle-ms" "quick-tap-ms" -}}
+      {{- $m := findRESubmatch (printf `%s = <(\d+)>` .) $body 1 -}}
+      {{- $num = merge $num (dict . (cond (gt (len $m) 0) (printf "%s ms" (index $m 0 1)) "—")) -}}
+    {{- end -}}
+    {{- $flavor := index (findRESubmatch `flavor = "([^"]+)"` $body 1) 0 1 | default "—" -}}
+    {{- $uses := slice -}}
+    {{- range findRESubmatch (printf `&%s\s+(\w+)\s+(\w+)` $name) $text -}}
+      {{- $uses = $uses | append (printf "%s → %s" (index . 2) (index . 1)) -}}
+    {{- end -}}
+    <tr>
+      <td><code>{{ $name }}</code></td>
+      <td>{{ with $uses }}{{ range $i, $u := uniq . }}{{ if $i }}, {{ end }}<code>{{ $u }}</code>{{ end }}{{ else }}—{{ end }}</td>
+      <td><code>{{ $flavor }}</code></td>
+      <td>{{ index $num "tapping-term-ms" }}</td>
+      <td>{{ index $num "require-prior-idle-ms" }}</td>
+      <td>{{ index $num "quick-tap-ms" }}</td>
+      <td>{{ if strings.Contains $body "hold-trigger-key-positions" }}yes{{ else }}no{{ end }}</td>
+      <td>{{ if strings.Contains $body "hold-trigger-on-release" }}yes{{ else }}no{{ end }}</td>
+    </tr>
+  {{- end }}
+  </tbody>
+</table>
+</div>

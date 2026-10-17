@@ -1,0 +1,29 @@
+{{- /*
+  The west projects config/west.yml pins (mounted into assets/config/), with
+  the upstream ref each `# track:` comment names. Parsed on every build.
+*/ -}}
+{{- $res := resources.Get "config/west.yml" -}}
+{{- if not $res }}{{ errorf "west-pins: config/west.yml is not mounted (see module.mounts in hugo.toml)" }}{{ end -}}
+{{- $m := ($res | transform.Unmarshal).manifest -}}
+{{- $bases := dict -}}
+{{- range $m.remotes }}{{ $bases = merge $bases (dict .name (index . "url-base")) }}{{ end -}}
+{{- $tracks := dict -}}
+{{- range findRESubmatch `revision: (\S+)\s+#\s*track:\s*(\S+)` $res.Content -}}
+  {{- $tracks = merge $tracks (dict (index . 1) (index . 2)) -}}
+{{- end -}}
+<div class="zs-table">
+<table>
+  <thead><tr><th>Project</th><th>Repository</th><th>Pinned at</th><th>Tracks</th></tr></thead>
+  <tbody>
+  {{- range $m.projects }}
+    {{- $repo := printf "%s/%s" (index $bases .remote) .name -}}
+    <tr>
+      <td><code>{{ .name }}</code></td>
+      <td><a href="{{ $repo }}" target="_blank" rel="noopener">{{ strings.TrimPrefix "https://github.com/" $repo }}</a></td>
+      <td><a href="{{ $repo }}/commit/{{ .revision }}" target="_blank" rel="noopener"><code>{{ substr .revision 0 8 }}</code></a></td>
+      <td>{{ with index $tracks .revision }}<code>{{ . }}</code>{{ else }}—{{ end }}</td>
+    </tr>
+  {{- end }}
+  </tbody>
+</table>
+</div>
