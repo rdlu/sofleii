@@ -7,6 +7,12 @@
 
 /* ── Palette ──────────────────────────────────────────────────────────── */
 
+/* Surfaces are Noctalia's neutrals; the accent is sofleii's own magenta
+   (plugii is cyan, NMS-Items gold). It is a Material 3 tonal palette at
+   CIELAB hue 340 (HSL ~320deg): accent at tone 40 (light) / 80 (dark),
+   on-accent at 100 / 20, secondary the same hue at low chroma, tertiary a
+   muted violet 30deg away so tip callouts never read as error red. */
+
 :root {
   /* Light: Noctalia's light scheme. */
   --p-bg: #f9f9f9;
@@ -16,10 +22,10 @@
   --p-muted: #474747;
   --p-faint: #5e5e5e;
   --p-outline: #c6c6c6;
-  --p-accent: #006685;
+  --p-accent: #a82583;
   --p-on-accent: #ffffff;
-  --p-secondary: #4d616c;
-  --p-tertiary: #5e5a7d;
+  --p-secondary: #735667;
+  --p-tertiary: #69577c;
   --p-error: #ba1a1a;
   --p-ok: #2f6b1f;
   --p-warn: #7a5900;
@@ -27,10 +33,10 @@
   --p-sans: "iA Writer Duo", ui-sans-serif, system-ui, sans-serif;
   --p-mono: "0xProto", ui-monospace, "DejaVu Sans Mono", "Noto Sans Mono", monospace;
 
-  /* Hextra derives its primary scale from these: #006685. */
-  --primary-hue: 195deg;
-  --primary-saturation: 100%;
-  --primary-lightness: 26%;
+  /* Hextra derives its primary scale from these: #a82583. */
+  --primary-hue: 317deg;
+  --primary-saturation: 64%;
+  --primary-lightness: 40%;
 }
 
 .dark {
@@ -42,18 +48,18 @@
   --p-muted: #c6c6c6;
   --p-faint: #919191;
   --p-outline: #474747;
-  --p-accent: #6dd2ff;
-  --p-on-accent: #003547;
-  --p-secondary: #b4cad6;
-  --p-tertiary: #c7c2ea;
+  --p-accent: #ffade1;
+  --p-on-accent: #600049;
+  --p-secondary: #debdd1;
+  --p-tertiary: #d4bee9;
   --p-error: #ffb4ab;
   --p-ok: #b9ca4a;
   --p-warn: #e7c547;
 
-  /* #6dd2ff */
-  --primary-hue: 199deg;
+  /* #ffade1 */
+  --primary-hue: 322deg;
   --primary-saturation: 100%;
-  --primary-lightness: 71%;
+  --primary-lightness: 84%;
 }
 
 /* Hextra's own tokens, pointed at the palette. */
