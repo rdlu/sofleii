@@ -18,28 +18,36 @@ set -eu
 # requirements.txt lists more (flash runners, canopen, ...); none are needed to
 # build. google.protobuf + pkg_resources are for the left half's Studio nanopb
 # codegen, which Zephyr's requirements don't cover.
-missing=$(python3 - <<'PYEOF'
+hint=$(python3 - <<'PYEOF'
 import importlib, warnings
 warnings.simplefilter("ignore")
+# module -> (package, source). west and pykwalify are not in the Arch repos.
+# pkg_resources is its own package on CachyOS; plain Arch ships it in
+# python-setuptools.
 pkgs = {
-    "west": "python-west",
-    "yaml": "python-yaml",
-    "elftools": "python-pyelftools",
-    "pykwalify": "python-pykwalify",
-    "packaging": "python-packaging",
-    "google.protobuf": "python-protobuf",
-    "pkg_resources": "python-pkg_resources",
+    "west": ("python-west", "aur"),
+    "yaml": ("python-yaml", "repo"),
+    "elftools": ("python-pyelftools", "repo"),
+    "pykwalify": ("python-pykwalify", "aur"),
+    "packaging": ("python-packaging", "repo"),
+    "google.protobuf": ("python-protobuf", "repo"),
+    "pkg_resources": ("python-pkg_resources (CachyOS) or python-setuptools (Arch)", "repo"),
 }
-for mod, pkg in pkgs.items():
+missing = {"repo": [], "aur": []}
+for mod, (pkg, src) in pkgs.items():
     try:
         importlib.import_module(mod)
     except ImportError:
-        print(pkg, end=" ")
+        missing[src].append(pkg)
+if missing["repo"]:
+    print("  pacman: pkexec pacman -S --needed " + " ".join(missing["repo"]))
+if missing["aur"]:
+    print("  AUR:    " + " ".join(missing["aur"]))
 PYEOF
 )
-if [ -n "$missing" ]; then
-  echo "Missing Python packages: $missing"
-  echo "Install: pkexec pacman -S --needed $missing"
+if [ -n "$hint" ]; then
+  echo "Missing Python packages for the build:"
+  echo "$hint"
   exit 1
 fi
 [ -d .west ] || west init -l config/
