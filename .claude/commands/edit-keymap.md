@@ -49,43 +49,29 @@ mise run flash-left
 
 **⚠️ ZMK Studio overlay gotcha:** if the user has ever used ZMK Studio to edit the keymap live, the stored overlay will override any firmware you flash locally. Symptom: you flash new firmware and the behavior is still the old one. Fix — two-step on the left half: `mise run flash-reset` (or `mise run flash-release-reset` for the GH Actions variant) to wipe the settings partition, then immediately `mise run flash-left` to install the new firmware on top.
 
-## Layer index
+## Layer index, key positions, hold-tap behaviors
 
-| # | Name     | Access key                     |
-|---|----------|--------------------------------|
-| 0 | BASE     | always on                      |
-| 1 | NAV      | hold `mo1` — left thumb        |
-| 2 | CODE     | hold `lt(2,DEL)` — right thumb |
-| 3 | MEDIA    | hold `mo3` — right thumb       |
-| 4 | SYS\|NUM | hold `mo4` — left thumb        |
+CLAUDE.md (always loaded) is the reference for these: **Keymap structure** (all
+9 layers and how to reach them), **Key position numbering**, and **Hold-tap
+behaviors** (all five, with their keys and trigger lists). Read the keymap
+itself before trusting any table; the site renders its layer grids straight
+from it (https://sofleii.dlu.one/keymap/).
 
-## Key position numbering
-
-Rows 0–3 have 13 positions each (cols 0–12); row 4 has 12.
-Col 6 in every row = encoder click.
-
+BASE at a glance (col 6 is the centre column: joystick directions + press):
 ```
-Left-side positions:  0-5, 13-18, 26-31, 39-44, 52-57
-Right-side positions: 7-12, 20-25, 33-38, 46-51, 58-63
+Row 0: `    1     2   3    4    5   [VolUp]  6   7     8   9  0  -
+Row 1: Tab  Q     W   E    R    T   [VolDn]  Y   U     I   O  P  =
+Row 2: Esc  A     S*  D*   F*   G   [Play]   H   J*    K*  L* ;  '
+Row 3: \    Z     X   C    V    B   [Next]   N   M     ,   .  /  Ret
+Row 4: Mute mo4  F11 GUI  mo1  Bspc [Mute]  Spc mo2  CW  F12/AltGr mo3
+* = home-row mod (S D F = Alt Ctrl Shift, J K L = Shift Ctrl Alt)
 ```
 
-Row/col mapping for common keys:
-```
-Row 0: ` 1 2 3 4 5 [enc] 6 7 8 9 0 -
-Row 1: Tab Q W E R T [enc] Y U I O P =
-Row 2: Esc A S D F G [enc] H J K L ; '
-Row 3: \   Z X C V B [enc] N M , . / Ret
-Row 4: Mute [mo4] F11 GUI [mo1] Bspc [enc] Spc [lt2] [mo3] F12 CW
-```
-
-## Hold-tap behaviors
-
-- `&hml MOD KEY` — left home row mod (positional: fires only on right-side key combos)
-- `&hmr MOD KEY` — right home row mod (positional: fires only on left-side key combos)
-- `&ralt_mt RALT KEY` — AltGr mod-tap (no positional restriction; for T and Y only)
-- `&mt MOD KEY` — standard mod-tap (avoid for new additions; prefer hml/hmr/ralt_mt)
-- `&lt LAYER KEY` — layer-tap
-- `&mo LAYER` — momentary layer
+When adding keys:
+- `&mt MOD KEY` is a stock mod-tap. Prefer `hml`/`hmr` on the home row; CODE's
+  bracket mod-taps use plain `&mt` on purpose.
+- `&lt LAYER KEY` (layer-tap) was removed from CODE in `ebc0602` for hold-tap
+  lag. Prefer `&mo` on thumbs.
 
 ## Common ZMK key names
 
@@ -99,4 +85,4 @@ BT: `&bt BT_SEL 0` … `&bt BT_CLR`
 
 ## After editing
 
-Always read KEYMAP.md if the user asks about timing — it has the full parameter reference and tuning tips.
+If the user asks about timing, read the `behaviors {}` block and CLAUDE.md's **Hold-tap behaviors**; use the `adjust-timing` command for changes.

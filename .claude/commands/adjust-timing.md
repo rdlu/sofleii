@@ -4,7 +4,7 @@ Adjust hold-tap timing parameters based on the user's description of the problem
 
 1. Ask the user to describe the symptom if not already stated (false triggers, mods not firing, key repeat broken, etc.).
 2. If we're on `main`, create a feature branch first — never commit timing changes directly to `main`.
-3. Read `config/eyelash_sofle.keymap` — find the `behaviors {}` block with `hml`, `hmr`, and `ralt_mt`.
+3. Read `config/eyelash_sofle.keymap` — find the `behaviors {}` block with `hml`, `hml_idx`, `hmr`, `hmr_idx` and `ralt_mt`.
 4. Apply the appropriate change (see table below).
 5. Run `mise run draw` to regenerate the SVG.
 6. Commit all three files (`keymap`, `yaml`, `svg`) and push.
@@ -15,16 +15,17 @@ Adjust hold-tap timing parameters based on the user's description of the problem
 
 | Parameter | Location in file | Effect of increasing | Effect of decreasing |
 |-----------|-----------------|----------------------|----------------------|
-| `tapping-term-ms` | all three behaviors | harder to trigger hold accidentally | hold fires sooner / easier to trigger |
-| `require-prior-idle-ms` | all three behaviors | fewer false mods during fast typing | mods respond faster after adjacent keys |
-| `quick-tap-ms` | all three behaviors | longer window for key repeat | shorter repeat window |
-| `flavor` | all three behaviors | see flavors below | — |
+| `tapping-term-ms` | all five behaviors | harder to trigger hold accidentally | hold fires sooner / easier to trigger |
+| `require-prior-idle-ms` | all five (230 ms; 70 ms on the `_idx` variants) | fewer false mods during fast typing | mods respond faster after adjacent keys |
+| `quick-tap-ms` | all five behaviors | longer window for key repeat | shorter repeat window |
+| `flavor` | all five (`hold-preferred` on the `_idx` variants) | see flavors below | — |
 
 ## Flavors
 
-- `balanced` *(current)*: hold fires if another key is **pressed and released** inside tapping-term. Good balance for typing.
-- `tap-unless-interrupted`: hold fires only if no other key is pressed during tapping-term. More permissive for mods.
-- `hold-preferred`: hold fires if any key is pressed during tapping-term. Most aggressive — not recommended for home row.
+- `balanced` *(hml, hmr, ralt_mt)*: hold if the term expires, or if another key is **pressed and released** inside it. Good balance for typing.
+- `hold-preferred` *(hml_idx, hmr_idx)*: hold if the term expires or another key is **pressed** inside it. Commits sooner; used on the index-finger Shifts so CamelCase isn't sluggish. Safe there only because of the positional restriction and the short idle window.
+- `tap-preferred`: hold only when the term expires. Most conservative.
+- `tap-unless-interrupted`: tap unless another key is pressed before the term expires (then hold); the term expiring alone gives a tap.
 
 ## Symptom → fix
 
@@ -34,23 +35,25 @@ Adjust hold-tap timing parameters based on the user's description of the problem
 | Mod doesn't fire when I want it | Decrease `tapping-term-ms` (-20 ms steps) or switch to `tap-unless-interrupted` |
 | Key repeat doesn't work | Increase `quick-tap-ms` to ≥ your fastest double-tap speed |
 | Mod fires too late / laggy | Decrease `tapping-term-ms` |
-| Only same-hand combos fail | Check `hold-trigger-key-positions` includes all intended keys |
+| Same-hand mod combos (Ctrl+Shift on D+F) fail | The trigger lists must include that hand's own home-row positions (28–30 / 34–36, added in `12fb68e`, #17) |
 | AltGr accent not working | Verify `ralt_mt` has **no** `hold-trigger-key-positions` |
 
 ## Behaviors and their keys
 
 ```
-hml  → D(LCTRL)  F(LSHFT)  G(LALT)     [left home row]
-hmr  → H(LALT)   J(RSHFT)  K(RCTRL)    [right home row]
-ralt_mt → T(RALT)  Y(RALT)              [AltGr, no positional restriction]
+hml      → S(LALT)  D(LCTRL)     [left home row,  balanced,       idle 230]
+hml_idx  → F(LSHFT)              [left index,     hold-preferred, idle 70]
+hmr      → L(LALT)  K(RCTRL)     [right home row, balanced,       idle 230]
+hmr_idx  → J(RSHFT)              [right index,    hold-preferred, idle 70]
+ralt_mt  → right-thumb F12 (hold = RALT/AltGr)  [no positional restriction]
 ```
 
-All three share the same timing block — change all three consistently unless intentionally differentiating.
-Current values: `tapping-term-ms=280`, `require-prior-idle-ms=150`, `quick-tap-ms=175`.
+Shared: `tapping-term-ms=280`, `quick-tap-ms=175`. Keep `hml`/`hmr` and the two
+`_idx` variants consistent with each other unless differentiating on purpose.
 
 ## Important
 
-Always update KEYMAP.md "Hold-tap timing reference" table if you change the current values, so the docs stay accurate.
+The site's hold-tap table is generated from the keymap, so it updates itself. Do update CLAUDE.md's **Hold-tap behaviors** table, this file's block above, and the prose in `site/content/keymap/hold-tap.md` if a change alters what it describes.
 
 ## Local iteration (no GH Actions)
 
