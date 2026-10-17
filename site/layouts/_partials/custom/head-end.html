@@ -27,3 +27,8 @@
 @font-face { font-family: "0xProto"; font-style: normal; font-weight: 400; font-display: swap; src: url("{{ print $proto "0xProto-Regular.woff2" | relURL }}") format("woff2"); }
 @font-face { font-family: "0xProto"; font-style: normal; font-weight: 700; font-display: swap; src: url("{{ print $proto "0xProto-Bold.woff2" | relURL }}") format("woff2"); }
 </style>
+{{- /* Keymap pages show what keys type: no 0xProto ligatures (|> stays two
+  characters) in their inline code. The grids opt out in custom.css. */ -}}
+{{- if eq .Section "keymap" }}
+<style>.content :not(pre) > code { font-variant-ligatures: none; }</style>
+{{- end }}

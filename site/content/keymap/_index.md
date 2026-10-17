@@ -8,6 +8,9 @@ aliases: [/docs/reference/keymap/]
 # (the sidebar's root is the page's first section).
 cascade:
   type: docs
+# Listed first in this section's sidebar (patched layouts/_partials/sidebar.html).
+sidebar:
+  overview: Overview
 ---
 
 The keymap is the heart of the firmware. This drawing is

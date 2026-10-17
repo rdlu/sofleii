@@ -263,10 +263,8 @@ nav[aria-label="breadcrumb"],
   color: var(--p-tertiary);
 }
 
-/* Inline code. No ligatures: on a keymap site `|>` must read as the two
-   characters typed, not 0xProto's arrow. */
+/* Inline code. */
 .content :not(pre) > code {
-  font-variant-ligatures: none;
   font-family: var(--p-mono);
   font-size: 0.86em;
   color: var(--p-text);
@@ -773,6 +771,11 @@ main h2.not-prose {
 .zs-k.none .cap {
   background: transparent;
   color: var(--p-faint);
+}
+.zs-k.module .cap {
+  background: transparent;
+  border: 1px dotted var(--p-accent);
+  color: var(--p-accent);
 }
 .zs-k.held .cap {
   background: var(--p-accent);

@@ -17,11 +17,14 @@ left hand, a numpad on the right. Release the key to go back to BASE.
 - **Left, underglow**: saturation, hue and effect up on the <kbd>Q</kbd>
   <kbd>W</kbd> <kbd>E</kbd> spots and down on <kbd>A</kbd> <kbd>S</kbd>
   <kbd>D</kbd>, the RGB toggle on the bottom-left key.
-- **Keys the underglow module owns**: the <kbd>Tab</kbd> and <kbd>Esc</kbd>
-  spots (brightness up and down) and <kbd>Z</kbd> <kbd>X</kbd> <kbd>C</kbd>
-  (the BASE moods) are `&none` in the keymap, so the grid shows them as
-  doing nothing, but the `zmk-rgb-layer` module acts on them. See
-  [Underglow](../../docs/underglow/).
+- **Keys the underglow module owns** (dotted outline): the bindings are
+  `&none`, but the `zmk-rgb-layer` module watches these positions while
+  SYS|NUM is the top layer. <kbd>Bri+</kbd> and <kbd>Bri−</kbd> on the
+  <kbd>Tab</kbd> and <kbd>Esc</kbd> spots step the master brightness by 8
+  (range 4 to 60). <kbd>Dark</kbd>, <kbd>Dim</kbd> and <kbd>FX</kbd> on
+  <kbd>Z</kbd> <kbd>X</kbd> <kbd>C</kbd> pick the BASE mood: off, solid dim
+  teal, or the next of breathe, spectrum and swirl. Both settings survive a
+  reboot. See [Underglow](../../docs/underglow/).
 - **Mouse, for when there is no other pointer**: back and forward on
   <kbd>R</kbd> <kbd>T</kbd>; left, right and middle click on <kbd>F</kbd>
   <kbd>G</kbd> <kbd>V</kbd>; the joystick moves the pointer, and its centre
