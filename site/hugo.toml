@@ -135,3 +135,10 @@ disableKinds = ["taxonomy", "term", "rss"]
   source = "../config"
   target = "assets/config"
   files = ["eyelash_sofle.keymap", "eyelash_sofle.json", "west.yml"]
+# The underglow module's per-layer colours (layer_colors[] in rgb_layer.c),
+# which the printable keymap draws each layer's grid in
+# (layouts/_partials/zs/layer-colors.html).
+[[module.mounts]]
+  source = "../zmk-rgb-layer/src"
+  target = "assets/rgb"
+  files = ["rgb_layer.c"]

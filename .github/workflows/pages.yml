@@ -11,6 +11,9 @@ on:
       - '.github/workflows/pages.yml'
       - '.github/scripts/install-hugo.sh'
       - '.github/scripts/print-keymap-pdf.sh'
+      # The printable keymap draws each layer in its underglow colour, read
+      # from the module's layer_colors[] (site/hugo.toml module.mounts).
+      - 'zmk-rgb-layer/src/rgb_layer.c'
   # The pages built from the firmware's files (keymap render, hold-tap and
   # combo tables, west pins) refresh through Draw Keymap instead, which runs
   # on every config/** push. Its [Draw] commit of the SVG is made with

@@ -15,7 +15,11 @@
 {{- $num := 0 }}{{ range $i, $n := $d.order }}{{ if eq $n $name }}{{ $num = $i }}{{ end }}{{ end -}}
 {{- $b := $d.box -}}
 {{- $over := index hugo.Data.keymap_overrides $name | default dict -}}
-<figure class="zs-layer not-prose">
+{{- /* The layer's underglow colour, made legible on white (zs/layer-colors.html):
+  --lc on the figure. The print view draws the grid in it; the site doesn't. */ -}}
+{{- $colors := partialCached "zs/layer-colors.html" . "layer-colors" -}}
+{{- $lc := (index $colors.layers (string $num)).hex | default $colors.accent -}}
+<figure class="zs-layer not-prose" style="--lc:{{ $lc | safeCSS }}">
   <div class="bar"><span>layer {{ $num }} · {{ $name }}</span><span>from config/eyelash_sofle.keymap</span></div>
   <div class="scroll">
     <div class="zs-board">
