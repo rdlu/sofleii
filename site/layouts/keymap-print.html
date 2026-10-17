@@ -50,7 +50,7 @@
       {{ partial "zs/layer.html" (dict "name" . "legend" false "caption" $cap) }}
     {{- end }}
     {{- if eq $i 0 }}
-    <p class="legend"><strong>Key styles:</strong> small top legend: shifted · small bottom legend: what the key does when held · plain outline: a key · <span class="sw trans">dashed, grey</span>: transparent, falls through to the layer below · <span class="sw none">thin, faint ⊖</span>: does nothing · <span class="sw module">dotted, bold</span>: handled by a firmware module (zmk-rgb-layer), not the keymap · <span class="sw held">filled black</span>: the key you are holding to be on this layer · ▏ marks where a macro leaves the cursor.</p>
+    <p class="legend"><strong>Key styles:</strong> small top legend: shifted · small bottom legend: what the key does when held · plain outline: a key · <span class="sw trans">dashed, grey</span>: transparent, falls through to the layer below · <span class="sw none">thin, faint ⊖</span>: does nothing · <span class="sw module">dotted, bold</span>: handled by a firmware module (zmk-rgb-layer), not the keymap · <span class="sw held">thick outline</span>: the key you are holding to be on this layer · each grid is drawn in its layer's underglow colour · ▏ marks where a macro leaves the cursor.</p>
     {{- end }}
   </section>
   {{- end }}

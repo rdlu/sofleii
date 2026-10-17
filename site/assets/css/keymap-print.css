@@ -1,6 +1,10 @@
 /* The printable keymap (layouts/keymap-print.html), A4 portrait.
-   Loaded after custom.css and only on that page. Always light, and
-   grayscale-safe: key styles differ by line style and weight, not colour. */
+   Loaded after custom.css and only on that page. Always light. Colour, but
+   only in lines and text on white: no fills or tinted backgrounds, to save
+   ink. Each grid is drawn in its layer's underglow colour (--lc, set on the
+   figure from zmk-rgb-layer's layer_colors[]; zs/layer-colors.html darkens
+   it to at least 4.5:1 on white). Key styles also differ by line style and
+   weight, so they still read on a mono printer. */
 
 @page {
   size: A4 portrait;
@@ -77,7 +81,7 @@ body.zs-print {
   align-items: flex-start;
   gap: 6mm;
   padding-bottom: 2mm;
-  border-bottom: 1pt solid #000;
+  border-bottom: 1pt solid var(--p-accent);
 }
 .manual h1 {
   margin: 0;
@@ -106,7 +110,8 @@ body.zs-print {
   margin: 2.6mm 0 0.8mm;
   font-family: var(--p-mono);
   font-size: 9.5pt;
-  border-bottom: 0.5pt solid #888;
+  color: var(--p-accent);
+  border-bottom: 0.6pt solid var(--p-accent);
 }
 .manual .cols > h2:first-child { margin-top: 0; }
 .manual p,
@@ -122,18 +127,18 @@ body.zs-print {
 .manual th,
 .manual td {
   padding: 0.5mm 1.2mm;
-  border: 0.5pt solid #999;
+  border: 0.5pt solid var(--p-accent);
   text-align: left;
   vertical-align: top;
 }
-.manual th { background: #eee; }
+.manual th { background: none; color: var(--p-accent); border-bottom-width: 1pt; }
 .manual .combos { margin-top: 2mm; break-inside: avoid; }
 .manual .combos h2 { margin-top: 0; }
 .manual .combos .zs-table { overflow: visible; }
 .manual .combos p { margin-top: 1mm; }
 
 /* Grid sheets. The grids are the site's own (zs/layer.html); here they get a
-   fixed print width and grayscale key styles. */
+   fixed print width and line-only key styles in the layer's colour. */
 .grids {
   display: flex;
   flex-direction: column;
@@ -142,8 +147,8 @@ body.zs-print {
 }
 .zs-print .zs-layer {
   margin: 0;
-  border: 0.8pt solid #000;
-  background: #fff;
+  border: 1pt solid var(--lc);
+  background: none;
   break-inside: avoid;
 }
 .grids.n1 .zs-layer,
@@ -152,16 +157,18 @@ body.zs-print {
    their captions and (on the first sheet) the legend fit in 277 mm. */
 .grids.n3 .zs-layer { width: 182mm; }
 .zs-print .zs-layer .bar {
-  color: #000;
-  border-bottom: 0.6pt solid #000;
+  background: none;
+  color: var(--lc);
+  border-bottom: 0.8pt solid var(--lc);
   font-size: 9pt;
 }
-.zs-print .zs-layer .bar span:first-child { color: #000; font-weight: 700; }
+.zs-print .zs-layer .bar span:first-child { color: var(--lc); font-weight: 700; }
 .zs-print .zs-layer .scroll { overflow: visible; }
 .zs-print .zs-board { min-width: 0; padding: 2.5mm; }
 .zs-print .zs-layer figcaption {
   padding: 1mm 3mm 1.5mm;
-  border-top: 0.5pt solid #999;
+  background: none;
+  border-top: 0.5pt solid var(--lc);
   color: #222;
   font-size: 8pt;
 }
@@ -172,11 +179,11 @@ body.zs-print {
   font-size: 7.6pt;
 }
 
-/* Key styles, distinguishable without colour. A little more air between
+/* Key styles: outlines only. A little more air between
    keys than on screen, where the thick print outlines would touch. */
 .zs-print .zs-k { padding: calc(var(--u) * 0.06); }
 .zs-print .zs-k .cap {
-  background: #fff;
+  background: none;
   border: 0.8pt solid #000;
   border-bottom-width: 1.6pt;
   color: #000;
@@ -192,14 +199,17 @@ body.zs-print {
   color: #aaa;
 }
 .zs-print .zs-k.module .cap {
-  border: 1.4pt dotted #000;
-  color: #000;
+  border: 1.4pt dotted var(--p-accent);
+  color: var(--p-accent);
   font-weight: 700;
 }
+/* The key holding this layer: a thick outline and label in the layer's
+   colour, on white (a solid fill would be the most ink on the page). */
 .zs-print .zs-k.held .cap {
-  background: #000;
-  border-color: #000;
-  color: #fff;
+  background: none;
+  border: 2pt solid var(--lc);
+  color: var(--lc);
+  font-weight: 700;
 }
 
 /* The legend's swatches. */
@@ -209,5 +219,5 @@ body.zs-print {
 }
 .zs-print .sw.trans { border-style: dashed; border-color: #888; color: #666; }
 .zs-print .sw.none { border-width: 0.4pt; border-color: #bbb; color: #666; }
-.zs-print .sw.module { border: 1.4pt dotted #000; font-weight: 700; }
-.zs-print .sw.held { background: #000; color: #fff; }
+.zs-print .sw.module { border: 1.4pt dotted var(--p-accent); color: var(--p-accent); font-weight: 700; }
+.zs-print .sw.held { border: 2pt solid var(--p-accent); color: var(--p-accent); font-weight: 700; }

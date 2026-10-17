@@ -1,0 +1,56 @@
+{{- /*
+  Per-layer colours, read from the underglow module at build time:
+  zmk-rgb-layer/src/rgb_layer.c (mounted as assets/rgb/rgb_layer.c), its
+  `layer_colors[]` table of ZMK HSB hue (0-360) and saturation (0-100) by
+  layer index. Nothing is copied by hand, so the site follows the firmware.
+
+  Each colour is made print- and text-safe on white: same hue and
+  saturation (as HSV), with the value lowered until the contrast with white
+  is at least 4.5:1 (so strokes clear 3:1 too). A saturation of 0
+  (NOMANSKY's white) becomes a neutral grey. Layers without an entry
+  (BASE, any gap) get the site accent, #a82583.
+
+  Returns dict "layers" (layer index as a string -> dict "h" "s" "hex"
+  "contrast") and "accent" (the fallback). Use with partialCached.
+*/ -}}
+{{- $accent := "#a82583" -}}
+{{- $res := resources.Get "rgb/rgb_layer.c" -}}
+{{- if not $res }}{{ errorf "layer-colors: zmk-rgb-layer/src/rgb_layer.c is not mounted (see module.mounts in hugo.toml)" }}{{ end -}}
+{{- $block := index (findRESubmatch `(?s)layer_colors\[\]\s*=\s*\{(.*?)\};` $res.Content 1) 0 1 -}}
+{{- if not $block }}{{ errorf "layer-colors: no layer_colors[] table in zmk-rgb-layer/src/rgb_layer.c" }}{{ end -}}
+{{- $entries := findRESubmatch `\[(\d+)\]\s*=\s*\{\s*(\d+)\s*,\s*(\d+)\s*\}` $block -}}
+{{- if not $entries }}{{ warnf "layer-colors: layer_colors[] in rgb_layer.c has no [n] = {h, s} entries; every layer falls back to the accent" }}{{ end -}}
+{{- $out := dict -}}
+{{- range $entries -}}
+  {{- $e := . -}}
+  {{- $h := int (index $e 2) }}{{ $s := div (float (index $e 3)) 100 -}}
+  {{- $best := dict -}}
+  {{- range $step := seq 95 -1 5 -}}
+    {{- if not $best -}}
+      {{- $v := div (float $step) 100 -}}
+      {{- /* HSV -> RGB */ -}}
+      {{- $c := mul $v $s -}}
+      {{- $hp := div (float (mod $h 360)) 60 -}}
+      {{- $x := mul $c (sub 1 (math.Abs (sub (sub $hp (mul 2 (math.Floor (div $hp 2)))) 1))) -}}
+      {{- $m := sub $v $c -}}
+      {{- $rgb := slice $c $x 0.0 -}}
+      {{- if ge $hp 5 }}{{ $rgb = slice $c 0.0 $x }}{{ else if ge $hp 4 }}{{ $rgb = slice $x 0.0 $c }}{{ else if ge $hp 3 }}{{ $rgb = slice 0.0 $x $c }}{{ else if ge $hp 2 }}{{ $rgb = slice 0.0 $c $x }}{{ else if ge $hp 1 }}{{ $rgb = slice $x $c 0.0 }}{{ end -}}
+      {{- /* 8-bit channels, then WCAG relative luminance */ -}}
+      {{- $bytes := slice }}{{ $lum := 0.0 -}}
+      {{- range $i, $ch := $rgb -}}
+        {{- $b := math.Round (mul (add $ch $m) 255) -}}
+        {{- $bytes = $bytes | append (int $b) -}}
+        {{- $f := div $b 255 -}}
+        {{- $lin := 0.0 -}}
+        {{- if le $f 0.04045 }}{{ $lin = div $f 12.92 }}{{ else }}{{ $lin = math.Pow (div (add $f 0.055) 1.055) 2.4 }}{{ end -}}
+        {{- $lum = add $lum (mul $lin (index (slice 0.2126 0.7152 0.0722) $i)) -}}
+      {{- end -}}
+      {{- $contrast := div 1.05 (add $lum 0.05) -}}
+      {{- if ge $contrast 4.5 -}}
+        {{- $best = dict "h" $h "s" (int (index $e 3)) "hex" (printf "#%02x%02x%02x" (index $bytes 0) (index $bytes 1) (index $bytes 2)) "contrast" (printf "%.2f" $contrast) -}}
+      {{- end -}}
+    {{- end -}}
+  {{- end -}}
+  {{- $out = merge $out (dict (index $e 1) $best) -}}
+{{- end -}}
+{{- return dict "layers" $out "accent" $accent -}}
