@@ -4,3 +4,4 @@
 
 pub mod info;
 pub mod profiles;
+pub mod status;

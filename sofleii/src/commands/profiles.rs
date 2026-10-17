@@ -33,7 +33,12 @@ pub struct Profile {
 
 pub fn run<T: Transport>(client: &mut Client<T>) -> Result<Profiles> {
     let index = client.resolve_subsystem(ble::IDENTIFIER)?;
+    fetch(client, index)
+}
 
+/// Reads profiles and output priority from `cormoran_ble` at a subsystem
+/// index the caller already resolved (shared by `profiles` and `status`).
+pub fn fetch<T: Transport>(client: &mut Client<T>, index: u32) -> Result<Profiles> {
     let payload = client.custom_call("get_profiles", index, ble::get_profiles())?;
     let ResponseType::GetProfiles(resp) = ble::decode(&payload)? else {
         return Err(Error::Protocol(
@@ -57,6 +62,13 @@ pub fn run<T: Transport>(client: &mut Client<T>) -> Result<Profiles> {
         });
 
     Ok(from_response(resp, output_priority))
+}
+
+impl Profiles {
+    /// The active slot, if the firmware marked one.
+    pub fn active(&self) -> Option<&Profile> {
+        self.profiles.iter().find(|p| p.active)
+    }
 }
 
 pub fn from_response(
