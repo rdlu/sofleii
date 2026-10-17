@@ -29,4 +29,12 @@ zbus = { version = "5.13.2", default-features = false, features = ["blocking-api
 prost-build = "0.14"
 
 [profile.release]
+# Size over peak speed: sofleii is I/O-bound (serial, D-Bus), so the extra
+# speed of opt-level 3 buys nothing. Measured 2026-10-17 after zbus landed:
+# 3.32 MB (strip only) -> 2.38 MB (+LTO, 1 CGU) -> 1.83 MB (opt "s")
+# -> 1.57 MB (panic = "abort"; no catch_unwind anywhere).
 strip = true
+lto = true
+codegen-units = 1
+opt-level = "s"
+panic = "abort"
