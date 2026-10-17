@@ -15,8 +15,10 @@ use serde::Serialize;
 
 use crate::{Error, Result};
 
-/// The name the keyboard advertises (same as its USB product string).
-pub const DEVICE_NAME: &str = "Eyelash Sofle";
+pub use crate::gatt::{
+    CharacteristicObj, DEVICE_NAME, DescriptorObj, DeviceObj, Query, ServiceObj, Tree, find_device,
+};
+
 /// Battery Service.
 pub const BATTERY_SERVICE_UUID: &str = "0000180f-0000-1000-8000-00805f9b34fb";
 /// Battery Level characteristic.
@@ -30,57 +32,6 @@ pub const PERIPHERAL_PREFIX: &str = "Peripheral";
 pub const DEFAULT_WARN_BELOW: u8 = 20;
 /// Default `--critical-below` (class `critical` in waybar).
 pub const DEFAULT_CRITICAL_BELOW: u8 = 10;
-
-/// A BlueZ `org.bluez.Device1` object.
-#[derive(Debug, Clone, Default)]
-pub struct DeviceObj {
-    pub path: String,
-    pub address: String,
-    pub name: Option<String>,
-    pub alias: Option<String>,
-    pub connected: bool,
-    pub services_resolved: bool,
-}
-
-/// A `GattService1` object.
-#[derive(Debug, Clone, Default)]
-pub struct ServiceObj {
-    pub path: String,
-    /// Object path of the owning device.
-    pub device: String,
-    pub uuid: String,
-    pub handle: u16,
-}
-
-/// A `GattCharacteristic1` object; `value` is BlueZ's cached `Value`.
-#[derive(Debug, Clone, Default)]
-pub struct CharacteristicObj {
-    pub path: String,
-    pub service: String,
-    pub uuid: String,
-    pub handle: u16,
-    pub value: Vec<u8>,
-}
-
-/// A `GattDescriptor1` object; `value` is BlueZ's cached `Value`.
-#[derive(Debug, Clone, Default)]
-pub struct DescriptorObj {
-    pub path: String,
-    pub characteristic: String,
-    pub uuid: String,
-    pub value: Vec<u8>,
-}
-
-/// The parts of BlueZ's `GetManagedObjects` that matter here.
-#[derive(Debug, Clone, Default)]
-pub struct Tree {
-    /// `Powered` of each `org.bluez.Adapter1`.
-    pub adapters_powered: Vec<bool>,
-    pub devices: Vec<DeviceObj>,
-    pub services: Vec<ServiceObj>,
-    pub characteristics: Vec<CharacteristicObj>,
-    pub descriptors: Vec<DescriptorObj>,
-}
 
 /// Read-only access to BlueZ. Implementations never write, pair or
 /// subscribe.
@@ -179,13 +130,6 @@ impl Thresholds {
     }
 }
 
-/// Which keyboard to read.
-#[derive(Debug, Clone, Default)]
-pub struct Query {
-    /// `--bt-address`: match this address instead of the name.
-    pub address: Option<String>,
-}
-
 /// Reads both halves through `gatt`.
 pub fn run(gatt: &mut dyn Gatt, query: &Query) -> Result<Reading> {
     let tree = gatt.tree()?;
@@ -220,47 +164,6 @@ pub fn run(gatt: &mut dyn Gatt, query: &Query) -> Result<Reading> {
         note: (!notes.is_empty()).then(|| notes.join("; ")),
         warnings,
     })
-}
-
-fn find_device<'t>(
-    tree: &'t Tree,
-    query: &Query,
-    warnings: &mut Vec<String>,
-) -> Result<&'t DeviceObj> {
-    let wanted = |d: &DeviceObj| match &query.address {
-        Some(a) => d.address.eq_ignore_ascii_case(a),
-        None => d.name.as_deref() == Some(DEVICE_NAME) || d.alias.as_deref() == Some(DEVICE_NAME),
-    };
-    let what = match &query.address {
-        Some(a) => format!("BLE device {a}"),
-        None => format!("BLE device named \"{DEVICE_NAME}\""),
-    };
-    let known: Vec<&DeviceObj> = tree.devices.iter().filter(|d| wanted(d)).collect();
-    let connected: Vec<&DeviceObj> = known.iter().copied().filter(|d| d.connected).collect();
-    let adapter = if tree.adapters_powered.is_empty() {
-        " (BlueZ has no Bluetooth adapter)"
-    } else if !tree.adapters_powered.contains(&true) {
-        " (the Bluetooth adapter is powered off)"
-    } else {
-        ""
-    };
-    match connected.as_slice() {
-        [] if known.is_empty() => Err(Error::NotFound(format!(
-            "no {what} known to BlueZ on this host, so not connected over BLE{adapter}"
-        ))),
-        [] => Err(Error::NotFound(format!(
-            "{what} is known to BlueZ but not connected to this host over BLE{adapter}"
-        ))),
-        [one] => Ok(one),
-        [first, rest @ ..] => {
-            warnings.push(format!(
-                "{} connected {what}s; using {} (pick one with --bt-address)",
-                rest.len() + 1,
-                first.address
-            ));
-            Ok(first)
-        }
-    }
 }
 
 /// How a Battery Level characteristic describes itself.
@@ -501,6 +404,7 @@ pub(crate) mod fake {
                 service: svc,
                 uuid: BATTERY_LEVEL_UUID.into(),
                 handle: handle + 1,
+                flags: vec!["read".into(), "notify".into()],
                 value: vec![level],
             });
             // Every level has a presentation format; it never decides the role.

@@ -8,31 +8,40 @@ use clap::{CommandFactory, Parser, Subcommand, ValueEnum};
 
 use sofleii::bluez::Bluez;
 use sofleii::client::Client;
+use sofleii::client::DEFAULT_TIMEOUT;
 use sofleii::commands::battery::{self, DEFAULT_CRITICAL_BELOW, DEFAULT_WARN_BELOW, Thresholds};
 use sofleii::commands::status::Battery;
 use sofleii::error::exit;
+use sofleii::gatt::{Query, find_device};
 use sofleii::output::{self, Format, Style};
-use sofleii::transport::{Transport, ble::BleTransport, serial::SerialTransport};
-use sofleii::{Result, commands};
+use sofleii::transport::{
+    Plan, Preference, Transport, ble::BleTransport, plan, serial, serial::SerialTransport,
+};
+use sofleii::{Error, Result, commands};
 
 /// `status` reads the batteries with at most this timeout, to stay snappy.
 const STATUS_BATTERY_TIMEOUT: Duration = Duration::from_millis(1000);
+/// With `--transport auto`, USB gets this long to answer before sofleii
+/// falls back to BLE (Studio only answers on the selected output endpoint).
+const AUTO_USB_PROBE: Duration = Duration::from_millis(1000);
 
 /// Sofle Interactive Interface: talk to the Eyelash Sofle over ZMK Studio RPC.
 #[derive(Parser, Debug)]
 #[command(name = "sofleii", version, about, long_about = None)]
 struct Cli {
     /// Serial device to use instead of auto-detecting "Eyelash Sofle".
+    /// Implies `--transport usb`.
     #[arg(long, global = true, value_name = "PATH")]
     device: Option<String>,
 
-    /// BLE address to read batteries from instead of matching the BlueZ
-    /// device named "Eyelash Sofle" (`battery`, and `status`'s battery).
+    /// BLE address to use instead of matching the BlueZ device named
+    /// "Eyelash Sofle" (batteries, and Studio RPC; implies `--transport ble`).
     #[arg(long, global = true, value_name = "MAC", value_parser = parse_mac)]
     bt_address: Option<String>,
 
-    /// Transport to use.
-    #[arg(long, global = true, value_enum, default_value_t = TransportArg::Usb)]
+    /// Transport for Studio RPC. `auto`: USB if the keyboard's serial port
+    /// exists, else BLE if it's connected to BlueZ.
+    #[arg(long, global = true, value_enum, default_value_t = TransportArg::Auto)]
     transport: TransportArg,
 
     /// How long to wait for each response, in milliseconds.
@@ -51,8 +60,10 @@ struct Cli {
 
 #[derive(Copy, Clone, Debug, PartialEq, Eq, ValueEnum)]
 enum TransportArg {
+    Auto,
+    /// USB serial (left half).
     Usb,
-    /// Not implemented yet.
+    /// BLE GATT through BlueZ (already bonded and connected).
     Ble,
 }
 
@@ -190,10 +201,74 @@ fn usage_error(msg: &str) -> ExitCode {
     ExitCode::from(exit::USAGE)
 }
 
-fn connect(device: &Option<String>, transport: TransportArg) -> Result<Box<dyn Transport>> {
-    match transport {
-        TransportArg::Usb => Ok(Box::new(SerialTransport::open(device.as_deref())?)),
-        TransportArg::Ble => Ok(Box::new(BleTransport::connect(device.as_deref())?)),
+/// Whether the keyboard is connected to BlueZ, or why not.
+fn ble_connected(bt_address: Option<&str>, timeout: Duration) -> std::result::Result<(), String> {
+    let reason = |e: Error| match e {
+        Error::NotFound(m) => m,
+        e => e.to_string(),
+    };
+    let bluez = Bluez::connect(timeout).map_err(reason)?;
+    let tree = bluez.managed_tree().map_err(reason)?;
+    let query = Query {
+        address: bt_address.map(str::to_string),
+    };
+    find_device(&tree, &query, &mut Vec::new())
+        .map(drop)
+        .map_err(reason)
+}
+
+/// Opens the transport `--transport`/`--device`/`--bt-address` pick.
+fn connect(cli: &Cli, timeout: Duration) -> Result<Client<Box<dyn Transport>>> {
+    let pref = match cli.transport {
+        TransportArg::Auto => Preference::Auto,
+        TransportArg::Usb => Preference::Usb,
+        TransportArg::Ble => Preference::Ble,
+    };
+    let bt_address = cli.bt_address.as_deref();
+    let chosen = plan(
+        pref,
+        cli.device.as_deref(),
+        bt_address,
+        || !serial::discover().is_empty(),
+        || ble_connected(bt_address, timeout.min(DEFAULT_TIMEOUT)),
+    )?;
+    let ble = |address: Option<&str>| -> Result<Client<Box<dyn Transport>>> {
+        Ok(Client::new(
+            Box::new(BleTransport::connect(address, timeout)?),
+            timeout,
+        ))
+    };
+    match chosen {
+        Plan::Ble { address } => ble(address.as_deref()),
+        Plan::Usb { device, auto } => {
+            let usb: Box<dyn Transport> = Box::new(SerialTransport::open(device.as_deref())?);
+            let mut client = Client::new(usb, timeout);
+            if !auto {
+                return Ok(client);
+            }
+            // Studio only listens on the selected output endpoint: with
+            // output priority BLE and the profile connected, USB is plugged
+            // in but deaf. Probe it briefly, then fall back to BLE.
+            client.set_timeout(timeout.min(AUTO_USB_PROBE));
+            match client.get_device_info() {
+                Ok(_) => {
+                    client.set_timeout(timeout);
+                    Ok(client)
+                }
+                Err(e @ Error::Timeout { .. }) => {
+                    if ble_connected(None, timeout.min(DEFAULT_TIMEOUT)).is_err() {
+                        return Err(e);
+                    }
+                    eprintln!(
+                        "sofleii: note: USB ({}) didn't answer (Studio only answers on the \
+                         selected output, BLE here?); using BLE",
+                        client.transport_info().device
+                    );
+                    ble(None)
+                }
+                Err(e) => Err(e),
+            }
+        }
     }
 }
 
@@ -242,7 +317,7 @@ fn run(cli: &Cli, command: &Command, style: Style) -> Result<(String, u8)> {
         return Ok((output::battery(style, &r, t), code));
     }
 
-    let mut client = Client::new(connect(&cli.device, cli.transport)?, timeout);
+    let mut client = connect(cli, timeout)?;
     let info = client.transport_info();
     let text = match command {
         Command::Status { .. } => {
