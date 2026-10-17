@@ -9,7 +9,7 @@ weight: 17
 > [!NOTE]
 > **Planned, not released.** Nothing on this page exists yet. It describes
 > what the tool is meant to do, so the details will change as it gets built.
-> Roadmap: TODO(issue-link)
+> See the [roadmap](#roadmap).
 
 **sofleii** will be a command-line tool and a terminal UI (Rust,
 [ratatui](https://ratatui.rs/)) for managing the keyboard from a terminal.
@@ -28,16 +28,29 @@ subsystem for the encoder (see [Firmware](../reference/firmware/#modules)).
 - **Status**: whether the halves are connected to each other, and the
   connection to the host.
 - **BLE profiles**: list, switch, rename and unpair.
-  TODO(issue-link)
-- **Battery** levels. TODO(issue-link)
-- **Output priority**: USB or BLE first. TODO(issue-link)
+- **Battery** levels.
+- **Output priority**: USB or BLE first.
 - **Firmware updates**: check the running firmware against the
-  [GitHub releases](https://github.com/rdlu/zmk-sofle/releases).
-  TODO(issue-link)
+  [GitHub releases](https://github.com/rdlu/zmk-sofle/releases), and flash
+  from the tool.
 - **The repo's routines** as CLI subcommands and TUI actions, instead of
   remembering task names: `flash-release`, `flash-release-reset`,
   `build-flash`, `doctor`, `deps-check` and `draw`. Today they are
-  [mise tasks](../building/). TODO(issue-link)
+  [mise tasks](../building/).
+
+## Roadmap
+
+- [#44](https://github.com/rdlu/zmk-sofle/issues/44): sofleii, the
+  Rust/ratatui CLI and TUI for status, control and repo routines (the epic).
+- [#45](https://github.com/rdlu/zmk-sofle/issues/45), firmware: forward the
+  right half's battery level to the host.
+- [#46](https://github.com/rdlu/zmk-sofle/issues/46), firmware: expose
+  build and version info over Studio RPC, which is what makes update checks
+  possible.
+- [#47](https://github.com/rdlu/zmk-sofle/issues/47): firmware update check
+  and flashing from the tool.
+- [#48](https://github.com/rdlu/zmk-sofle/issues/48): run the repo's
+  user-facing mise routines from the CLI and TUI.
 
 Until it exists, use [Studio](../studio/) for profiles and live keymap
 edits, and the mise tasks for everything else.

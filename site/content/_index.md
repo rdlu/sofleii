@@ -92,6 +92,10 @@ hero:
 
 <div class="hx:mt-6"></div>
 
+Planned, not released: follow the [roadmap epic (#44)](https://github.com/rdlu/zmk-sofle/issues/44).
+
+<div class="hx:mt-6"></div>
+
 {{< hextra/feature-grid >}}
   {{< hextra/feature-card
     title="Status at a glance"
