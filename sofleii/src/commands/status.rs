@@ -1,11 +1,13 @@
 //! `sofleii status`: a one-shot summary (device, Studio lock, active BLE
-//! profile, output priority) plus the split link and batteries, which the
-//! firmware cannot report yet and are `null` with a note.
+//! profile, output priority) plus the split link, which the firmware cannot
+//! report yet (`null` with a note), and both batteries, read over BLE GATT by
+//! [`crate::commands::battery`] and merged in with [`Battery::from_reading`].
 
 use serde::Serialize;
 
 use crate::Result;
 use crate::client::{Client, rpc::ble};
+use crate::commands::battery::{self, Reading};
 use crate::commands::info::{self, Device, Studio};
 use crate::commands::profiles::{self, Profile, Profiles};
 use crate::proto::core::LockState;
@@ -14,8 +16,8 @@ use crate::transport::Transport;
 /// Why `split` is `null`.
 pub const SPLIT_NOTE: &str = "unavailable: cormoran_ble get_split_info is broken upstream; \
      it is always empty and hardcodes peripheral_connected=false";
-/// Why both batteries are `null`.
-pub const BATTERY_NOTE: &str = "unavailable: not read yet; the firmware exposes both levels since #45, read over BLE GATT by the upcoming `sofleii battery`";
+/// Why both batteries are `null` when nothing tried to read them.
+pub const BATTERY_NOTE: &str = "unavailable: not read";
 
 #[derive(Debug, Clone, Serialize)]
 pub struct Status {
@@ -41,18 +43,33 @@ pub struct Split {
     pub peripheral_connected: bool,
 }
 
-/// Both halves; each is `null` until the firmware reports it. Filling them
-/// later is additive: `{"percent": n}` replaces `null`, no schema bump.
+/// Both halves, from the same BLE reader as `sofleii battery`. Each is
+/// `null` when BLE isn't available, and `note` says why.
 #[derive(Debug, Clone, Serialize)]
 pub struct Battery {
     pub left: Option<BatteryLevel>,
     pub right: Option<BatteryLevel>,
-    pub note: Option<&'static str>,
+    pub note: Option<String>,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
-pub struct BatteryLevel {
-    pub percent: Option<u8>,
+pub use battery::BatteryLevel;
+
+impl Battery {
+    /// The batteries from a `battery` reading, or `null`s with the reason.
+    pub fn from_reading(r: Result<Reading>) -> Self {
+        match r {
+            Ok(r) => Battery {
+                left: Some(r.left),
+                right: Some(r.right),
+                note: r.note,
+            },
+            Err(e) => Battery {
+                left: None,
+                right: None,
+                note: Some(format!("unavailable: {e}")),
+            },
+        }
+    }
 }
 
 pub fn run<T: Transport>(client: &mut Client<T>) -> Result<Status> {
@@ -95,7 +112,7 @@ pub fn build(device: Device, locked: bool, profiles: Option<Profiles>) -> Status
         battery: Battery {
             left: None,
             right: None,
-            note: Some(BATTERY_NOTE),
+            note: Some(BATTERY_NOTE.into()),
         },
     }
 }
@@ -225,6 +242,35 @@ mod tests {
         // A filled battery serialises as {"percent": n}.
         let lvl = serde_json::to_value(BatteryLevel { percent: Some(80) }).unwrap();
         assert_eq!(lvl, serde_json::json!({"percent": 80}));
+    }
+
+    #[test]
+    fn battery_filled_from_reading() {
+        use crate::commands::battery::{Query, fake::FakeGatt};
+        let mut s = run_mock(replies(0, vec![], bm::OutputPriority::Usb));
+        s.battery =
+            Battery::from_reading(battery::run(&mut FakeGatt::measured(), &Query::default()));
+        let v = serde_json::to_value(&s).unwrap();
+        assert_eq!(
+            v["battery"],
+            serde_json::json!({"left": {"percent": 100}, "right": {"percent": 77}, "note": null})
+        );
+    }
+
+    #[test]
+    fn battery_unavailable_keeps_nulls_with_reason() {
+        let mut s = run_mock(replies(0, vec![], bm::OutputPriority::Usb));
+        s.battery = Battery::from_reading(Err(crate::Error::NotFound(
+            "BlueZ unavailable: org.bluez is not running on the system D-Bus".into(),
+        )));
+        let v = serde_json::to_value(&s).unwrap();
+        assert_eq!(v["battery"]["left"], serde_json::Value::Null);
+        assert_eq!(v["battery"]["right"], serde_json::Value::Null);
+        let note = v["battery"]["note"].as_str().unwrap();
+        assert!(
+            note.starts_with("unavailable: ") && note.contains("org.bluez"),
+            "{note}"
+        );
     }
 
     #[test]

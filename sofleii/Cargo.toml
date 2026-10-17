@@ -20,6 +20,10 @@ serde_json = "1"
 # No libudev: port enumeration falls back to sysfs, so the binary needs no
 # libudev headers to build and no extra shared library to run.
 serialport = { version = "4", default-features = false }
+# BlueZ over the system D-Bus for `battery`. Pure Rust (no libdbus), and the
+# blocking API on the async-io backend needs no tokio (bluer would).
+# 5.13 is the newest zbus whose MSRV fits rust-version 1.85.
+zbus = { version = "5.13.2", default-features = false, features = ["blocking-api", "async-io"] }
 
 [build-dependencies]
 prost-build = "0.14"
