@@ -21,7 +21,8 @@ Through the **Studio RPC protocol**, the same one the Studio web app uses,
 to the **left half**, over USB serial or Bluetooth. The firmware already
 carries what it needs: v3.0.0 kept cormoran's custom-RPC plumbing, with the
 `ble-management` subsystem for BLE profiles and the runtime-sensor-rotate
-subsystem for the encoder (see [Firmware](../reference/firmware/#modules)).
+subsystem for the encoder, and the `zmk-feature-device-info` subsystem
+reports which build is running (see [Firmware](../reference/firmware/#modules)).
 
 ## What it will do
 
