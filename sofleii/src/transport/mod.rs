@@ -2,6 +2,8 @@
 //! USB serial and (later) BLE are interchangeable.
 
 pub mod ble;
+#[cfg(test)]
+pub(crate) mod mock;
 pub mod serial;
 
 use serde::Serialize;

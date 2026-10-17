@@ -193,52 +193,9 @@ fn unexpected(what: &str, got: &ResponseSubsystem) -> Error {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::transport::TransportKind;
+    use crate::transport::mock::{Mock, response};
     use prost::Message;
     use std::collections::VecDeque;
-
-    /// Replays canned reads; records what was sent.
-    struct Mock {
-        reads: VecDeque<Vec<u8>>,
-        sent: Vec<Vec<u8>>,
-    }
-
-    impl Transport for Mock {
-        fn send(&mut self, bytes: &[u8]) -> Result<()> {
-            self.sent.push(bytes.to_vec());
-            Ok(())
-        }
-        fn recv(&mut self, buf: &mut [u8], timeout: Duration) -> Result<usize> {
-            match self.reads.pop_front() {
-                Some(r) => {
-                    buf[..r.len()].copy_from_slice(&r);
-                    Ok(r.len())
-                }
-                None => {
-                    std::thread::sleep(timeout.min(Duration::from_millis(5)));
-                    Ok(0)
-                }
-            }
-        }
-        fn info(&self) -> TransportInfo {
-            TransportInfo {
-                kind: TransportKind::Usb,
-                device: "mock".into(),
-            }
-        }
-    }
-
-    fn response(request_id: u32, sub: ResponseSubsystem) -> Vec<u8> {
-        studio::Response {
-            r#type: Some(studio::response::Type::RequestResponse(
-                studio::RequestResponse {
-                    request_id,
-                    subsystem: Some(sub),
-                },
-            )),
-        }
-        .encode_to_vec()
-    }
 
     fn device_info(name: &str) -> ResponseSubsystem {
         ResponseSubsystem::Core(core::Response {
