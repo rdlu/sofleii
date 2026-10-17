@@ -1,8 +1,10 @@
 ---
-title: Hold-tap timing
+title: Home-row mods & timing
+linkTitle: Home-row mods & timing
+aliases: [/docs/reference/hold-tap/]
 description: The Eyelash Sofle's home-row mods and AltGr mod-tap - the hold-tap behaviors, their timing read from the keymap, the index-finger exception, positional rules and tuning tips.
 keywords: [home row mods, HRM, hold-tap, tapping-term, require-prior-idle, quick-tap, balanced, hold-preferred, hold-trigger-key-positions, AltGr, ralt_mt]
-weight: 12
+weight: 11
 ---
 
 A hold-tap key sends one thing when tapped and another when held: on BASE,

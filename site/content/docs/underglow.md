@@ -33,6 +33,7 @@ release.
 
 ## BASE moods
 
+The keys below are drawn on the [SYS|NUM](../../keymap/sys-num/) layer page.
 How BASE looks at rest is up to you. Hold `mo(SYS|NUM)` and press one of the
 three mood keys on its bottom-left row; the change shows straight away:
 

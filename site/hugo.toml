@@ -29,19 +29,23 @@ disableKinds = ["taxonomy", "term", "rss"]
   pageRef = "/docs"
   weight = 1
 [[menu.main]]
-  name = "Search"
+  name = "Keymap"
+  pageRef = "/keymap"
   weight = 2
+[[menu.main]]
+  name = "Search"
+  weight = 3
   [menu.main.params]
     type = "search"
 [[menu.main]]
   name = "Theme"
-  weight = 3
+  weight = 4
   [menu.main.params]
     type = "theme-toggle"
 [[menu.main]]
   name = "GitHub"
   url = "https://github.com/rdlu/sofleii"
-  weight = 4
+  weight = 5
   [menu.main.params]
     icon = "github"
 
@@ -117,11 +121,11 @@ disableKinds = ["taxonomy", "term", "rss"]
 [[module.mounts]]
   source = "../keymap-drawer"
   target = "assets/keymap"
-  files = ["eyelash_sofle.svg"]
+  files = ["eyelash_sofle.svg", "eyelash_sofle.yaml"]
 # The keymap itself (hold-tap behaviors and combos, read by the
 # `keymap-behaviors` and `keymap-combos` shortcodes) and the west manifest
 # (dependency pins, the `west-pins` shortcode).
 [[module.mounts]]
   source = "../config"
   target = "assets/config"
-  files = ["eyelash_sofle.keymap", "west.yml"]
+  files = ["eyelash_sofle.keymap", "eyelash_sofle.json", "west.yml"]

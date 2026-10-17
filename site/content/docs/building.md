@@ -113,7 +113,7 @@ It renders `keymap-drawer/eyelash_sofle.svg` with
 [keymap-drawer](https://github.com/caksoylar/keymap-drawer), using the same
 version and physical layout as CI, so the result matches what the Draw Keymap
 workflow commits on `main`. That SVG is what the
-[Keymap](../reference/keymap/) page on this site shows.
+[Keymap](../../keymap/) page on this site shows.
 
 For a printable A4 PDF of the layers:
 

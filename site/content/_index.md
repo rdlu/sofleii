@@ -36,8 +36,8 @@ hero:
 </div>
 
 <div class="zs-actions">
+{{< hextra/hero-button text="The keymap" link="/keymap/" >}}
 {{< hextra/hero-button text="Get started" link="/docs/getting-started/" >}}
-{{< hextra/hero-button text="The keymap" link="/docs/reference/keymap/" >}}
 {{< hextra/hero-button text="GitHub" link="https://github.com/rdlu/sofleii" >}}
 </div>
 
@@ -52,13 +52,13 @@ hero:
     title="Home-row mods"
     icon="hand"
     subtitle="Alt, Ctrl and Shift under S D F and J K L. A mod fires only when the other hand joins in, and only after a pause in typing, so fast rolls stay letters."
-    link="docs/reference/hold-tap/"
+    link="keymap/hold-tap/"
   >}}
   {{< hextra/feature-card
     title="Nine layers"
     icon="collection"
     subtitle="BASE, NAV, CODE, MEDIA and SYS|NUM, plus a game picker and three game layers. CODE types programming digraphs (`|>`, `->`, `::<>`) in one key."
-    link="docs/reference/keymap/"
+    link="keymap/"
   >}}
   {{< hextra/feature-card
     title="Gaming mode"
@@ -82,7 +82,7 @@ hero:
     title="Soft off: Q + S + Z"
     icon="moon"
     subtitle="No ↓↘→ motion required: hold Q, S and Z together for two seconds and the board powers down. One press of reset wakes it."
-    link="docs/reference/combos/"
+    link="keymap/combos/"
   >}}
 {{< /hextra/feature-grid >}}
 
