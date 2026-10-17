@@ -1,75 +1,108 @@
+/*
+ * Physical layout of the Eyelash Sofle: the single source of truth.
+ * config/eyelash_sofle.json is generated from this file by
+ * scripts/layout-to-json.py (`mise run layout`); don't edit the JSON by hand.
+ *
+ * Copyright (c) 2026 Rodrigo Dlugokenski
+ * SPDX-License-Identifier: MIT
+ *
+ * The 58 regular Sofle keys (the 6x4 grid and the 5-key thumb row on each
+ * half) and the left encoder's position take their geometry from ZMK's Sofle
+ * layout, app/dts/layouts/josefadamcik/sofle.dtsi, Copyright (c) 2020 The ZMK
+ * Contributors, MIT. Changes from it:
+ *   - the right half sits 1u further right, to make room for the joystick;
+ *   - the inner thumb keys are 1u (ZMK draws them 1.5u), centred where ZMK
+ *     centres them, with the same rotation origins;
+ *   - the Eyelash's 5-way joystick (positions 6, 19, 32, 45, 58) is drawn as
+ *     a cross between the halves, and the encoder press (position 52) at
+ *     ZMK's left-encoder spot, 0.25u further right so it doesn't touch B.
+ *
+ * Key order is the keymap's 64-position order (default_transform in
+ * eyelash_sofle.dtsi): rows 0-3 are 6 left keys, the joystick key of that
+ * row (up, down, left, right), 6 right keys; row 4 is the encoder press, 5
+ * left thumb-row keys, the joystick centre, 5 right thumb-row keys. Combos
+ * and hold-trigger-key-positions depend on it.
+ */
+
 #include <physical_layouts.dtsi>
 
 / {
     eyelash_sofle_layout: eyelash_sofle_layout {
         compatible = "zmk,physical-layout";
-        display-name = "Layout";
+        display-name = "Eyelash Sofle";
         transform = <&default_transform>;
+
         keys  //                     w   h    x    y     rot    rx    ry
-            = <&key_physical_attrs 100 100    0   50       0     0     0>
-            , <&key_physical_attrs 100 100  100   50       0     0     0>
+            // row 0: 0-5 left, 6 joystick up, 7-12 right
+            = <&key_physical_attrs 100 100    0   37       0     0     0>
+            , <&key_physical_attrs 100 100  100   37       0     0     0>
             , <&key_physical_attrs 100 100  200   12       0     0     0>
             , <&key_physical_attrs 100 100  300    0       0     0     0>
             , <&key_physical_attrs 100 100  400   12       0     0     0>
-            , <&key_physical_attrs 100 100  500   12       0     0     0>
-            , <&key_physical_attrs 100 100  775   12       0     0     0>
-            , <&key_physical_attrs 100 100 1050   12       0     0     0>
-            , <&key_physical_attrs 100 100 1150   12       0     0     0>
-            , <&key_physical_attrs 100 100 1250    0       0     0     0>
-            , <&key_physical_attrs 100 100 1350   12       0     0     0>
-            , <&key_physical_attrs 100 100 1450   50       0     0     0>
-            , <&key_physical_attrs 100 100 1550   50       0     0     0>
-            , <&key_physical_attrs 100 100    0  150       0     0     0>
-            , <&key_physical_attrs 100 100  100  150       0     0     0>
+            , <&key_physical_attrs 100 100  500   24       0     0     0>
+            , <&key_physical_attrs 100 100  750    0       0     0     0>
+            , <&key_physical_attrs 100 100 1000   24       0     0     0>
+            , <&key_physical_attrs 100 100 1100   12       0     0     0>
+            , <&key_physical_attrs 100 100 1200    0       0     0     0>
+            , <&key_physical_attrs 100 100 1300   12       0     0     0>
+            , <&key_physical_attrs 100 100 1400   37       0     0     0>
+            , <&key_physical_attrs 100 100 1500   37       0     0     0>
+            // row 1: 13-18 left, 19 joystick down, 20-25 right
+            , <&key_physical_attrs 100 100    0  137       0     0     0>
+            , <&key_physical_attrs 100 100  100  137       0     0     0>
             , <&key_physical_attrs 100 100  200  112       0     0     0>
             , <&key_physical_attrs 100 100  300  100       0     0     0>
             , <&key_physical_attrs 100 100  400  112       0     0     0>
-            , <&key_physical_attrs 100 100  500  112       0     0     0>
-            , <&key_physical_attrs 100 100  775  212       0     0     0>
-            , <&key_physical_attrs 100 100 1050  112       0     0     0>
-            , <&key_physical_attrs 100 100 1150  112       0     0     0>
-            , <&key_physical_attrs 100 100 1250  100       0     0     0>
-            , <&key_physical_attrs 100 100 1350  112       0     0     0>
-            , <&key_physical_attrs 100 100 1450  150       0     0     0>
-            , <&key_physical_attrs 100 100 1550  150       0     0     0>
-            , <&key_physical_attrs 100 100    0  250       0     0     0>
-            , <&key_physical_attrs 100 100  100  250       0     0     0>
+            , <&key_physical_attrs 100 100  500  124       0     0     0>
+            , <&key_physical_attrs 100 100  750  200       0     0     0>
+            , <&key_physical_attrs 100 100 1000  124       0     0     0>
+            , <&key_physical_attrs 100 100 1100  112       0     0     0>
+            , <&key_physical_attrs 100 100 1200  100       0     0     0>
+            , <&key_physical_attrs 100 100 1300  112       0     0     0>
+            , <&key_physical_attrs 100 100 1400  137       0     0     0>
+            , <&key_physical_attrs 100 100 1500  137       0     0     0>
+            // row 2: 26-31 left, 32 joystick left, 33-38 right
+            , <&key_physical_attrs 100 100    0  237       0     0     0>
+            , <&key_physical_attrs 100 100  100  237       0     0     0>
             , <&key_physical_attrs 100 100  200  212       0     0     0>
             , <&key_physical_attrs 100 100  300  200       0     0     0>
             , <&key_physical_attrs 100 100  400  212       0     0     0>
-            , <&key_physical_attrs 100 100  500  212       0     0     0>
-            , <&key_physical_attrs 100 100  675  112       0     0     0>
-            , <&key_physical_attrs 100 100 1050  212       0     0     0>
-            , <&key_physical_attrs 100 100 1150  212       0     0     0>
-            , <&key_physical_attrs 100 100 1250  200       0     0     0>
-            , <&key_physical_attrs 100 100 1350  212       0     0     0>
-            , <&key_physical_attrs 100 100 1450  250       0     0     0>
-            , <&key_physical_attrs 100 100 1550  250       0     0     0>
-            , <&key_physical_attrs 100 100    0  350       0     0     0>
-            , <&key_physical_attrs 100 100  100  350       0     0     0>
+            , <&key_physical_attrs 100 100  500  224       0     0     0>
+            , <&key_physical_attrs 100 100  650  100       0     0     0>
+            , <&key_physical_attrs 100 100 1000  224       0     0     0>
+            , <&key_physical_attrs 100 100 1100  212       0     0     0>
+            , <&key_physical_attrs 100 100 1200  200       0     0     0>
+            , <&key_physical_attrs 100 100 1300  212       0     0     0>
+            , <&key_physical_attrs 100 100 1400  237       0     0     0>
+            , <&key_physical_attrs 100 100 1500  237       0     0     0>
+            // row 3: 39-44 left, 45 joystick right, 46-51 right
+            , <&key_physical_attrs 100 100    0  337       0     0     0>
+            , <&key_physical_attrs 100 100  100  337       0     0     0>
             , <&key_physical_attrs 100 100  200  312       0     0     0>
             , <&key_physical_attrs 100 100  300  300       0     0     0>
             , <&key_physical_attrs 100 100  400  312       0     0     0>
-            , <&key_physical_attrs 100 100  500  312       0     0     0>
-            , <&key_physical_attrs 100 100  875  112       0     0     0>
-            , <&key_physical_attrs 100 100 1050  312       0     0     0>
-            , <&key_physical_attrs 100 100 1150  312       0     0     0>
-            , <&key_physical_attrs 100 100 1250  300       0     0     0>
-            , <&key_physical_attrs 100 100 1350  312       0     0     0>
-            , <&key_physical_attrs 100 100 1450  350       0     0     0>
-            , <&key_physical_attrs 100 100 1550  350       0     0     0>
-            , <&key_physical_attrs 100 100  650  338       0     0     0>
-            , <&key_physical_attrs 100 100  200  412       0     0     0>
-            , <&key_physical_attrs 100 100  300  400       0     0     0>
-            , <&key_physical_attrs 100 100  400  412       0     0     0>
-            , <&key_physical_attrs 100 100  550  412    3000   500   412>
-            , <&key_physical_attrs 100 100  675  362    3000   500   412>
-            , <&key_physical_attrs 100 100  775  112       0     0     0>
-            , <&key_physical_attrs 100 100  875  362 (-3000)  1150   412>
-            , <&key_physical_attrs 100 100 1000  412 (-3000)  1150   412>
-            , <&key_physical_attrs 100 100 1150  412       0     0     0>
-            , <&key_physical_attrs 100 100 1250  400       0     0     0>
-            , <&key_physical_attrs 100 100 1350  412       0     0     0>
+            , <&key_physical_attrs 100 100  500  324       0     0     0>
+            , <&key_physical_attrs 100 100  850  100       0     0     0>
+            , <&key_physical_attrs 100 100 1000  324       0     0     0>
+            , <&key_physical_attrs 100 100 1100  312       0     0     0>
+            , <&key_physical_attrs 100 100 1200  300       0     0     0>
+            , <&key_physical_attrs 100 100 1300  312       0     0     0>
+            , <&key_physical_attrs 100 100 1400  337       0     0     0>
+            , <&key_physical_attrs 100 100 1500  337       0     0     0>
+            // row 4: 52 encoder press, 53-57 left thumb row,
+            // 58 joystick centre, 59-63 right thumb row
+            , <&key_physical_attrs 100 100  625  274       0     0     0>
+            , <&key_physical_attrs 100 100  175  437       0     0     0>
+            , <&key_physical_attrs 100 100  275  412       0     0     0>
+            , <&key_physical_attrs 100 100  375  412       0     0     0>
+            , <&key_physical_attrs 100 100  490  412    1200   490   412>
+            , <&key_physical_attrs 100 100  600  408    2400   600   433>
+            , <&key_physical_attrs 100 100  750  100       0     0     0>
+            , <&key_physical_attrs 100 100  900  408 (-2400) 1000   433>
+            , <&key_physical_attrs 100 100 1010  412 (-1200) 1110   412>
+            , <&key_physical_attrs 100 100 1125  412       0     0     0>
+            , <&key_physical_attrs 100 100 1225  412       0     0     0>
+            , <&key_physical_attrs 100 100 1325  437       0     0     0>
             ;
     };
 };

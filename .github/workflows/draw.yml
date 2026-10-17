@@ -8,12 +8,27 @@ on:
       - "config/**"
       - .github/workflows/draw.yml
       - keymap_drawer.config.yaml
+      - scripts/layout-to-json.py
 
 env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
 
 jobs:
+  # config/eyelash_sofle.json is generated from the shield's physical-layout
+  # .dtsi (`mise run layout`). The draw job below renders from the committed
+  # JSON, so refuse to draw from a stale one rather than generating it here:
+  # that keeps the CI render byte-identical to the local `mise run draw`.
+  layout:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Physical-layout JSON matches the .dtsi
+        run: python3 scripts/layout-to-json.py --check
+
   draw:
+    needs: layout
     # Pinned to a SHA, not @main: this reusable workflow runs with
     # `contents: write` on this repo. SHA is caksoylar/keymap-drawer main HEAD
     # as of 2026-08-29.
