@@ -1,9 +1,9 @@
-/* The printable keymap (layouts/keymap-print.html), A4 landscape.
+/* The printable keymap (layouts/keymap-print.html), A4 portrait.
    Loaded after custom.css and only on that page. Always light, and
    grayscale-safe: key styles differ by line style and weight, not colour. */
 
 @page {
-  size: A4 landscape;
+  size: A4 portrait;
   margin: 9mm 10mm 11mm;
   @bottom-left {
     font-family: "0xProto", ui-monospace, monospace;
@@ -49,11 +49,11 @@ body.zs-print {
   border-radius: 1.5pt;
 }
 
-/* One sheet = one printed page (277 x 190 mm inside the margins). On screen
+/* One sheet = one printed page (190 x 277 mm inside the margins). On screen
    the sheets stack, page-sized, so the view matches the PDF. */
 .sheet {
   box-sizing: border-box;
-  width: 277mm;
+  width: 190mm;
   margin: 0 auto;
   break-after: page;
 }
@@ -61,10 +61,10 @@ body.zs-print {
 @media screen {
   body.zs-print { padding: 8mm 0; background: #ddd; }
   .sheet {
-    min-height: 190mm;
+    min-height: 277mm;
     margin-bottom: 8mm;
     padding: 6mm;
-    width: 289mm;
+    width: 202mm;
     background: #fff;
     box-shadow: 0 0 0 1px #bbb;
   }
@@ -97,8 +97,8 @@ body.zs-print {
 }
 .manual .qr img { width: 18mm; height: 18mm; image-rendering: pixelated; }
 .manual .cols {
-  column-count: 3;
-  column-gap: 7mm;
+  column-count: 2;
+  column-gap: 8mm;
   margin-top: 3mm;
 }
 .manual h2 {
@@ -146,8 +146,11 @@ body.zs-print {
   background: #fff;
   break-inside: avoid;
 }
-.grids.n1 .zs-layer { width: 277mm; }
-.grids.n2 .zs-layer { width: 206mm; }
+.grids.n1 .zs-layer,
+.grids.n2 .zs-layer { width: 190mm; }
+/* Three to a portrait page: a little under full width, so three grids,
+   their captions and (on the first sheet) the legend fit in 277 mm. */
+.grids.n3 .zs-layer { width: 182mm; }
 .zs-print .zs-layer .bar {
   color: #000;
   border-bottom: 0.6pt solid #000;
@@ -163,7 +166,7 @@ body.zs-print {
   font-size: 8pt;
 }
 .zs-print .legend {
-  width: 277mm;
+  width: 182mm;
   margin: 0;
   color: #222;
   font-size: 7.6pt;

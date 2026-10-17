@@ -1,6 +1,6 @@
 ---
 title: Keymap printout
-description: The printable Eyelash Sofle keymap - a one-page basics manual and every layer's grid, laid out for A4 landscape. Download it as /sofleii-keymap.pdf.
+description: The printable Eyelash Sofle keymap - a one-page basics manual and every layer's grid, laid out for A4 portrait. Download it as /sofleii-keymap.pdf.
 url: /keymap/print/
 # A standalone page (layouts/keymap-print.html): no navbar, sidebar, pager or
 # footer, always the light palette. CI prints it to /sofleii-keymap.pdf with
@@ -14,14 +14,13 @@ excludeSearch: true
 noindex: true
 sitemap:
   disable: true
-# Pages after the basics: each list is one A4 page of layer grids, by
-# display-name. The first one also carries the key-style legend.
+# Pages after the basics: each list is one A4 page of layer grids (three
+# fit a portrait page), by display-name. The first one also carries the
+# key-style legend.
 sheets:
-  - layers: ["BASE"]
-  - layers: ["NAV", "CODE"]
-  - layers: ["MEDIA", "SYS|NUM"]
-  - layers: ["GAME?", "MINECRFT"]
-  - layers: ["GAME", "NOMANSKY"]
+  - layers: ["BASE", "NAV", "CODE"]
+  - layers: ["MEDIA", "SYS|NUM", "GAME?"]
+  - layers: ["MINECRFT", "GAME", "NOMANSKY"]
 captions:
   BASE: "Always on. Hold-tap keys: tap for the big legend, hold for the small one under it."
   NAV: "Hold the left thumb's NAV key. Arrows on HJKL, function keys on the top row, window-manager shortcuts on the left."

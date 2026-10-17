@@ -24,8 +24,8 @@ keymap, and explain what the drawing can't.
 {{< hextra/hero-button text="Print view" link="/keymap/print/" >}}
 </div>
 
-The PDF is A4 landscape: a one-page summary of the basics, then every
-layer's grid. It is printed from the [print view](print/) on every site
+The PDF is four A4 portrait pages: a one-page summary of the basics, then
+every layer's grid, three to a page. It is printed from the [print view](print/) on every site
 build, so it matches the keymap the site shows.
 
 {{< keymap-svg >}}

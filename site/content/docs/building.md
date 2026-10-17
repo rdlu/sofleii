@@ -132,10 +132,10 @@ workflow commits on `main`. That SVG is what the
 ## The keymap PDF
 
 The site publishes a printable keymap at
-[/sofleii-keymap.pdf](/sofleii-keymap.pdf): a one-page summary of the basics,
-then every layer's grid, A4 landscape. The Pages workflow prints the
-[print view](../../keymap/print/) with headless Chromium after each site
-build. To make it locally:
+[/sofleii-keymap.pdf](/sofleii-keymap.pdf), four A4 portrait pages: a
+one-page summary of the basics, then every layer's grid, three to a page.
+The Pages workflow prints the [print view](../../keymap/print/) with
+headless Chromium after each site build. To make it locally:
 
 ```sh
 mise run docs-pdf        # build the site, print site/public/sofleii-keymap.pdf
