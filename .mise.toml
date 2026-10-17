@@ -130,19 +130,29 @@ description = "Repair a drifted west workspace: repoint remotes at the manifest 
 run = """
 set -eu
 
+repoint() {
+  west list -f '{name}|{url}|{abspath}' | while IFS='|' read -r name url path; do
+    case "$url" in ''|'N/A') continue ;; esac
+    [ -e "$path/.git" ] || continue
+    git -C "$path" remote -v | grep -qF "$url" && continue
+    RNAME=$(git -C "$path" remote | head -1)
+    [ -n "$RNAME" ] || continue
+    echo "   $name: remote '$RNAME' -> $url"
+    git -C "$path" remote set-url "$RNAME" "$url"
+  done
+}
+
 echo ">> Repointing project remotes at the manifest URLs..."
-west list -f '{name}|{url}|{abspath}' | while IFS='|' read -r name url path; do
-  case "$url" in ''|'N/A') continue ;; esac
-  [ -e "$path/.git" ] || continue
-  git -C "$path" remote -v | grep -qF "$url" && continue
-  RNAME=$(git -C "$path" remote | head -1)
-  [ -n "$RNAME" ] || continue
-  echo "   $name: remote '$RNAME' -> $url"
-  git -C "$path" remote set-url "$RNAME" "$url"
-done
+repoint
 
 echo ">> west update..."
 west update
+
+# Again after the update: a new zmk revision can import a manifest that moves
+# other projects to new URLs (hal_stm32, lvgl, nanopb on the v0.3 -> v4 move,
+# 2026-10-17), and west fetches those without repointing the existing clones.
+echo ">> Repointing remotes the updated manifest changed..."
+repoint
 
 # build/ caches the resolved board and Zephyr paths from the OLD tree; leaving it
 # makes the next build fail or, worse, succeed against stale generated headers.
