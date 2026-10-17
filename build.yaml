@@ -7,11 +7,16 @@
 # bash in the build step. We deliberately do NOT add a root zephyr/module.yml
 # (which would auto-set ZMK_EXTRA_MODULES) because the local west workspace keeps
 # the Zephyr RTOS at ./zephyr — a root marker would collide with it.
+#
+# The left half also loads config/ci-git-safe-directory.cmake: the build runs as
+# root in ZMK's container on a runner-owned checkout, so git would refuse the repo
+# ("dubious ownership") and zmk-feature-device-info (#46) would embed an empty
+# zmk_config_version. The file marks the workspace safe for that configure run.
 include:
   - board: nice_nano//zmk
     shield: eyelash_sofle_left nice_view
     snippet: studio-rpc-usb-uart
-    cmake-args: -DCONFIG_ZMK_STUDIO=y -DCONFIG_ZMK_STUDIO_LOCKING=n -DZMK_EXTRA_MODULES=${GITHUB_WORKSPACE}/zmk-rgb-layer
+    cmake-args: -DCONFIG_ZMK_STUDIO=y -DCONFIG_ZMK_STUDIO_LOCKING=n -DZMK_EXTRA_MODULES=${GITHUB_WORKSPACE}/zmk-rgb-layer -DCMAKE_PROJECT_INCLUDE_BEFORE=${GITHUB_WORKSPACE}/config/ci-git-safe-directory.cmake
     artifact-name: eyelash_sofle_studio_left
   - board: nice_nano//zmk
     shield: eyelash_sofle_right nice_view

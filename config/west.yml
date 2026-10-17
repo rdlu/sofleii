@@ -56,5 +56,12 @@ manifest:
     - name: zmk-behavior-runtime-sensor-rotate
       remote: cormoran
       revision: 8b1125ed676c1f5e14145d217984f33d0ebdcef4  # track: main
+    # Build/version info over Studio RPC (custom subsystem `zmk__device_info`,
+    # #46): ZMK/config/Zephyr versions, build timestamp, board, GNU build-id,
+    # hardware id + reset cause. Its test manifest targets
+    # `main+custom-studio-protocol`, the line our `main+dya` is built on.
+    - name: zmk-feature-device-info
+      remote: cormoran
+      revision: 8cedd2dd9f04e19ea5a17b94914dd47a09d8db11  # track: main
   self:
     path: config
