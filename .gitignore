@@ -9,18 +9,13 @@ tools/
 # Generated keymap printout (rebuild with `mise run draw-pdf`)
 keymap-drawer/eyelash_sofle.pdf
 
-# west-managed vendor sources
-eyelash_sofle/
 # Anchored to repo root: the west-cloned Zephyr RTOS lives at ./zephyr, but an
 # unanchored `zephyr/` also swallowed zmk-rgb-layer/zephyr/module.yml (the in-repo
 # module marker), so it never reached CI. Keep it root-only.
 /zephyr/
-# cormoran DYA Studio modules (west-cloned into repo root)
+# cormoran custom-RPC modules (west-cloned into repo root)
 zmk-behavior-runtime-sensor-rotate/
 zmk-module-ble-management/
-zmk-module-battery-history/
-zmk-module-settings-rpc/
-zmk-module-runtime-input-processor/
 
 # Claude Code local machine settings (skills in .claude/commands/ remain tracked)
 .claude/settings.local.json

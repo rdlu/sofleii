@@ -166,7 +166,7 @@ For reference — the `mise` task downloads these automatically, but if you're f
 |------|--------|
 | `eyelash_sofle_studio_left.uf2` | Left half (ZMK Studio enabled) |
 | `nice_view-eyelash_sofle_right-zmk.uf2` | Right half |
-| `settings_reset-nice_nano_v2-zmk.uf2` | Either half — clears Studio overlay + BT bonds |
+| `settings_reset.uf2` | Either half — clears Studio overlay + BT bonds |
 
 For the drag-and-drop flashing flow without `mise`, see [FLASHING_MANUAL.md](FLASHING_MANUAL.md).
 
@@ -178,7 +178,7 @@ If the halves fail to connect to each other, clear their Bluetooth bonds and let
 1. Hold `mo(SYS|NUM)` (left thumb) and tap `BT_CLR` (top-left of the SYS layer, above `Q`).
 
 **Right half — always requires settings reset:**
-1. Flash `settings_reset-nice_nano_v2-zmk.uf2` to the right half (the right half has no independent access to the SYS layer when disconnected).
+1. Flash `settings_reset.uf2` to the right half (the right half has no independent access to the SYS layer when disconnected).
 
 **After clearing bonds:**
 1. Power off both halves.
@@ -190,15 +190,15 @@ If the halves fail to connect to each other, clear their Bluetooth bonds and let
 
 ## Firmware memory budget
 
-Headroom available for future keymap growth, measured on `feat/nms-gaming-profile` (CI run [33675145109](https://github.com/rdlu/zmk-sofle/actions/runs/33675145109), 2026-09-02) (DYA Studio: cormoran ZMK fork + 5 modules, plus the in-repo `zmk-rgb-layer` underglow module). The left half is the tightest because Studio + the DYA modules ship on it (USB CDC-ACM + BLE GATT studio transports both compiled in); `zmk-rgb-layer` compiles central-only, so it adds to the left half only.
+Headroom available for future keymap growth, measured on `feat/zmk-v4` (CI run [39026110927](https://github.com/rdlu/zmk-sofle/actions/runs/39026110927), 2026-10-17): cormoran's ZMK fork on the ZMK-main / Zephyr 4.1 line + 2 custom-RPC modules (`ble-management`, `runtime-sensor-rotate`), plus the in-repo `zmk-rgb-layer` underglow module. The left half is the tightest because Studio + the custom-RPC modules ship on it (USB CDC-ACM + BLE GATT studio transports both compiled in); `zmk-rgb-layer` compiles central-only, so it adds to the left half only.
 
 | Build | Flash used | Flash free | RAM used | RAM free |
 |-------|-----------:|-----------:|---------:|---------:|
-| Left (Studio + nice_view) | 410 KB / 792 KB (51.8%) | **382 KB** | 109 KB / 256 KB (42.4%) | **147 KB** |
-| Right (nice_view) | 270 KB / 792 KB (34.1%) | **522 KB** | 62 KB / 256 KB (24.3%) | **194 KB** |
-| Settings reset | 45 KB / 792 KB (5.7%) | — | 11 KB / 256 KB (4.4%) | — |
+| Left (Studio + nice_view) | 457 KB / 792 KB (57.7%) | **335 KB** | 123 KB / 256 KB (48.2%) | **133 KB** |
+| Right (nice_view) | 323 KB / 792 KB (40.8%) | **469 KB** | 77 KB / 256 KB (30.1%) | **179 KB** |
+| Settings reset | 51 KB / 792 KB (6.5%) | — | 13 KB / 256 KB (4.9%) | — |
 
-Just under half the flash is still free on the left half and two-thirds on the right, so new layers, macros, and combos have plenty of room. The ninth layer (NOMANSKY) cost about 1 KB of flash and 2 KB of RAM on the left half versus the previous eight-layer measurement. The DYA Studio modules added ~21 KB to the left half; the `zmk-rgb-layer` indicator module is negligible (well under 1 KB). Dropping Studio from the left half would recover a large chunk of flash if a future feature ever needs it.
+The Zephyr 3.5 → 4.1 move costs about 47 KB of flash / 14 KB of RAM on the left half and 53 KB / 15 KB on the right, even after dropping three of the five DYA modules (`battery-history`, `settings-rpc`, `runtime-input-processor`) — that is the newer Zephyr/BLE stack, not the keymap. Over 40% of the flash is still free on the left half and almost 60% on the right, so new layers, macros, and combos have plenty of room. The `zmk-rgb-layer` indicator module is negligible (well under 1 KB).
 
 Refresh the numbers after any significant keymap change by re-reading the `Memory region` block in the latest `Build ZMK firmware` run log.
 
@@ -215,7 +215,7 @@ sudo pacman -S cmake ninja dtc git dfu-util
 yay -S python-west mise
 ```
 
-> **Why not `yay -S zephyr-sdk`?** The AUR package installs SDK 1.0.0 (March 2026), which requires Zephyr 4.2+. ZMK v0.3.0 targets Zephyr 3.5 — incompatible.
+> **Why not `yay -S zephyr-sdk`?** The AUR package installs SDK 1.0.0 (March 2026), which targets Zephyr 4.2+. This repo builds on ZMK `main` (cormoran's `main+dya`), which is on Zephyr 4.1 — SDK 0.17.0 is the matching toolchain.
 
 ### 2. Install the Zephyr SDK 0.17.0 (ARM toolchain)
 
@@ -263,14 +263,14 @@ mise run deps-check
 
 It reads the `# track: <ref>` comment beside each pin in `config/west.yml` — naming the upstream branch or tag stream the SHA was taken from — and reports which projects have moved. One `git ls-remote` per project; no fetching. To take an update: edit the revision, `west update`, `mise run doctor`, build both halves, then commit.
 
-> **Bumping `zmk` needs one extra step.** `config/west.yml` deliberately overrides `zephyr`, because `zmk/app/west.yml` declares it at a *branch* (`v3.5.0+zmk-fixes`) and pinning `zmk` alone would leave Zephyr floating. If a `zmk` bump changes that entry upstream, mirror the change into `config/west.yml`.
+> **Bumping `zmk` needs one extra step.** `config/west.yml` deliberately overrides `zephyr`, because `zmk/app/west.yml` declares it at a *branch* (`v4.1.0+zmk-fixes`) and pinning `zmk` alone would leave Zephyr floating. If a `zmk` bump changes that entry upstream, mirror the change into `config/west.yml`.
 
 ### 4. Build and flash
 
 Build the firmware locally:
 
 ```bash
-mise run build-left    # left half (DYA Studio enabled)
+mise run build-left    # left half (Studio + custom RPC enabled)
 mise run build-right   # right half
 mise run build-reset   # settings reset (clears Studio overlay + BT bonds)
 ```

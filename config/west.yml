@@ -5,19 +5,19 @@ manifest:
     - name: cormoran
       url-base: https://github.com/cormoran
   projects:
-    # eyelash_sofle board/shield module — pinned to the "adapt to dyastudio"
-    # commit (#98), which provides boards/shields/eyelash_sofle/ + per-side
-    # studio confs. Pinned (not `main`) for reproducible builds.
-    - name: eyelash_sofle
-      url: https://github.com/a741725193/zmk-sofle
-      revision: 4848e21f8c42b99adc05eeb699fb02c91146dca8  # track: main
-    # cormoran's ZMK fork (v0.3 base) — adds DYA Studio BLE keymap editing.
+    # The eyelash_sofle shield is vendored in-repo at config/boards/shields/
+    # (the vendor module a741725193/zmk-sofle only targets ZMK v0.3 and
+    # hardcodes every DYA module into its confs/overlays).
+    #
+    # cormoran's ZMK fork, ZMK-main line (Zephyr 4.1, HWMv2). `main+dya` =
+    # `main+custom-studio-protocol` + cormoran's BLE/activity extensions — the
+    # custom Studio RPC that ble-management (and the planned TUI) talks through.
     - name: zmk
       remote: cormoran
-      revision: 4493783ef88ce2e653bf8217c92ee17140df71e3  # track: v0.3-branch+dya
+      revision: e5c9b6915b56801193e359dd9bad4a167ce0d1b8  # track: main+dya
       import: app/west.yml
     # Zephyr OVERRIDE. zmk/app/west.yml declares zephyr at the *branch*
-    # `v3.5.0+zmk-fixes`, so pinning zmk alone would NOT freeze Zephyr — west
+    # `v4.1.0+zmk-fixes`, so pinning zmk alone would NOT freeze Zephyr — west
     # re-resolves that branch name on every update. A project declared in the
     # top-level manifest takes precedence over the same name in an imported one,
     # so this entry pins it. It must replicate zmk's entry verbatim (clone-depth
@@ -25,7 +25,7 @@ manifest:
     # zmk and its manifest changes this block, mirror the change here.
     - name: zephyr
       remote: zmkfirmware
-      revision: dacab4875df72109b96cc8977547a0dc04875bcd  # track: v3.5.0+zmk-fixes
+      revision: 10ba6d0cb38bc3d258775d27982f707599320085  # track: v4.1.0+zmk-fixes
       clone-depth: 1
       import:
         name-blocklist:
@@ -36,7 +36,6 @@ manifest:
           - hal_microchip
           - hal_nxp
           - hal_openisa
-          - hal_silabs
           - hal_xtensa
           - hal_st
           - hal_ti
@@ -47,24 +46,15 @@ manifest:
           - openthread
           - edtt
           - trusted-firmware-m
-    # DYA Studio support modules (cormoran). All pinned to SHAs/tags: these
-    # three used to track `main`, so CI (fresh `west update` every run) and a
-    # local workspace could build different module source. SHAs below captured
-    # 2026-08-29 from each repo's `main` HEAD.
+    # cormoran custom-RPC modules. Only the ones with a ZMK-main (v4) line are
+    # kept: battery-history and settings-rpc are still v0.3-only upstream, and
+    # runtime-input-processor was only pulled in by the vendor overlay (the
+    # keymap uses stock zip_* processors).
+    - name: zmk-module-ble-management
+      remote: cormoran
+      revision: 57738cc4fc6ba80e82a7ac57741a0339cb186cd4  # track: main
     - name: zmk-behavior-runtime-sensor-rotate
       remote: cormoran
       revision: 8b1125ed676c1f5e14145d217984f33d0ebdcef4  # track: main
-    - name: zmk-module-ble-management
-      remote: cormoran
-      revision: zmk-v0.3.0.0  # track: tags
-    - name: zmk-module-battery-history
-      remote: cormoran
-      revision: 307755dd2ad4d320e14de162e8e5ef018f29d929  # track: main
-    - name: zmk-module-settings-rpc
-      remote: cormoran
-      revision: 78f86df9e6c5edaf57bef3ccbd7f360cfdf49291  # track: main
-    - name: zmk-module-runtime-input-processor
-      remote: cormoran
-      revision: zmk-v0.3.0.0  # track: tags
   self:
     path: config
