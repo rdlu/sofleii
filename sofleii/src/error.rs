@@ -8,7 +8,7 @@ pub type Result<T, E = Error> = std::result::Result<T, E>;
 /// Process exit codes (the stable contract from #44).
 pub mod exit {
     pub const OK: u8 = 0;
-    /// Check failed / attention needed (no command uses it yet).
+    /// Check failed / attention needed (`battery --warn-below`).
     pub const CHECK_FAILED: u8 = 1;
     pub const NOT_FOUND: u8 = 2;
     pub const USAGE: u8 = 3;
@@ -32,6 +32,8 @@ pub enum Error {
     Protocol(String),
     /// The keyboard answered with an RPC-level error.
     Rpc(String),
+    /// A D-Bus or GATT call to BlueZ failed (battery levels).
+    Bluez(String),
 }
 
 impl Error {
@@ -39,9 +41,11 @@ impl Error {
         match self {
             Error::NotFound(_) => exit::NOT_FOUND,
             Error::Usage(_) => exit::USAGE,
-            Error::Io { .. } | Error::Timeout { .. } | Error::Protocol(_) | Error::Rpc(_) => {
-                exit::TRANSPORT
-            }
+            Error::Io { .. }
+            | Error::Timeout { .. }
+            | Error::Protocol(_)
+            | Error::Rpc(_)
+            | Error::Bluez(_) => exit::TRANSPORT,
         }
     }
 
@@ -61,6 +65,7 @@ impl Error {
             Error::Timeout { .. } => "timeout",
             Error::Protocol(_) => "protocol",
             Error::Rpc(_) => "rpc",
+            Error::Bluez(_) => "bluez",
         }
     }
 }
@@ -80,6 +85,7 @@ impl fmt::Display for Error {
             }
             Error::Protocol(m) => write!(f, "protocol error: {m}"),
             Error::Rpc(m) => write!(f, "keyboard returned an error: {m}"),
+            Error::Bluez(m) => write!(f, "BlueZ error: {m}"),
         }
     }
 }

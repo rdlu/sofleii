@@ -1,6 +1,6 @@
 //! Rendering of command results: human-readable text, the versioned JSON
 //! contract from #44 (`"schema": 1`, snake_case keys, explicit `null`s), or
-//! waybar's custom-module JSON for `status`.
+//! waybar's custom-module JSON for `status` and `battery`.
 
 use std::io::{IsTerminal, Write};
 
@@ -8,6 +8,7 @@ use serde::Serialize;
 
 use crate::Error;
 use crate::commands::{
+    battery::{Reading, Thresholds},
     info::Info,
     profiles::Profiles,
     status::{BatteryLevel, Status},
@@ -122,6 +123,9 @@ pub struct Waybar {
     pub tooltip: String,
     pub class: &'static str,
     pub alt: &'static str,
+    /// For waybar's `format-icons` (`battery`: the lower half's level).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub percentage: Option<u8>,
 }
 
 impl Waybar {
@@ -170,6 +174,7 @@ pub fn waybar_status(transport: &TransportInfo, s: &Status) -> Waybar {
         tooltip,
         class,
         alt: class,
+        percentage: None,
     }
 }
 
@@ -184,6 +189,91 @@ pub fn waybar_error(err: &Error) -> Waybar {
         tooltip: format!("{headline}\n{err}"),
         class: "disconnected",
         alt: "disconnected",
+        percentage: None,
+    }
+}
+
+/// Glyphs in `battery`'s waybar `text`: nf-md-keyboard U+F030C, and
+/// nf-md-keyboard_off U+F0310 when the keyboard isn't found.
+pub const GLYPH_KEYBOARD: &str = "\u{f030c}";
+pub const GLYPH_KEYBOARD_OFF: &str = "\u{f0310}";
+
+fn pct_or_dash(p: Option<u8>) -> String {
+    p.map_or_else(|| "-".to_string(), |p| p.to_string())
+}
+
+/// `battery --format waybar`: `"󰌌 L 100 R 77"`, class by the lower half.
+pub fn waybar_battery(r: &Reading, t: Thresholds) -> Waybar {
+    let class = t.classify(r).as_str();
+    let pct = |p: Option<u8>| p.map_or_else(|| "-".to_string(), |p| format!("{p}%"));
+    let mut tooltip = format!(
+        "{}\nleft: {}\nright: {}\nsource: BlueZ GATT {}",
+        r.device.name,
+        pct(r.left.percent),
+        pct(r.right.percent),
+        r.device.address
+    );
+    if let Some(n) = &r.note {
+        tooltip.push_str(&format!("\nnote: {n}"));
+    }
+    Waybar {
+        text: format!(
+            "{GLYPH_KEYBOARD} L {} R {}",
+            pct_or_dash(r.left.percent),
+            pct_or_dash(r.right.percent)
+        ),
+        tooltip,
+        class,
+        alt: class,
+        percentage: r.min_percent(),
+    }
+}
+
+/// waybar output for a failed `battery`: still valid JSON.
+pub fn waybar_battery_error(err: &Error) -> Waybar {
+    let headline = match err {
+        Error::NotFound(_) => "Eyelash Sofle not connected over BLE",
+        _ => "Eyelash Sofle: battery read failed",
+    };
+    Waybar {
+        text: GLYPH_KEYBOARD_OFF.to_string(),
+        tooltip: format!("{headline}\n{err}"),
+        class: "disconnected",
+        alt: "disconnected",
+        percentage: None,
+    }
+}
+
+/// `sofleii battery` in any format. Human: two lines, `left 100%` and
+/// `right 77%` (the note, if any, goes to stderr from the CLI).
+pub fn battery(style: Style, r: &Reading, t: Thresholds) -> String {
+    match style.format {
+        Format::Json => {
+            #[derive(Serialize)]
+            struct Env<'a> {
+                schema: u32,
+                #[serde(flatten)]
+                reading: &'a Reading,
+            }
+            serde_json::to_string_pretty(&Env {
+                schema: SCHEMA,
+                reading: r,
+            })
+            .expect("serialising plain data cannot fail")
+        }
+        Format::Waybar => waybar_battery(r, t).to_line(),
+        Format::Human => {
+            let line = |label: &str, p: Option<u8>| {
+                let value = p.map_or_else(|| "-".to_string(), |p| format!("{p}%"));
+                let value = match p {
+                    Some(p) if p < t.critical_below => style.paint("31", &value),
+                    Some(p) if p < t.warn_below => style.paint("33", &value),
+                    _ => value,
+                };
+                format!("{} {value}\n", style.dim(&format!("{label:<5}")))
+            };
+            line("left", r.left.percent) + &line("right", r.right.percent)
+        }
     }
 }
 
@@ -227,8 +317,8 @@ fn status_rows(transport: &TransportInfo, s: &Status) -> Vec<(&'static str, Stri
         pct(s.battery.left),
         pct(s.battery.right)
     );
-    if s.battery.note.is_some() {
-        battery.push_str(" (not read yet; `sofleii battery` is next)");
+    if let Some(note) = &s.battery.note {
+        battery.push_str(&format!(" ({note})"));
     }
     let mut rows = vec![
         (
@@ -469,6 +559,109 @@ mod tests {
         assert_eq!(
             v["battery"],
             serde_json::json!({"left": null, "right": null, "note": status::BATTERY_NOTE})
+        );
+    }
+
+    fn reading() -> Reading {
+        use crate::commands::battery::{self, Query, fake::FakeGatt};
+        battery::run(&mut FakeGatt::measured(), &Query::default()).unwrap()
+    }
+
+    #[test]
+    fn waybar_battery_ok() {
+        let v = parse(&battery(
+            Style::plain(Format::Waybar),
+            &reading(),
+            Thresholds::default(),
+        ));
+        assert_eq!(v["text"], format!("{GLYPH_KEYBOARD} L 100 R 77"));
+        assert_eq!(v["class"], "ok");
+        assert_eq!(v["alt"], "ok");
+        assert_eq!(v["percentage"], 77);
+        let tip = v["tooltip"].as_str().unwrap();
+        assert!(
+            tip.contains("left: 100%") && tip.contains("right: 77%"),
+            "{tip}"
+        );
+        assert!(tip.contains("BlueZ GATT DD:1F:23:76:6E:71"), "{tip}");
+    }
+
+    #[test]
+    fn waybar_battery_warning_and_critical() {
+        let mut r = reading();
+        r.right.percent = Some(15);
+        let v = parse(&battery(
+            Style::plain(Format::Waybar),
+            &r,
+            Thresholds::default(),
+        ));
+        assert_eq!(v["class"], "warning");
+        assert_eq!(v["text"], format!("{GLYPH_KEYBOARD} L 100 R 15"));
+        r.right.percent = None;
+        r.left.percent = Some(5);
+        let v = parse(&battery(
+            Style::plain(Format::Waybar),
+            &r,
+            Thresholds::default(),
+        ));
+        assert_eq!(v["class"], "critical");
+        assert_eq!(v["text"], format!("{GLYPH_KEYBOARD} L 5 R -"));
+    }
+
+    #[test]
+    fn waybar_battery_not_found() {
+        let err = Error::NotFound("BLE device named \"Eyelash Sofle\" is known to BlueZ but not connected to this host over BLE".into());
+        let v = parse(&waybar_battery_error(&err).to_line());
+        assert_eq!(v["class"], "disconnected");
+        assert_eq!(v["text"], GLYPH_KEYBOARD_OFF);
+        assert!(v.get("percentage").is_none());
+        assert!(v["tooltip"].as_str().unwrap().contains("not connected"));
+    }
+
+    #[test]
+    fn battery_json_and_human() {
+        let v: Value = serde_json::from_str(&battery(
+            Style::plain(Format::Json),
+            &reading(),
+            Thresholds::default(),
+        ))
+        .unwrap();
+        assert_eq!(
+            v,
+            serde_json::json!({
+                "schema": 1, "source": "bluez",
+                "device": {"name": "Eyelash Sofle", "address": "DD:1F:23:76:6E:71"},
+                "left": {"percent": 100}, "right": {"percent": 77}, "note": null
+            })
+        );
+        let human = battery(
+            Style::plain(Format::Human),
+            &reading(),
+            Thresholds::default(),
+        );
+        assert_eq!(human, "left  100%\nright 77%\n");
+    }
+
+    #[test]
+    fn status_shows_battery_row() {
+        let mut s = sample("usb", true);
+        s.battery = status::Battery::from_reading(Ok(reading()));
+        let out = status(
+            Style::plain(Format::Human),
+            &transport(TransportKind::Usb),
+            &s,
+        );
+        assert!(out.contains("left 100%, right 77%\n"), "{out}");
+        let v = parse(&status(
+            Style::plain(Format::Waybar),
+            &transport(TransportKind::Usb),
+            &s,
+        ));
+        assert!(
+            v["tooltip"]
+                .as_str()
+                .unwrap()
+                .contains("battery: left 100%, right 77%")
         );
     }
 }
