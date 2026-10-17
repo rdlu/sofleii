@@ -48,7 +48,7 @@ ble profile     0 connected 84:9E:56:52:6A:D2
 bonded slots    1 of 5
 studio          unlocked
 split link      unknown (not readable yet)
-battery         left -, right - (needs #45)
+battery         left -, right - (not read yet; `sofleii battery` is next)
 ```
 
 `output` is the endpoint keystrokes most likely go to: the output priority,
@@ -95,15 +95,17 @@ terminal, and never with `--json` or `NO_COLOR`.
   "split": null,
   "split_note": "unavailable: cormoran_ble get_split_info is broken upstream; …",
   "battery": { "left": null, "right": null,
-               "note": "unavailable: needs the right-half battery firmware change (#45)" }
+               "note": "unavailable: not read yet; the firmware exposes both levels since #45, read over BLE GATT by the upcoming `sofleii battery`" }
 }
 ```
 
 - `split` is always `null`: `cormoran_ble`'s `get_split_info` is broken
   upstream (always empty, `peripheral_connected` hardcoded false), so sofleii
   doesn't call it. `split_note` says why; both stay in the schema.
-- `battery.left` / `battery.right` are `null` until the firmware forwards
-  the right half's level (#45). They will become `{"percent": int|null}`
+- `battery.left` / `battery.right` are `null` for now. Since #45 the firmware
+  exposes both levels as two BLE Battery Services (the right half's carries
+  the description "Peripheral 0"); BlueZ's `Battery1` only shows the first,
+  so the upcoming `sofleii battery` reads them over GATT. They will become `{"percent": int|null}`
   objects, an additive change that needs no schema bump; `note` then turns
   `null`.
 - Without a `cormoran_ble` subsystem, the profile fields and

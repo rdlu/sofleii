@@ -22,3 +22,6 @@ zmk-module-ble-management/
 /site/.hugo_build.lock
 # sofleii crate build output
 /sofleii/target/
+
+# Claude Code agent worktrees
+/.claude/worktrees/

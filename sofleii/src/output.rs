@@ -228,7 +228,7 @@ fn status_rows(transport: &TransportInfo, s: &Status) -> Vec<(&'static str, Stri
         pct(s.battery.right)
     );
     if s.battery.note.is_some() {
-        battery.push_str(" (needs #45)");
+        battery.push_str(" (not read yet; `sofleii battery` is next)");
     }
     let mut rows = vec![
         (

@@ -15,7 +15,7 @@ use crate::transport::Transport;
 pub const SPLIT_NOTE: &str = "unavailable: cormoran_ble get_split_info is broken upstream; \
      it is always empty and hardcodes peripheral_connected=false";
 /// Why both batteries are `null`.
-pub const BATTERY_NOTE: &str = "unavailable: needs the right-half battery firmware change (#45)";
+pub const BATTERY_NOTE: &str = "unavailable: not read yet; the firmware exposes both levels since #45, read over BLE GATT by the upcoming `sofleii battery`";
 
 #[derive(Debug, Clone, Serialize)]
 pub struct Status {
