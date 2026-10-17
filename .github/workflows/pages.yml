@@ -2,20 +2,20 @@ name: Pages
 
 # The sofleii site (site/), served at https://sofleii.dlu.one/.
 on:
+  # Docs-only inputs. The hugo pin lives in site/.hugo-version, so it is
+  # covered by site/**.
   push:
     branches: [main]
     paths:
       - 'site/**'
-      - 'keymap-drawer/eyelash_sofle.svg'
-      - 'config/eyelash_sofle.keymap'
-      - 'config/west.yml'
-      - '.mise.toml'
       - '.github/workflows/pages.yml'
       - '.github/scripts/install-hugo.sh'
-  # draw.yml commits the regenerated keymap SVG to main with GITHUB_TOKEN,
-  # and pushes made with GITHUB_TOKEN never trigger other workflows, so the
-  # push filter above never sees a new render. Rebuild after every
-  # successful Draw Keymap run on main instead.
+  # The pages built from the firmware's files (keymap render, hold-tap and
+  # combo tables, west pins) refresh through Draw Keymap instead, which runs
+  # on every config/** push. Its [Draw] commit of the SVG is made with
+  # GITHUB_TOKEN, and such pushes never trigger push workflows, so a push
+  # filter couldn't see it anyway. The `changes` job below drops the runs
+  # where no docs input changed.
   workflow_run:
     workflows: ['Draw Keymap']
     types: [completed]
@@ -34,8 +34,38 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  # workflow_run only: deploy when the Draw run succeeded AND a docs input
+  # changed between the commit that triggered it and main now. Diffing from
+  # the trigger's first parent catches both the trigger itself (a keymap or
+  # west.yml change, even when Draw commits nothing) and the [Draw] commit it
+  # pushed after it. A .conf-only push changes none of them: no redeploy.
+  changes:
+    if: github.event_name == 'workflow_run' && github.event.workflow_run.conclusion == 'success'
+    runs-on: ubuntu-24.04
+    outputs:
+      deploy: ${{ steps.diff.outputs.deploy }}
+    steps:
+      # Full history, but trees only (no blobs): enough for git diff --name-only.
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          filter: blob:none
+          persist-credentials: false
+      - id: diff
+        env:
+          TRIGGER_SHA: ${{ github.event.workflow_run.head_sha }}
+        run: |
+          changed=$(git diff --name-only "$TRIGGER_SHA^" HEAD -- \
+            config/eyelash_sofle.keymap config/west.yml keymap-drawer/eyelash_sofle.svg)
+          echo "docs inputs changed since ${TRIGGER_SHA:0:8}^: ${changed:-none}"
+          echo "deploy=$([ -n "$changed" ] && echo true || echo false)" >> "$GITHUB_OUTPUT"
+
   build:
-    if: github.event_name != 'workflow_run' || github.event.workflow_run.conclusion == 'success'
+    needs: changes
+    # `changes` is skipped on push and workflow_dispatch: build anyway there.
+    if: >-
+      !cancelled() && !failure() &&
+      (github.event_name != 'workflow_run' || needs.changes.outputs.deploy == 'true')
     runs-on: ubuntu-24.04
     steps:
       # On workflow_run, GITHUB_SHA is the latest commit on main, so this

@@ -7,10 +7,6 @@ _.python.venv = {path = ".venv", create = true}
 # Pin the toolchain explicitly (Zephyr 3.5 errored out in FindZephyr-sdk.cmake when unset; harmless on 4.1)
 ZEPHYR_TOOLCHAIN_VARIANT = "zephyr"
 ZEPHYR_SDK_INSTALL_DIR = "{{config_root}}/tools/zephyr-sdk-0.17.0"
-# The docs site's hugo (site/). Installed from pacman locally, so it is not a
-# mise tool; this is the one pin CI reads (.github/scripts/install-hugo.sh)
-# and the docs tasks check `hugo version` against.
-HUGO_VERSION = "0.168.0"
 
 [tasks.setup]
 description = "Initialize west workspace and Python deps (run once after cloning)"
@@ -775,12 +771,14 @@ xdg-open "$PDF"
 """
 
 # The sofleii site (site/, https://sofleii.dlu.one/). hugo comes from pacman;
-# both tasks warn when it isn't the HUGO_VERSION CI builds with.
+# both tasks warn when it isn't the version CI builds with, pinned in
+# site/.hugo-version (inside site/, so bumping it only redeploys the docs).
 [tasks.docs]
 description = "Docs site dev server on http://127.0.0.1:1313/ (live reload)"
 dir = "site"
 run = """
-hugo version | grep -q "v${HUGO_VERSION}-" || echo "warning: $(hugo version | cut -d' ' -f2) is not the pinned hugo v${HUGO_VERSION} (HUGO_VERSION in .mise.toml)" >&2
+want=$(cat .hugo-version)
+hugo version | grep -q "v${want}-" || echo "warning: $(hugo version | cut -d' ' -f2) is not the pinned hugo v${want} (site/.hugo-version)" >&2
 hugo server --bind 127.0.0.1 --port 1313
 """
 
@@ -788,6 +786,7 @@ hugo server --bind 127.0.0.1 --port 1313
 description = "Minified docs site build into site/public/"
 dir = "site"
 run = """
-hugo version | grep -q "v${HUGO_VERSION}-" || echo "warning: $(hugo version | cut -d' ' -f2) is not the pinned hugo v${HUGO_VERSION} (HUGO_VERSION in .mise.toml)" >&2
+want=$(cat .hugo-version)
+hugo version | grep -q "v${want}-" || echo "warning: $(hugo version | cut -d' ' -f2) is not the pinned hugo v${want} (site/.hugo-version)" >&2
 hugo --minify --cleanDestinationDir
 """
