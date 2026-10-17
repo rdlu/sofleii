@@ -33,6 +33,8 @@ Credits:
 - [Sunaku's home-row mods guide](https://sunaku.github.io/home-row-mods.html)
   for the timing ideas.
 
+sofleii is [MIT licensed](https://github.com/rdlu/sofleii/blob/main/LICENSE); vendored and vendor files keep their own terms, as listed in the LICENSE file.
+
 ## The sofleii tool
 
 A CLI and TUI in Rust with ratatui, planned to live in this repo and talk to

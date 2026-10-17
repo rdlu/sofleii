@@ -345,3 +345,9 @@ The left half ships cormoran's ZMK-Studio fork firmware, so you can edit the key
 3. Changes apply immediately; click **Save** to persist to flash. The encoder and BLE profiles are configurable here too.
 
 > Locking is disabled, so no unlock step is needed. Rebuilding/reflashing overwrites Studio changes — export first if needed. The studio **web app** is a separate project — this repo only provides the firmware that talks to it.
+
+---
+
+## License
+
+MIT, see [LICENSE](LICENSE). Third-party parts keep their own licenses: the vendored Hextra theme, FlexSearch and fonts under `site/`, files with their own SPDX headers, and the files from the vendor's unlicensed repository listed in [LICENSE](LICENSE), which are not covered by the MIT license.

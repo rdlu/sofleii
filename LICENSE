@@ -1,0 +1,59 @@
+MIT License
+
+Copyright (c) 2026 Rodrigo Dlugokenski
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+
+-------------------------------------------------------------------------------
+
+Third-party components
+
+The MIT license above covers this project's own work. The following parts of
+the repository are not covered by it and keep their own terms:
+
+1. Vendored components, each with its own license file:
+   - site/themes/hextra/            Hextra theme, MIT (site/themes/hextra/LICENSE)
+   - site/assets/lib/flexsearch/    FlexSearch, Apache-2.0
+                                    (site/assets/lib/flexsearch/LICENSE)
+   - site/static/fonts/             iA Writer Duo and 0xProto, SIL Open Font
+                                    License 1.1 (a LICENSE file in each font's
+                                    directory)
+
+2. Files with their own SPDX-License-Identifier header keep the license and
+   copyright stated in that header. For example, the shield files under
+   config/boards/shields/eyelash_sofle/ are MIT, (c) The ZMK Contributors and
+   (c) Darryl deHaan.
+
+3. Files from the Eyelash Sofle vendor's repository (a741725193/zmk-sofle),
+   which this repository was forked from. That repository has no license, so
+   these files are (c) their original authors, all rights reserved, and are
+   NOT covered by the MIT license above:
+   - sofle-3D-MODEL.zip
+   - README_JP.md
+   - config/eyelash_sofle.json
+   - config/boards/shields/eyelash_sofle/eyelash_sofle-layouts.dtsi
+   - keymap-drawer/sofle.svg
+   - keymap-drawer/sofle.yaml
+   - keymap-drawer/corne.svg
+   - keymap-drawer/corne.yaml
+
+4. keymap_drawer.config.yaml: started by Chen Zeng, edited by Pedro Satin,
+   and borrowing technique from englmaxi's keymap-drawer config
+   (github.com/englmaxi/zmk-config). (c) its original authors; not covered by
+   the MIT license above.
