@@ -1,7 +1,7 @@
 ---
 title: About
 description: Who maintains sofleii, where the Eyelash Sofle firmware comes from, and what the name means.
-weight: 21
+weight: 22
 ---
 
 ## The name
@@ -23,8 +23,9 @@ keeping.
 
 Credits:
 
-- the Eyelash Sofle hardware and its original firmware, by the vendor
-  ([original README](https://github.com/rdlu/sofleii/blob/main/README_JP.md));
+- the Eyelash Sofle hardware and its original firmware, by the board's
+  designer ([a741725193/zmk-sofle](https://github.com/a741725193/zmk-sofle);
+  see [Hardware](../hardware/));
 - [ZMK](https://zmk.dev/) and [Zephyr](https://www.zephyrproject.org/);
 - [cormoran](https://github.com/cormoran)'s ZMK fork, DYA Studio and
   custom-RPC modules;

@@ -6,7 +6,7 @@
 > **Personal configuration — use at your own risk.**
 > Releases are experimental and built for one specific keyboard. Key layout, timing, and layer assignments are tuned to personal preference and may change without notice. If you have the same hardware, feel free to use this as a starting point, but do not expect a stable or general-purpose firmware.
 
-> Original hardware by [380465425@qq.com](mailto:380465425@qq.com) · Original README (Chinese): [README_JP.md](README_JP.md)
+> Original hardware by [380465425@qq.com](mailto:380465425@qq.com) · Original README: [Chinese](https://github.com/a741725193/zmk-sofle/blob/main/README.md) · [English](https://github.com/a741725193/zmk-sofle/blob/main/README_EN.md) · 3D case model: [sofle-3D-MODEL.zip](https://github.com/a741725193/zmk-sofle/blob/main/sofle-3D-MODEL.zip) (all in the vendor repo [a741725193/zmk-sofle](https://github.com/a741725193/zmk-sofle))
 
 ZMK firmware configuration for the **Eyelash Sofle** split keyboard (NRF52840, nice!nano v2, nice!view display). Features home row mods, an 8-layer layout (including gaming layers), and **DYA Studio** support — live keymap editing over USB **and Bluetooth** — on the left half.
 

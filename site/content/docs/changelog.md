@@ -1,7 +1,7 @@
 ---
 title: Changelog
 description: Where to find the Eyelash Sofle firmware release notes, and the milestones that shaped it.
-weight: 22
+weight: 23
 ---
 
 Every release has its notes, firmware files and upgrade steps on

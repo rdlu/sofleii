@@ -44,14 +44,11 @@ the repository are not covered by it and keep their own terms:
    which this repository was forked from. That repository has no license, so
    these files are (c) their original authors, all rights reserved, and are
    NOT covered by the MIT license above:
-   - sofle-3D-MODEL.zip
-   - README_JP.md
    - config/eyelash_sofle.json
    - config/boards/shields/eyelash_sofle/eyelash_sofle-layouts.dtsi
-   - keymap-drawer/sofle.svg
-   - keymap-drawer/sofle.yaml
-   - keymap-drawer/corne.svg
-   - keymap-drawer/corne.yaml
+   Earlier commits in this repository's history also contain vendor files that
+   have since been removed (the 3D case model, the original README, renders of
+   other boards); those remain (c) their original authors as well.
 
 4. keymap_drawer.config.yaml: started by Chen Zeng, edited by Pedro Satin,
    and borrowing technique from englmaxi's keymap-drawer config
