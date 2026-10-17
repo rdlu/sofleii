@@ -29,3 +29,10 @@ repository:
   [English](https://github.com/a741725193/zmk-sofle/blob/main/README_EN.md)
 
 They have no license, so they remain © their original authors.
+
+The physical layout this firmware uses (the key positions Studio and the
+keymap render draw) is this project's own: the regular Sofle keys follow
+[ZMK's Sofle layout](https://github.com/zmkfirmware/zmk/blob/main/app/dts/layouts/josefadamcik/sofle.dtsi)
+(MIT), with the joystick and the encoder press added. It lives in
+`config/boards/shields/eyelash_sofle/eyelash_sofle-layouts.dtsi`, and
+`config/eyelash_sofle.json` is generated from it with `mise run layout`.

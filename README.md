@@ -60,4 +60,4 @@ Tracked in [#44](https://github.com/rdlu/sofleii/issues/44); see [sofleii](https
 
 ## License
 
-MIT, see [LICENSE](LICENSE). Third-party parts keep their own licenses: the vendored Hextra theme, FlexSearch and fonts under `site/`, files with their own SPDX headers, and the files from the vendor's unlicensed repository listed in [LICENSE](LICENSE), which are not covered by the MIT license.
+MIT, see [LICENSE](LICENSE). Third-party parts keep their own licenses: the vendored Hextra theme, FlexSearch and fonts under `site/`, files with their own SPDX headers, the ZMK-derived physical layout (MIT), and `keymap_drawer.config.yaml`; [LICENSE](LICENSE) lists them all.
