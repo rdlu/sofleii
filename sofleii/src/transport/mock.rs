@@ -43,7 +43,13 @@ impl Transport for Mock {
     }
     fn recv(&mut self, buf: &mut [u8], timeout: Duration) -> Result<usize> {
         match self.reads.pop_front() {
-            Some(r) => {
+            Some(mut r) => {
+                // A read longer than the caller's buffer comes back in pieces,
+                // like a real serial port.
+                if r.len() > buf.len() {
+                    let rest = r.split_off(buf.len());
+                    self.reads.push_front(rest);
+                }
                 buf[..r.len()].copy_from_slice(&r);
                 Ok(r.len())
             }
@@ -74,18 +80,26 @@ pub fn response(request_id: u32, sub: ResponseSubsystem) -> Vec<u8> {
     .encode_to_vec()
 }
 
+/// A custom-subsystem call reply carrying `payload`.
+pub fn custom_reply(subsystem_index: u32, payload: Vec<u8>) -> ResponseSubsystem {
+    ResponseSubsystem::Custom(custom::Response {
+        response_type: Some(custom::response::ResponseType::Call(custom::CallResponse {
+            subsystem_index,
+            payload,
+        })),
+    })
+}
+
 /// A custom-subsystem call reply carrying a `cormoran_ble` response.
 pub fn ble_reply(
     subsystem_index: u32,
     r: ble_management::response::ResponseType,
 ) -> ResponseSubsystem {
-    ResponseSubsystem::Custom(custom::Response {
-        response_type: Some(custom::response::ResponseType::Call(custom::CallResponse {
-            subsystem_index,
-            payload: ble_management::Response {
-                response_type: Some(r),
-            }
-            .encode_to_vec(),
-        })),
-    })
+    custom_reply(
+        subsystem_index,
+        ble_management::Response {
+            response_type: Some(r),
+        }
+        .encode_to_vec(),
+    )
 }
