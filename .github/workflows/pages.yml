@@ -84,6 +84,9 @@ jobs:
 
   deploy:
     needs: build
+    # Explicit: the implicit success() is false whenever any job up the needs
+    # chain was skipped, and `changes` is skipped on every push and dispatch.
+    if: ${{ !cancelled() && needs.build.result == 'success' }}
     runs-on: ubuntu-24.04
     environment:
       name: github-pages
