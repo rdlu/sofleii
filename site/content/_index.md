@@ -8,10 +8,8 @@ layout: hextra-home
 hero:
   - { text: "sofleii = Sofle Interactive Interface", hold: 4000 }
   - { text: "Firmware and tools for the Eyelash Sofle", hold: 5000, tagline: true }
-  - { text: "sofle II. The II is not a coincidence.", hold: 3000 }
-  - { text: "Here comes a new challenger: Zephyr 4.1", hold: 3000 }
-  - { text: "Round 1. Fight! Home-row mods, no misfires.", hold: 3000 }
   - { text: "↓↘→ + P? Nah. Q + S + Z.", hold: 3000 }
+  - { text: "Select your stage: Minecraft, No Man's Sky, or the arena.", hold: 3500 }
 ---
 
 {{< hextra/hero-badge link="https://github.com/rdlu/sofleii/releases/latest" >}}
@@ -44,7 +42,7 @@ hero:
 
 <div class="hx:mt-12"></div>
 
-{{< hextra/hero-section >}}Select your fighter: the firmware{{< /hextra/hero-section >}}
+{{< hextra/hero-section >}}Move list{{< /hextra/hero-section >}}
 
 <div class="hx:mt-6"></div>
 
@@ -62,7 +60,7 @@ hero:
     link="keymap/"
   >}}
   {{< hextra/feature-card
-    title="Gaming mode"
+    title="Bonus stage: gaming mode"
     icon="puzzle"
     subtitle="Locked layers with no hold-tap at all: plain WASD, held modifiers that just hold, push-to-talk on the thumb. Minecraft, generic FPS/MOBA and No Man's Sky."
     link="docs/gaming-mode/"
@@ -89,7 +87,7 @@ hero:
 
 <div class="hx:mt-16"></div>
 
-{{< hextra/hero-section >}}sofleii CLI/TUI (coming){{< /hextra/hero-section >}}
+{{< hextra/hero-section >}}Secret character: the sofleii CLI/TUI{{< /hextra/hero-section >}}
 
 <div class="hx:mt-6"></div>
 
@@ -120,7 +118,7 @@ Planned, not released: follow the [roadmap epic (#44)](https://github.com/rdlu/s
 
 <div class="hx:mt-16"></div>
 
-{{< hextra/hero-section >}}Start here{{< /hextra/hero-section >}}
+{{< hextra/hero-section >}}Press Start{{< /hextra/hero-section >}}
 
 <div class="hx:mt-6"></div>
 
