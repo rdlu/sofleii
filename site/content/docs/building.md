@@ -1,7 +1,7 @@
 ---
 title: Building locally
 description: Build the Eyelash Sofle firmware on Arch Linux - the Zephyr SDK 0.17.0, mise run setup, doctor and deps-check, the build and flash tasks, the keymap render and the printable PDF.
-keywords: [build, west, Zephyr SDK, mise, setup, doctor, doctor-fix, deps-check, build-left, build-right, nice_nano//zmk, keymap-drawer]
+keywords: [build, west, Zephyr SDK, mise, setup, doctor, doctor-fix, deps-check, build-left, build-right, nice_nano//zmk, keymap-drawer, keymap PDF, docs-pdf]
 weight: 9
 ---
 
@@ -115,7 +115,7 @@ mise run build-flash   # build both halves, flash both, print the memory budget
 Each `flash-*` task asks you to double-tap reset on the half, waits up to 60
 seconds for `NICENANO` to mount, copies the file and syncs.
 
-## The keymap render and PDF
+## The keymap render
 
 After editing `config/eyelash_sofle.keymap`, regenerate the drawing:
 
@@ -129,16 +129,21 @@ version and physical layout as CI, so the result matches what the Draw Keymap
 workflow commits on `main`. That SVG is what the
 [Keymap](../../keymap/) page on this site shows.
 
-For a printable A4 PDF of the layers:
+## The keymap PDF
+
+The site publishes a printable keymap at
+[/sofleii-keymap.pdf](/sofleii-keymap.pdf): a one-page summary of the basics,
+then every layer's grid, A4 landscape. The Pages workflow prints the
+[print view](../../keymap/print/) with headless Chromium after each site
+build. To make it locally:
 
 ```sh
-mise run draw-pdf         # from the local SVG
-mise run draw-pdf-fresh   # run draw first, then build the PDF
-mise run draw-pdf-ci      # from the parsed keymap on origin/main
-mise run open-pdf         # build from the local SVG and open it
+mise run docs-pdf        # build the site, print site/public/sofleii-keymap.pdf
+mise run docs-pdf-open   # the same, then open it
 ```
 
-The PDF goes to `keymap-drawer/eyelash_sofle.pdf` (git-ignored).
+It needs `chromium` or `google-chrome`. Both CI and the task run
+`.github/scripts/print-keymap-pdf.sh`, so the PDFs match.
 
 ## This site
 

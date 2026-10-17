@@ -1,0 +1,210 @@
+/* The printable keymap (layouts/keymap-print.html), A4 landscape.
+   Loaded after custom.css and only on that page. Always light, and
+   grayscale-safe: key styles differ by line style and weight, not colour. */
+
+@page {
+  size: A4 landscape;
+  margin: 9mm 10mm 11mm;
+  @bottom-left {
+    font-family: "0xProto", ui-monospace, monospace;
+    font-size: 7pt;
+    color: #444;
+  }
+  @bottom-right {
+    font-family: "0xProto", ui-monospace, monospace;
+    font-size: 7pt;
+    color: #444;
+  }
+}
+
+/* No Hextra CSS on this page, so no Tailwind preflight: border-box here too,
+   or the grid keys' padding pushes them into each other. */
+*,
+*::before,
+*::after { box-sizing: border-box; }
+
+html {
+  background: #fff;
+  -webkit-print-color-adjust: exact;
+  print-color-adjust: exact;
+}
+body.zs-print {
+  margin: 0;
+  background: #fff;
+  color: #000;
+  font-family: var(--p-sans);
+  font-size: 9pt;
+  line-height: 1.35;
+  font-variant-ligatures: none;
+}
+.zs-print code,
+.zs-print kbd {
+  font-family: var(--p-mono);
+  font-size: 0.92em;
+}
+.zs-print kbd {
+  padding: 0 0.25em;
+  border: 0.6pt solid #555;
+  border-bottom-width: 1.2pt;
+  border-radius: 1.5pt;
+}
+
+/* One sheet = one printed page (277 x 190 mm inside the margins). On screen
+   the sheets stack, page-sized, so the view matches the PDF. */
+.sheet {
+  box-sizing: border-box;
+  width: 277mm;
+  margin: 0 auto;
+  break-after: page;
+}
+.sheet:last-child { break-after: auto; }
+@media screen {
+  body.zs-print { padding: 8mm 0; background: #ddd; }
+  .sheet {
+    min-height: 190mm;
+    margin-bottom: 8mm;
+    padding: 6mm;
+    width: 289mm;
+    background: #fff;
+    box-shadow: 0 0 0 1px #bbb;
+  }
+}
+
+/* Page 1: the basics. */
+.manual .head {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 6mm;
+  padding-bottom: 2mm;
+  border-bottom: 1pt solid #000;
+}
+.manual h1 {
+  margin: 0;
+  font-family: var(--p-mono);
+  font-size: 15pt;
+  line-height: 1.2;
+}
+.manual .head p { margin: 1mm 0 0; color: #333; }
+.manual .qr {
+  display: flex;
+  align-items: center;
+  gap: 2mm;
+  color: #000;
+  font-family: var(--p-mono);
+  font-size: 7pt;
+  text-decoration: none;
+}
+.manual .qr img { width: 18mm; height: 18mm; image-rendering: pixelated; }
+.manual .cols {
+  column-count: 3;
+  column-gap: 7mm;
+  margin-top: 3mm;
+}
+.manual h2 {
+  break-after: avoid;
+  margin: 2.6mm 0 0.8mm;
+  font-family: var(--p-mono);
+  font-size: 9.5pt;
+  border-bottom: 0.5pt solid #888;
+}
+.manual .cols > h2:first-child { margin-top: 0; }
+.manual p,
+.manual ul { margin: 0 0 1.2mm; }
+.manual ul { padding-left: 4mm; }
+.manual li { margin: 0; }
+.manual table {
+  width: 100%;
+  border-collapse: collapse;
+  margin: 0 0 1.2mm;
+  break-inside: avoid;
+}
+.manual th,
+.manual td {
+  padding: 0.5mm 1.2mm;
+  border: 0.5pt solid #999;
+  text-align: left;
+  vertical-align: top;
+}
+.manual th { background: #eee; }
+.manual .combos { margin-top: 2mm; break-inside: avoid; }
+.manual .combos h2 { margin-top: 0; }
+.manual .combos .zs-table { overflow: visible; }
+.manual .combos p { margin-top: 1mm; }
+
+/* Grid sheets. The grids are the site's own (zs/layer.html); here they get a
+   fixed print width and grayscale key styles. */
+.grids {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4mm;
+}
+.zs-print .zs-layer {
+  margin: 0;
+  border: 0.8pt solid #000;
+  background: #fff;
+  break-inside: avoid;
+}
+.grids.n1 .zs-layer { width: 277mm; }
+.grids.n2 .zs-layer { width: 206mm; }
+.zs-print .zs-layer .bar {
+  color: #000;
+  border-bottom: 0.6pt solid #000;
+  font-size: 9pt;
+}
+.zs-print .zs-layer .bar span:first-child { color: #000; font-weight: 700; }
+.zs-print .zs-layer .scroll { overflow: visible; }
+.zs-print .zs-board { min-width: 0; padding: 2.5mm; }
+.zs-print .zs-layer figcaption {
+  padding: 1mm 3mm 1.5mm;
+  border-top: 0.5pt solid #999;
+  color: #222;
+  font-size: 8pt;
+}
+.zs-print .legend {
+  width: 277mm;
+  margin: 0;
+  color: #222;
+  font-size: 7.6pt;
+}
+
+/* Key styles, distinguishable without colour. A little more air between
+   keys than on screen, where the thick print outlines would touch. */
+.zs-print .zs-k { padding: calc(var(--u) * 0.06); }
+.zs-print .zs-k .cap {
+  background: #fff;
+  border: 0.8pt solid #000;
+  border-bottom-width: 1.6pt;
+  color: #000;
+}
+.zs-print .zs-k .s { color: #333; }
+.zs-print .zs-k .h { color: #000; font-weight: 700; }
+.zs-print .zs-k.trans .cap {
+  border: 0.8pt dashed #888;
+  color: #aaa;
+}
+.zs-print .zs-k.none .cap {
+  border: 0.4pt solid #bbb;
+  color: #aaa;
+}
+.zs-print .zs-k.module .cap {
+  border: 1.4pt dotted #000;
+  color: #000;
+  font-weight: 700;
+}
+.zs-print .zs-k.held .cap {
+  background: #000;
+  border-color: #000;
+  color: #fff;
+}
+
+/* The legend's swatches. */
+.zs-print .sw {
+  padding: 0 0.35em;
+  border: 0.8pt solid #000;
+}
+.zs-print .sw.trans { border-style: dashed; border-color: #888; color: #666; }
+.zs-print .sw.none { border-width: 0.4pt; border-color: #bbb; color: #666; }
+.zs-print .sw.module { border: 1.4pt dotted #000; font-weight: 700; }
+.zs-print .sw.held { background: #000; color: #fff; }

@@ -19,6 +19,15 @@ from `config/eyelash_sofle.keymap` on every change; the site rebuilds after
 it. The layer pages below draw each layer again on its own, from the same
 keymap, and explain what the drawing can't.
 
+<div class="zs-actions">
+{{< hextra/hero-button text="Download PDF" link="/sofleii-keymap.pdf" >}}
+{{< hextra/hero-button text="Print view" link="/keymap/print/" >}}
+</div>
+
+The PDF is A4 landscape: a one-page summary of the basics, then every
+layer's grid. It is printed from the [print view](print/) on every site
+build, so it matches the keymap the site shows.
+
 {{< keymap-svg >}}
 
 ## Layers

@@ -16,7 +16,7 @@ hero:
 
 {{< hextra/hero-badge link="https://github.com/rdlu/sofleii/releases/latest" >}}
   <div class="hx:w-2 hx:h-2 hx:bg-primary-400"></div>
-  <span>v3.0.0 · ZMK main · Zephyr 4.1</span>
+  <span>{{< param "firmware.version" >}} · {{< param "firmware.stack" >}}</span>
   {{< icon name="arrow-circle-right" attributes="height=14" >}}
 {{< /hextra/hero-badge >}}
 
@@ -37,6 +37,7 @@ hero:
 
 <div class="zs-actions">
 {{< hextra/hero-button text="The keymap" link="/keymap/" >}}
+{{< hextra/hero-button text="Keymap PDF" link="/sofleii-keymap.pdf" >}}
 {{< hextra/hero-button text="Get started" link="/docs/getting-started/" >}}
 {{< hextra/hero-button text="GitHub" link="https://github.com/rdlu/sofleii" >}}
 </div>
