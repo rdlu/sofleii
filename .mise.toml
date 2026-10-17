@@ -723,3 +723,18 @@ echo "PDF: $PWD/site/public/sofleii-keymap.pdf"
 description = "Build the keymap PDF and open it"
 depends = ["docs-pdf"]
 run = "xdg-open site/public/sofleii-keymap.pdf >/dev/null 2>&1 &"
+
+[tasks.sofleii]
+description = "Build and run the sofleii CLI (e.g. mise run sofleii -- info --json)"
+# Extra arguments after `--` are appended to the command, i.e. passed to sofleii.
+# cargo's own output goes to stderr (-q keeps it quiet), so stdout stays clean JSON.
+run = "cargo run -q --release --manifest-path sofleii/Cargo.toml --"
+
+[tasks.sofleii-test]
+description = "Run the sofleii crate's tests, clippy and rustfmt check (no hardware needed)"
+dir = "sofleii"
+run = [
+  "cargo test",
+  "cargo clippy --all-targets -- -D warnings",
+  "cargo fmt --check",
+]

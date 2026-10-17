@@ -17,6 +17,9 @@ KEYMAP.md                # pointer to the site's keymap pages (the old hand-writ
 .mise.toml               # tasks: setup / build-* / flash-* / draw
 keymap_drawer.config.yaml # keymap-drawer render config (icons, colors, labels)
 scripts/layout-to-json.py # shield .dtsi physical layout -> config/eyelash_sofle.json
+sofleii/                 # Rust CLI (later TUI) over Studio RPC: `mise run sofleii -- info`
+  src/                   # proto / framing / transport / client / commands / output (commands never depend on UI)
+  proto/                 # vendored .proto files + README (source commits, licenses)
 ```
 
 ## Toolchain (already set up on the owner's machine)
@@ -176,7 +179,8 @@ Include: what the user requested, what was changed (layer/key/behavior), and any
 
 Firmware **releases are manual** (`gh release create` on a merge commit, attaching that build's artifacts). The docs workflow never builds firmware. Release procedure also: bump `params.firmware.version` in `site/hugo.toml`, and once Pages has deployed, attach the keymap PDF: `curl -fLO https://sofleii.dlu.one/sofleii-keymap.pdf && gh release upload <tag> sofleii-keymap.pdf` (not automated).
 - Hextra gotchas inherited from plugii: `hero-button` and `card` drop a subpath base (relURL with a leading `/`), so patched copies live in `site/layouts/`; sidebar group headings need undocumented **separator pages** (`site/content/docs/sidebar-*.md`, `sidebar.separator: true`, `build.render: never`), and the patched `pager.html` skips them; FlexSearch must stay vendored (`params.search.flexsearch.js`) or Hextra fetches it from jsDelivr.
-- The **sofleii CLI/TUI** (planned; talks to the left half over Studio RPC, USB serial or BLE) will live in **this repo**, in a top-level `sofleii/` crate directory (not created yet). Its docs page is `site/content/docs/sofleii.md`.
+- The **sofleii CLI/TUI** lives in **this repo**, in the top-level `sofleii/` crate (spike: `info` and `profiles` over USB, `--json` schema 1, exit codes from #44; BLE is a stub, no TUI yet). Its docs page is `site/content/docs/sofleii.md`. `mise run sofleii -- <args>` builds and runs it, `mise run sofleii-test` runs tests + clippy + fmt. Rust from pacman, `protoc` from pacman (`prost-build` in `build.rs`). `sofleii/**` triggers no workflow (no crate CI yet).
+- **sofleii protos are vendored** in `sofleii/proto/{studio,ble_management}/` and must match the firmware's pins: bump them when `config/west.yml` moves `zmk` (its `zmk-studio-messages` import) or `zmk-module-ble-management`, see `sofleii/proto/README.md`. Not named `proto/zmk/` like upstream because `.gitignore`'s unanchored `zmk/` would swallow it. Only send read requests when testing against the owner's keyboard unless asked.
 
 ## Important gotchas
 
