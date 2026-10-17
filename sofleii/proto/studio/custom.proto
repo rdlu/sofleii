@@ -1,0 +1,60 @@
+syntax = "proto3";
+
+package zmk.custom;
+
+message ListCustomSubsystemRequest {
+}
+
+message ListCustomSubsystemResponse {
+    repeated CustomSubsystemInfo subsystems = 1;
+}
+
+message CustomSubsystemInfo {
+    // Device specific subsystem index to identify the subsystem in request/response
+    uint32 index = 1;
+    // Unique subsystem identifier
+    string identifier = 2;
+    // Subsystem UI URLs which supports interaction with the subsystem
+    repeated string ui_url = 3;
+}
+
+message CallRequest {
+    // target subsystem index to deliver the payload
+    // The value is the same to CustomSubsystemInfo.index. The value can change per compile and maybe even at startup.
+    uint32 subsystem_index = 1;
+    bytes payload = 2;
+}
+
+message CallResponse {
+    // target subsystem index to deliver the payload
+    // The value is the same to CustomSubsystemInfo.index. The value can change per compile and maybe even at startup.
+    uint32 subsystem_index = 1;
+    bytes payload = 2;
+}
+
+message CustomNotification {
+    // target subsystem index to deliver the payload
+    // The value is the same to CustomSubsystemInfo.index. The value can change per compile and maybe even at startup.
+    uint32 subsystem_index = 1;
+    bytes payload = 2;
+}
+
+message Request {
+    oneof request_type {
+        ListCustomSubsystemRequest list_custom_subsystems = 1;
+        CallRequest call = 2;
+    }
+}
+
+message Response {
+    oneof response_type {
+        ListCustomSubsystemResponse list_custom_subsystems = 1;
+        CallResponse call = 2;
+    }
+}
+
+message Notification {
+    oneof notification_type {
+        CustomNotification custom_notification = 1;
+    }
+}

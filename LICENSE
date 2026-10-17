@@ -34,6 +34,14 @@ the repository are not covered by it and keep their own terms:
    - site/static/fonts/             iA Writer Duo and 0xProto, SIL Open Font
                                     License 1.1 (a LICENSE file in each font's
                                     directory)
+   - sofleii/proto/studio/          ZMK Studio protobuf messages, from
+                                    cormoran/zmk-studio-messages @ 89b81d2e,
+                                    MIT, (c) 2024 The ZMK Contributors
+                                    (sofleii/proto/studio/LICENSE)
+   - sofleii/proto/ble_management/  ble_management.proto, from
+                                    cormoran/zmk-module-ble-management
+                                    @ 57738cc4, MIT, (c) 2026 cormoran
+                                    (sofleii/proto/ble_management/LICENSE)
 
 2. Files with their own SPDX-License-Identifier header keep the license and
    copyright stated in that header. For example, the shield files under
