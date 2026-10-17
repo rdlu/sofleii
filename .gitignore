@@ -20,3 +20,5 @@ zmk-module-ble-management/
 /site/public/
 /site/resources/
 /site/.hugo_build.lock
+# sofleii crate build output
+/sofleii/target/
