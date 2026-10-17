@@ -96,6 +96,23 @@
     {{- if and (ne $e.type "held") (ne (eq $r "&trans") (eq $e.type "trans")) -}}
       {{- warnf "layer %q pos %d: keymap has %q but the keymap-drawer parse disagrees; run `mise run draw`" $name $i $r -}}
     {{- end -}}
+    {{- /* keymap-drawer gives a held key only {type: held}, no legend (its
+         own render leaves it blank too). Label it with the legend of the
+         key that holds this layer: the binding below it at this position
+         whose first argument is this layer's index (&mo N, &lt N ...). Not
+         simply the nearest lower layer: that one need not be active (on
+         CODE, NAV's key under the CODE thumb is Ctrl). */ -}}
+    {{- if and (eq $e.type "held") (eq (string $e.t) "") -}}
+      {{- $label := $name -}}
+      {{- $num := len $layers -}}
+      {{- range $below := first $num $order -}}
+        {{- $bk := index (index $layers $below) $i -}}
+        {{- if and $bk (findRE (printf `^&\w+ %d( |$)` $num) $bk.raw) -}}
+          {{- $label = $bk.t }}{{ break -}}
+        {{- end -}}
+      {{- end -}}
+      {{- $e = merge $e (dict "t" $label) -}}
+    {{- end -}}
     {{- /* keymap-drawer prints what it can't map as the raw binding. */ -}}
     {{- if hasPrefix (string $e.t) "&" -}}
       {{- $m := strings.TrimPrefix "&" (index (findRE `^&\S+` $r) 0) -}}
