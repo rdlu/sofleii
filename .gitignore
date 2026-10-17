@@ -6,9 +6,6 @@ tools/
 .venv/
 *.uf2
 
-# Generated keymap printout (rebuild with `mise run draw-pdf`)
-keymap-drawer/eyelash_sofle.pdf
-
 # Anchored to repo root: the west-cloned Zephyr RTOS lives at ./zephyr, but an
 # unanchored `zephyr/` also swallowed zmk-rgb-layer/zephyr/module.yml (the in-repo
 # module marker), so it never reached CI. Keep it root-only.

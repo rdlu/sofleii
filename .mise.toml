@@ -1,6 +1,3 @@
-[tools]
-"pipx:weasyprint" = "latest"
-
 # Python comes from pacman, not mise: the global mise config disables the
 # python tool, so a pinned interpreter + .venv here was never activated and
 # west/cmake always ran on /usr/bin/python. `mise run setup` checks the
@@ -694,136 +691,6 @@ sync
 echo "✅ settings_reset flashed. Now flash the normal firmware on top."
 """
 
-[tasks.draw-pdf]
-description = "Convert the local keymap (keymap-drawer/eyelash_sofle.yaml) to a printable A4 PDF — one page per group of layers (LAYERS_PER_PAGE, default 4)"
-run = """
-set -euo pipefail
-YAML="keymap-drawer/eyelash_sofle.yaml"
-CFG="keymap_drawer.config.yaml"
-PDF="keymap-drawer/eyelash_sofle.pdf"
-PER_PAGE="${LAYERS_PER_PAGE:-4}"
-[ -f "$YAML" ] || { echo "ERROR: $YAML not found. Run 'mise run draw' (local) or 'mise run draw-pdf-ci' (CI version) first."; exit 1; }
-command -v weasyprint >/dev/null || { echo "ERROR: weasyprint not found. Run 'mise install' to provision the pipx:weasyprint tool from .mise.toml."; exit 1; }
-
-VERSION=$(git describe --tags --abbrev=0 2>/dev/null || echo dev)
-DATE=$(date -I)  # ISO 8601 — YYYY-MM-DD
-WORKDIR=$(mktemp -d)
-TMP_HTML="$WORKDIR/keymap.html"
-trap 'rm -rf "$WORKDIR"' EXIT
-
-# Layer names in keymap order = the keys under `layers:` in the parsed YAML.
-# (Block list items start with `- `; wrapped inline lists are 4-space indented;
-# both are excluded by requiring a letter at exactly 2-space indent.)
-LAYERS=$(awk '/^layers:/{f=1; next} /^combos:/{f=0} f && /^  [A-Za-z]/ {line=$0; sub(/:.*/, "", line); sub(/^  /, "", line); print line}' "$YAML")
-TOTAL=$(echo "$LAYERS" | wc -l | tr -d ' ')
-[ "$TOTAL" -gt 0 ] || { echo "ERROR: no layers found in $YAML"; exit 1; }
-PAGES=$(( (TOTAL + PER_PAGE - 1) / PER_PAGE ))
-
-# HTML head. Each .page fills the A4 content box (page height 29.7cm minus the
-# top/bottom margins 1.6/1.7cm ≈ 26.4cm; 26.2 leaves slack) so every group of
-# layers lands on its own page instead of being crammed onto one.
-cat > "$TMP_HTML" <<'HTML_EOF'
-<!DOCTYPE html>
-<html><head><meta charset="utf-8"><style>
-  @page {
-    size: A4;
-    margin: 1.6cm 1.4cm 1.7cm 1.4cm;
-    @top-center {
-      content: "Eyelash Sofle — Keymap Layout · @@VERSION@@";
-      font: 600 11pt sans-serif;
-      padding-bottom: 6pt;
-      border-bottom: 0.5pt solid #999;
-      vertical-align: bottom;
-    }
-    @bottom-center {
-      content: "Generated @@DATE@@ · github.com/rdlu/sofleii · Page " counter(page) " / " counter(pages);
-      font: 9pt sans-serif;
-      color: #666;
-      padding-top: 6pt;
-      border-top: 0.5pt solid #ccc;
-      vertical-align: top;
-    }
-  }
-  html, body { margin: 0; padding: 0; }
-  .page {
-    height: 26.2cm;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    page-break-after: always;
-  }
-  .page:last-child { page-break-after: auto; }
-  .page img { max-width: 100%; max-height: 100%; object-fit: contain; }
-</style></head><body>
-HTML_EOF
-sed -i "s|@@VERSION@@|$VERSION|g; s|@@DATE@@|$DATE|g" "$TMP_HTML"
-
-# Render one SVG per group of PER_PAGE layers and append a page for each.
-page=0
-start=1
-while [ "$start" -le "$TOTAL" ]; do
-  page=$((page + 1))
-  end=$((start + PER_PAGE - 1))
-  NAMES=$(echo "$LAYERS" | sed -n "${start},${end}p")
-  SVG_OUT="$WORKDIR/page${page}.svg"
-  OLDIFS=$IFS
-  IFS='
-'
-  set -- $NAMES
-  IFS=$OLDIFS
-  echo ">> Page $page: $*"
-  uvx --from keymap-drawer==0.23.0 keymap -c "$CFG" draw -j config/eyelash_sofle.json "$YAML" -s "$@" -o "$SVG_OUT"
-  SVG_ABS=$(realpath "$SVG_OUT")
-  cat >> "$TMP_HTML" <<EOF
-<div class="page"><img src="file://$SVG_ABS" alt="Eyelash Sofle keymap page $page"></div>
-EOF
-  start=$((end + 1))
-done
-
-echo '</body></html>' >> "$TMP_HTML"
-weasyprint "$TMP_HTML" "$PDF"
-echo "PDF written to $PDF ($PAGES page(s), $TOTAL layers, $PER_PAGE per page · version $VERSION · $DATE)"
-"""
-
-[tasks.draw-pdf-fresh]
-description = "Regenerate the SVG locally (mise run draw) and then build the PDF"
-depends = ["draw"]
-run = "mise run draw-pdf"
-
-[tasks.draw-pdf-ci]
-description = "Fetch the parsed keymap (YAML) from origin/main and build the paginated PDF (no local keymap regen)"
-run = """
-set -euo pipefail
-command -v git >/dev/null || { echo "ERROR: git not found."; exit 1; }
-echo ">> Fetching latest origin/main..."
-git fetch origin main --quiet || { echo "ERROR: failed to fetch origin/main (no network or remote unreachable?)"; exit 1; }
-git show origin/main:keymap-drawer/eyelash_sofle.yaml > keymap-drawer/.eyelash_sofle.ci.yaml || {
-  rm -f keymap-drawer/.eyelash_sofle.ci.yaml
-  echo "ERROR: keymap-drawer/eyelash_sofle.yaml not found on origin/main."
-  exit 1
-}
-# Swap the local YAML with the origin/main version for this generation, then restore.
-mv keymap-drawer/eyelash_sofle.yaml keymap-drawer/.eyelash_sofle.local.yaml.bak
-mv keymap-drawer/.eyelash_sofle.ci.yaml keymap-drawer/eyelash_sofle.yaml
-trap 'mv -f keymap-drawer/.eyelash_sofle.local.yaml.bak keymap-drawer/eyelash_sofle.yaml 2>/dev/null || true' EXIT
-mise run draw-pdf
-echo ">> PDF built from origin/main's parsed keymap (YAML)."
-"""
-
-[tasks.open-pdf]
-description = "Generate the PDF from the current local SVG and open it in the default viewer"
-depends = ["draw-pdf"]
-run = """
-set -euo pipefail
-PDF="keymap-drawer/eyelash_sofle.pdf"
-command -v xdg-open >/dev/null || { echo "ERROR: xdg-open not found. Install xdg-utils or open $PDF manually."; exit 1; }
-[ -f "$PDF" ] || { echo "ERROR: $PDF missing — generation failed."; exit 1; }
-xdg-open "$PDF"
-"""
-
-# The sofleii site (site/, https://sofleii.dlu.one/). hugo comes from pacman;
-# both tasks warn when it isn't the version CI builds with, pinned in
-# site/.hugo-version (inside site/, so bumping it only redeploys the docs).
 [tasks.docs]
 description = "Docs site dev server on http://127.0.0.1:1313/ (live reload)"
 dir = "site"
@@ -841,3 +708,18 @@ want=$(cat .hugo-version)
 hugo version | grep -q "v${want}-" || echo "warning: $(hugo version | cut -d' ' -f2) is not the pinned hugo v${want} (site/.hugo-version)" >&2
 hugo --minify --cleanDestinationDir
 """
+
+[tasks.docs-pdf]
+description = "Build the site and print the keymap PDF (site/public/sofleii-keymap.pdf) with local Chromium"
+# The same script the Pages workflow runs, so the local and published PDFs
+# come from the same steps. Needs chromium or google-chrome on PATH.
+depends = ["docs-build"]
+run = """
+.github/scripts/print-keymap-pdf.sh site/public site/public/sofleii-keymap.pdf
+echo "PDF: $PWD/site/public/sofleii-keymap.pdf"
+"""
+
+[tasks.docs-pdf-open]
+description = "Build the keymap PDF and open it"
+depends = ["docs-pdf"]
+run = "xdg-open site/public/sofleii-keymap.pdf >/dev/null 2>&1 &"

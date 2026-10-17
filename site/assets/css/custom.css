@@ -609,6 +609,8 @@ nav[aria-label="breadcrumb"],
   color: var(--p-text) !important;
   box-shadow: inset 0 0 0 1px var(--p-outline) !important;
 }
+.content .zs-actions { margin: 1.25rem 0; }
+.content .zs-actions a.not-prose { text-decoration: none; }
 .zs-actions a + a:hover {
   box-shadow: inset 0 0 0 1px var(--p-accent) !important;
   color: var(--p-accent) !important;

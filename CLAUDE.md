@@ -39,6 +39,7 @@ mise run build-right   # build right half
 mise run flash-left    # copy .uf2 to mounted NICENANO (double-tap reset first)
 mise run docs          # docs site dev server on http://127.0.0.1:1313/ (site/)
 mise run docs-build    # minified docs site build into site/public/
+mise run docs-pdf      # build the site + print the keymap PDF (site/public/sofleii-keymap.pdf); docs-pdf-open opens it
 ```
 
 Alternatively, push to the branch and download `.uf2` artifacts from GitHub Actions
@@ -157,21 +158,23 @@ Include: what the user requested, what was changed (layer/key/behavior), and any
 - `mise run docs` (dev server, 127.0.0.1:1313) / `mise run docs-build`. hugo comes from **pacman**, not mise; the version is pinned in **`site/.hugo-version`** (inside `site/`, so a bump only redeploys the docs), which CI's `.github/scripts/install-hugo.sh` reads (checksum-verified) and the docs tasks warn about on mismatch. Bump that one value to move CI.
 - **Single source of truth via `module.mounts`** in `site/hugo.toml`: `keymap-drawer/eyelash_sofle.{svg,yaml}` → `assets/keymap/`, `config/eyelash_sofle.{keymap,json}` and `config/west.yml` → `assets/config/`. Shortcodes parse them on every build: `keymap-svg` (the render), `layer "NAME"` (one layer's grid on the physical layout from the `.json`; legends from keymap-drawer's parsed `.yaml` so they match the SVG, glyphs from the SVG's `<defs>`, raw bindings and macro text from the `.keymap`; the build **warns** if the `.yaml` is stale vs the keymap — run `mise run draw`; `&none` keys a module acts on, e.g. zmk-rgb-layer's SYS|NUM brightness/mood keys, get a label from `site/data/keymap_overrides.yaml`, and the build warns if one of those positions stops being `&none` — keep it in sync with `zmk-rgb-layer/src/rgb_layer.c`), `keymap-behaviors`, `keymap-combos`, `west-pins`. **Regenerate nothing by hand** — the SVG/YAML come from `draw.yml`. Prose under each layer grid is hand-written, so after keymap edits re-read `site/content/keymap/*.md` and the guides.
 - **Site sections:** `site/content/docs/` (guides, reference, project) and `site/content/keymap/` (overview, one page per layer, gaming layers, home-row mods & timing, combos). Each is its own top-level menu entry with its own sidebar: `keymap/_index.md` cascades `type: docs`, and the sidebar's root is the page's first section. Old `/docs/reference/{keymap,hold-tap,combos}/` URLs are `aliases:` redirects. The keymap sidebar's "Overview" link to the section index comes from `sidebar.overview` in `keymap/_index.md` (a marked patch in `site/layouts/_partials/sidebar.html`). Ligatures are off only in the grids and in inline code under `/keymap/` (`custom/head-end.html`); the rest of the site keeps them.
+- **Keymap PDF** (`/sofleii-keymap.pdf`, linked from the Keymap overview, the home hero and the README): the print view `/keymap/print/` (`site/content/keymap-print.md` + the standalone `site/layouts/keymap-print.html`, no baseof; `assets/css/keymap-print.css`) printed with headless Chromium by **`.github/scripts/print-keymap-pdf.sh`** — the one script both the Pages build job and `mise run docs-pdf` run (serves `public/` over `python3 -m http.server`, so it assumes a baseURL without subpath; fails if the PDF is missing or < 50 KB). Page 1 is the hand-written basics manual in the page's Markdown (re-check it after keymap edits, like the layer pages; it must stay one page), then one A4-portrait sheet per entry in its `sheets` front matter (three layers a page: BASE+NAV+CODE, MEDIA+SYS|NUM+GAME?, the three game layers — 4 pages in all), grids drawn by `_partials/zs/layer.html` (the same partial the `layer` shortcode calls; `legend`/`caption` options). Always light and grayscale-safe. Out of the sidebar, pager (it sits outside `content/keymap/`), search and sitemap. The footer's firmware version is `params.firmware.version` in `site/hugo.toml`, which the home hero badge also reads: **bump it with each release**. On CI the browser is the runner image's Chrome (`CHROME_BIN`). The old weasyprint `draw-pdf*`/`open-pdf` tasks are gone.
 - **Pages workflow** (`.github/workflows/pages.yml`): push to main on `site/**` or the workflow/script only; firmware-file pages (keymap render, hold-tap/combo tables, west pins) refresh through **`workflow_run` on "Draw Keymap"** (completed, main). Needed because `draw.yml` commits the SVG with `GITHUB_TOKEN`, and pushes made with `GITHUB_TOKEN` never trigger other workflows. A `changes` job deploys only if Draw succeeded **and** `git diff --name-only <trigger>^ main` touches `config/eyelash_sofle.{keymap,json}`, `config/west.yml` or `keymap-drawer/eyelash_sofle.{svg,yaml}` — so west.yml changes (no Draw commit) still deploy, `.conf`-only changes don't, and nothing deploys twice.
 
 ### Which workflow runs when
 
 | Push to main touching | Build firmware | Draw Keymap | Pages |
 |---|---|---|---|
-| `site/**` (incl. `site/.hugo-version`) | – | – | ✓ (push) |
+| `site/**` (incl. `site/.hugo-version`), `.github/scripts/{install-hugo,print-keymap-pdf}.sh` | – | – | ✓ (push) |
 | `config/eyelash_sofle.keymap` | ✓ | ✓ | ✓ once, via Draw |
 | `config/west.yml` | ✓ | ✓ | ✓ once, via Draw (no Draw commit; diff check) |
-| other `config/**` (`.conf`, shield, `.json`) | ✓ | ✓ | – (diff check skips) |
+| `config/eyelash_sofle.json` / layout `.dtsi` (via `mise run layout`) | ✓ | ✓ | ✓ once, via Draw (the grids read the `.json`) |
+| other `config/**` (`.conf`, shield) | ✓ | ✓ | – (diff check skips) |
 | `zmk-rgb-layer/**`, `build.yaml` | ✓ | – | – |
 | `.mise.toml` | – | – | – |
 | docs-only markdown (README, KEYMAP.md, CLAUDE.md…) | – | – | – |
 
-Firmware **releases are manual** (`gh release create` on a merge commit, attaching that build's artifacts). The docs workflow never builds firmware.
+Firmware **releases are manual** (`gh release create` on a merge commit, attaching that build's artifacts). The docs workflow never builds firmware. Release procedure also: bump `params.firmware.version` in `site/hugo.toml`, and once Pages has deployed, attach the keymap PDF: `curl -fLO https://sofleii.dlu.one/sofleii-keymap.pdf && gh release upload <tag> sofleii-keymap.pdf` (not automated).
 - Hextra gotchas inherited from plugii: `hero-button` and `card` drop a subpath base (relURL with a leading `/`), so patched copies live in `site/layouts/`; sidebar group headings need undocumented **separator pages** (`site/content/docs/sidebar-*.md`, `sidebar.separator: true`, `build.render: never`), and the patched `pager.html` skips them; FlexSearch must stay vendored (`params.search.flexsearch.js`) or Hextra fetches it from jsDelivr.
 - The **sofleii CLI/TUI** (planned; talks to the left half over Studio RPC, USB serial or BLE) will live in **this repo**, in a top-level `sofleii/` crate directory (not created yet). Its docs page is `site/content/docs/sofleii.md`.
 

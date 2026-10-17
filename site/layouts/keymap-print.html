@@ -1,0 +1,58 @@
+{{- /*
+  The printable keymap (content/keymap-print.md, /keymap/print/): a standalone
+  page, no baseof, so no navbar, sidebar, pager, footer, search or theme
+  script. Always the light palette (custom.css's :root; nothing adds .dark).
+  Page 1 is the page's Markdown (the basics manual), then one A4-portrait
+  sheet per entry in `sheets`, each with up to three layer grids drawn by the
+  same partial as the `layer` shortcode. CI prints it to /sofleii-keymap.pdf
+  (.github/scripts/print-keymap-pdf.sh).
+*/ -}}
+{{- $version := site.Params.firmware.version -}}
+{{- $built := now.Format "2006-01-02" -}}
+{{- $url := "https://sofleii.dlu.one/keymap/" -}}
+{{- $foot := printf "sofleii keymap · firmware %s · built %s" $version $built -}}
+<!DOCTYPE html>
+<html lang="{{ site.Language.Lang }}">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta name="robots" content="noindex" />
+  <title>{{ .Title }} · {{ site.Title }}</title>
+  <meta name="description" content="{{ .Description }}" />
+  <link rel="icon" href="{{ "favicon.svg" | relURL }}" type="image/svg+xml" />
+  {{- partial "custom/head-end.html" . }}
+  {{- $css := slice (resources.Get "css/custom.css") (resources.Get "css/keymap-print.css") | resources.Concat "css/keymap-print.bundle.css" | minify | fingerprint }}
+  <link rel="stylesheet" href="{{ $css.RelPermalink }}" integrity="{{ $css.Data.Integrity }}" />
+  <style>
+    @page {
+      @bottom-left { content: "{{ $foot }}"; }
+      @bottom-right { content: "{{ $url }}  ·  " counter(page) " / " counter(pages); }
+    }
+  </style>
+</head>
+<body class="zs-print">
+  <section class="sheet manual">
+    <header class="head">
+      <div>
+        <h1>sofleii · the Eyelash Sofle keymap</h1>
+        <p>Firmware {{ $version }} · {{ site.Params.firmware.stack }} · built {{ $built }} · every layer, generated from <code>config/eyelash_sofle.keymap</code></p>
+      </div>
+      {{- with images.QR $url (dict "level" "medium" "scale" 3 "targetDir" "images/qr") }}
+      <a class="qr" href="{{ $url }}"><img src="{{ .RelPermalink }}" width="{{ .Width }}" height="{{ .Height }}" alt="QR code: {{ $url }}" /><span>{{ $url }}</span></a>
+      {{- end }}
+    </header>
+    <div class="body">{{ .Content }}</div>
+  </section>
+  {{- range $i, $s := .Params.sheets }}
+  <section class="sheet grids n{{ len $s.layers }}">
+    {{- range $s.layers }}
+      {{- $cap := index $.Params.captions . -}}
+      {{ partial "zs/layer.html" (dict "name" . "legend" false "caption" $cap) }}
+    {{- end }}
+    {{- if eq $i 0 }}
+    <p class="legend"><strong>Key styles:</strong> small top legend: shifted · small bottom legend: what the key does when held · plain outline: a key · <span class="sw trans">dashed, grey</span>: transparent, falls through to the layer below · <span class="sw none">thin, faint ⊖</span>: does nothing · <span class="sw module">dotted, bold</span>: handled by a firmware module (zmk-rgb-layer), not the keymap · <span class="sw held">filled black</span>: the key you are holding to be on this layer · ▏ marks where a macro leaves the cursor.</p>
+    {{- end }}
+  </section>
+  {{- end }}
+</body>
+</html>

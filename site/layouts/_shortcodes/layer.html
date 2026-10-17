@@ -1,45 +1,4 @@
 {{- /*
-  {{< layer "NAV" >}}: one layer of the keymap, drawn on the board's physical
-  layout. Built on every site build from the keymap and keymap-drawer's parse
-  of it (see layouts/_partials/zs/layer-data.html), so it can't drift from
-  the firmware. Hover or focus a key for its position and raw binding.
+  {{< layer "NAV" >}}: one layer's grid; see layouts/_partials/zs/layer.html.
 */ -}}
-{{- $name := .Get 0 -}}
-{{- $d := partialCached "zs/layer-data.html" . "layer-data" -}}
-{{- $keys := index $d.layers $name -}}
-{{- if not $keys }}{{ errorf "layer: no layer %q in the keymap (have %s)" $name (delimit $d.order ", ") }}{{ end -}}
-{{- $num := 0 }}{{ range $i, $n := $d.order }}{{ if eq $n $name }}{{ $num = $i }}{{ end }}{{ end -}}
-{{- $b := $d.box -}}
-{{- $over := index hugo.Data.keymap_overrides $name | default dict -}}
-<figure class="zs-layer not-prose">
-  <div class="bar"><span>layer {{ $num }} · {{ $name }}</span><span>from config/eyelash_sofle.keymap</span></div>
-  <div class="scroll">
-    <div class="zs-board">
-      <div class="zs-keys" role="list" aria-label="Layer {{ $name }}" style="--w:{{ $b.w }};--h:{{ $b.h }}">
-      {{- range $i, $k := $keys -}}
-        {{- $p := index $d.keys $i -}}
-        {{- $o := index $over (string $i) -}}
-        {{- if and $o (ne $k.raw "&none") -}}
-          {{- warnf "site/data/keymap_overrides.yaml: %s position %d is %q in the keymap, not &none; update the override" $name $i $k.raw -}}
-          {{- $o = false -}}
-        {{- end -}}
-        {{- if $o }}{{ $k = merge $k (dict "t" $o.label "type" "module") }}{{ end -}}
-        {{- $len := strings.RuneCount (string $k.t) -}}
-        {{- $cls := slice "zs-k" -}}
-        {{- with $k.type }}{{ $cls = $cls | append . }}{{ end -}}
-        {{- if $k.h }}{{ $cls = $cls | append "ht" }}{{ end -}}
-        {{- if and (not (hasPrefix (string $k.t) "$$")) (gt $len 4) }}{{ $cls = $cls | append (cond (gt $len 8) "xlong" "long") }}{{ end -}}
-        <div class="{{ delimit $cls " " }}" role="listitem" tabindex="0" title="{{ $i }}: {{ $k.raw }}{{ with $o }} · handled by zmk-rgb-layer (not a keymap binding): {{ .note }}{{ end }}"
-          style="--x:{{ sub $p.x $b.minx }};--y:{{ sub $p.y $b.miny }};--r:{{ $p.r }};--ox:{{ sub $p.rx $p.x }};--oy:{{ sub $p.ry $p.y }}">
-          <span class="cap">
-            {{- with $k.s }}<span class="s">{{ partial "zs/legend.html" (dict "text" . "glyphs" $d.glyphs) }}</span>{{ end -}}
-            <span class="t">{{ partial "zs/legend.html" (dict "text" $k.t "glyphs" $d.glyphs) }}</span>
-            {{- with $k.h }}<span class="h">{{ partial "zs/legend.html" (dict "text" . "glyphs" $d.glyphs) }}</span>{{ end -}}
-          </span>
-        </div>
-      {{- end -}}
-      </div>
-    </div>
-  </div>
-  <figcaption>Small top legend: shifted · bottom legend: hold · dashed: transparent (falls through to the layer below) · ⊖: does nothing · dotted accent: handled by a firmware module, not the keymap · filled: the key holding this layer · ▏ marks where a macro leaves the cursor. Hover or focus a key for its position and binding.</figcaption>
-</figure>
+{{ partial "zs/layer.html" (dict "name" (.Get 0)) }}

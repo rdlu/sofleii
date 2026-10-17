@@ -2,7 +2,7 @@
 
 ZMK firmware for the **Eyelash Sofle** split keyboard, plus a planned Rust/ratatui CLI/TUI.
 
-**[Docs](https://sofleii.dlu.one)** · **[Keymap](https://sofleii.dlu.one/keymap/)** · [Releases](https://github.com/rdlu/sofleii/releases) · [Roadmap (#44)](https://github.com/rdlu/sofleii/issues/44)
+**[Docs](https://sofleii.dlu.one)** · **[Keymap](https://sofleii.dlu.one/keymap/)** ([PDF](https://sofleii.dlu.one/sofleii-keymap.pdf)) · [Releases](https://github.com/rdlu/sofleii/releases) · [Roadmap (#44)](https://github.com/rdlu/sofleii/issues/44)
 
 > [!WARNING]
 > **Personal configuration — use at your own risk.**
