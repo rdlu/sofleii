@@ -1,23 +1,66 @@
 [tools]
-python = {version = "3.12", backend = "uv"}
 "pipx:weasyprint" = "latest"
 
+# Python comes from pacman, not mise: the global mise config disables the
+# python tool, so a pinned interpreter + .venv here was never activated and
+# west/cmake always ran on /usr/bin/python. `mise run setup` checks the
+# packages the build actually imports.
 [env]
-_.python.venv = {path = ".venv", create = true}
 # Pin the toolchain explicitly (Zephyr 3.5 errored out in FindZephyr-sdk.cmake when unset; harmless on 4.1)
 ZEPHYR_TOOLCHAIN_VARIANT = "zephyr"
 ZEPHYR_SDK_INSTALL_DIR = "{{config_root}}/tools/zephyr-sdk-0.17.0"
 
 [tasks.setup]
-description = "Initialize west workspace and Python deps (run once after cloning)"
+description = "Check system Python deps, then initialize the west workspace (run once after cloning)"
 run = """
-west init -l config/
+set -eu
+# The modules a build imports, with the Arch package that ships each. Zephyr's
+# requirements.txt lists more (flash runners, canopen, ...); none are needed to
+# build. google.protobuf + pkg_resources are for the left half's Studio nanopb
+# codegen, which Zephyr's requirements don't cover.
+hint=$(python3 - <<'PYEOF'
+import importlib, warnings
+warnings.simplefilter("ignore")
+# module -> (package, source). west and pykwalify are not in the Arch repos.
+# pkg_resources is its own package on CachyOS; plain Arch ships it in
+# python-setuptools.
+pkgs = {
+    "west": ("python-west", "aur"),
+    "yaml": ("python-yaml", "repo"),
+    "elftools": ("python-pyelftools", "repo"),
+    "pykwalify": ("python-pykwalify", "aur"),
+    "packaging": ("python-packaging", "repo"),
+    "google.protobuf": ("python-protobuf", "repo"),
+    "pkg_resources": ("python-pkg_resources (CachyOS) or python-setuptools (Arch)", "repo"),
+}
+missing = {"repo": [], "aur": []}
+for mod, (pkg, src) in pkgs.items():
+    try:
+        importlib.import_module(mod)
+    except ImportError:
+        missing[src].append(pkg)
+if missing["repo"]:
+    print("  pacman: pkexec pacman -S --needed " + " ".join(missing["repo"]))
+if missing["aur"]:
+    print("  AUR:    " + " ".join(missing["aur"]))
+PYEOF
+)
+if [ -n "$hint" ]; then
+  echo "Missing Python packages for the build:"
+  echo "$hint"
+  exit 1
+fi
+[ -d .west ] || west init -l config/
 west update
 west zephyr-export
-uv pip install -r zephyr/scripts/requirements.txt
-# ZMK Studio protobuf codegen needs pkg_resources (dropped in setuptools 81)
-# and google.protobuf (nanopb generator). Neither is in Zephyr's requirements.
-uv pip install 'setuptools<81' 'protobuf>=7.35'
+# The SDK's host tools (dtc, ...) embed their absolute install path in the ELF
+# interpreter; this relocates them and registers the SDK with CMake. Re-run it
+# whenever the checkout moves.
+if [ -x "$ZEPHYR_SDK_INSTALL_DIR/setup.sh" ]; then
+  (cd "$ZEPHYR_SDK_INSTALL_DIR" && ./setup.sh -h -c)
+else
+  echo "NOTE: no Zephyr SDK at $ZEPHYR_SDK_INSTALL_DIR (0.17.0 expected) — install it there, then re-run setup."
+fi
 """
 
 [tasks.doctor]

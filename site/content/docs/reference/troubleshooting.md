@@ -88,14 +88,27 @@ last successful `main` build used.
 
 ### Protobuf "gencode/runtime" VersionError on the left half
 
-The Studio build generates nanopb code and needs `protobuf` 7.35 or newer in
-the venv:
+The Studio build generates nanopb code with the system `protobuf`, which has
+to be at least as new as the generator. Update it through pacman:
 
 ```sh
-uv pip install --upgrade 'protobuf>=7.35'
+sudo pacman -Syu python-protobuf
 ```
 
 The right half doesn't build Studio and isn't affected.
+
+### `dtc failed with return code: no such file or directory`
+
+This happens after you move or rename the checkout. The Zephyr SDK's host
+tools, `dtc` among them, embed their absolute install path, so they break
+when `tools/zephyr-sdk-0.17.0` moves. Re-run:
+
+```sh
+mise run setup
+```
+
+Its last step runs the SDK's `setup.sh -h -c`, which relocates the host tools
+and registers the SDK with CMake again.
 
 ### "Unknown arguments specified" at configure time
 
