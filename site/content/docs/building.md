@@ -17,8 +17,7 @@ The repo is a [ZMK](https://zmk.dev/) user config with a local
 ## 1. System packages
 
 ```sh
-sudo pacman -S cmake ninja dtc git dfu-util
-yay -S python-west mise
+sudo pacman -S --needed cmake ninja dtc git dfu-util mise
 ```
 
 ## 2. Zephyr SDK 0.17.0
@@ -41,18 +40,31 @@ rm tools/zephyr-sdk-0.17.0_linux-x86_64_minimal.tar.xz
 
 ## 3. The workspace (once)
 
-mise provisions Python 3.12 through uv and activates a `.venv` when you `cd`
-into the repo:
+The build runs on the **system Python** from pacman (3.14 at the time of
+writing). mise doesn't provide Python here and there is no `.venv`. Install
+the modules a build imports:
 
 ```sh
-mise install
+sudo pacman -S --needed python-yaml python-pyelftools python-packaging python-protobuf python-pkg_resources
+yay -S python-west python-pykwalify   # not in the official repos
+```
+
+`python-protobuf` and `python-pkg_resources` are for the left half's Studio
+build, which generates nanopb code. Then:
+
+```sh
 mise run setup
 ```
 
-`setup` runs `west init`, `west update` and `west zephyr-export`, and
-installs the Python dependencies into the venv. ZMK lands in `zmk/`, Zephyr
-in `zephyr/`, the other west projects in `modules/` and the repo root; all of
-them are git-ignored.
+`setup` first checks that those seven packages import. If any are missing, it
+prints the install line and stops. Then it runs `west init` (only when
+`.west/` doesn't exist yet), `west update` and `west zephyr-export`, and
+finally the SDK's `setup.sh -h -c`. That relocates the SDK host tools such
+as `dtc`, which embed their absolute path, and registers the SDK with CMake.
+**Re-run `mise run setup` whenever you move or rename the checkout.**
+
+ZMK lands in `zmk/`, Zephyr in `zephyr/`, the other west projects in
+`modules/` and the repo root; all of them are git-ignored.
 
 ## 4. Check the workspace
 
