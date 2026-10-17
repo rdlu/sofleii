@@ -1,9 +1,12 @@
-//! BlueZ over the system D-Bus (zbus, blocking API, no tokio): the
-//! read-only [`Gatt`] implementation behind `sofleii battery`.
+//! BlueZ over the system D-Bus (zbus, blocking API, no tokio).
 //!
-//! Only `GetManagedObjects`, `ReadValue({})` and cached property values are
-//! used: no writes, no `StartNotify`, no pairing. Nothing here assumes
-//! `hci0` or fixed handles; everything comes from the object tree.
+//! - The read-only [`Gatt`] implementation behind `sofleii battery`: only
+//!   `GetManagedObjects`, `ReadValue({})` and cached property values.
+//! - The connection and object tree the BLE transport
+//!   ([`crate::transport::ble`]) builds its Studio RPC link on.
+//!
+//! Nothing here pairs, connects or disconnects, and nothing assumes `hci0`
+//! or fixed handles; everything comes from the object tree.
 
 use std::collections::HashMap;
 use std::time::Duration;
@@ -12,12 +15,11 @@ use zbus::blocking::Connection;
 use zbus::blocking::connection::Builder;
 use zbus::zvariant::{OwnedObjectPath, OwnedValue, Value};
 
-use crate::commands::battery::{
-    CharacteristicObj, DescriptorObj, DeviceObj, Gatt, ServiceObj, Tree,
-};
+use crate::commands::battery::Gatt;
+use crate::gatt::{CharacteristicObj, DescriptorObj, DeviceObj, ServiceObj, Tree};
 use crate::{Error, Result};
 
-const BLUEZ: &str = "org.bluez";
+pub const BLUEZ: &str = "org.bluez";
 
 type Props = HashMap<String, OwnedValue>;
 type Managed = HashMap<OwnedObjectPath, HashMap<String, Props>>;
@@ -40,42 +42,12 @@ impl Bluez {
         Ok(Self { conn })
     }
 
-    fn read(&self, path: &str, iface: &str) -> Result<Vec<u8>> {
-        let opts: HashMap<&str, Value> = HashMap::new();
-        let reply = self
-            .conn
-            .call_method(Some(BLUEZ), path, Some(iface), "ReadValue", &(opts,))
-            .map_err(|e| call_error("ReadValue", e))?;
-        reply
-            .body()
-            .deserialize::<Vec<u8>>()
-            .map_err(|e| Error::Bluez(format!("ReadValue on {path}: bad reply ({e})")))
+    pub fn connection(&self) -> &Connection {
+        &self.conn
     }
-}
 
-/// Maps a zbus error; BlueZ not running is "not found" (exit 2).
-fn call_error(what: &str, e: zbus::Error) -> Error {
-    if let zbus::Error::MethodError(name, desc, _) = &e {
-        let name = name.as_str();
-        if name == "org.freedesktop.DBus.Error.ServiceUnknown"
-            || name == "org.freedesktop.DBus.Error.NameHasNoOwner"
-        {
-            return Error::NotFound(
-                "BlueZ unavailable: org.bluez is not running on the system D-Bus".into(),
-            );
-        }
-        return Error::Bluez(format!(
-            "{what}: {name}{}",
-            desc.as_deref()
-                .map(|d| format!(" ({d})"))
-                .unwrap_or_default()
-        ));
-    }
-    Error::Bluez(format!("{what}: {e}"))
-}
-
-impl Gatt for Bluez {
-    fn tree(&mut self) -> Result<Tree> {
+    /// `GetManagedObjects`, as plain data.
+    pub fn managed_tree(&self) -> Result<Tree> {
         let reply = self
             .conn
             .call_method(
@@ -91,6 +63,49 @@ impl Gatt for Bluez {
             .deserialize()
             .map_err(|e| Error::Bluez(format!("GetManagedObjects: bad reply ({e})")))?;
         Ok(tree_from(&managed))
+    }
+
+    fn read(&self, path: &str, iface: &str) -> Result<Vec<u8>> {
+        let opts: HashMap<&str, Value> = HashMap::new();
+        let reply = self
+            .conn
+            .call_method(Some(BLUEZ), path, Some(iface), "ReadValue", &(opts,))
+            .map_err(|e| call_error("ReadValue", e))?;
+        reply
+            .body()
+            .deserialize::<Vec<u8>>()
+            .map_err(|e| Error::Bluez(format!("ReadValue on {path}: bad reply ({e})")))
+    }
+}
+
+/// Maps a zbus error; BlueZ not running, or the device dropping the
+/// connection, is "not found" (exit 2).
+pub fn call_error(what: &str, e: zbus::Error) -> Error {
+    if let zbus::Error::MethodError(name, desc, _) = &e {
+        let name = name.as_str();
+        if name == "org.freedesktop.DBus.Error.ServiceUnknown"
+            || name == "org.freedesktop.DBus.Error.NameHasNoOwner"
+        {
+            return Error::NotFound(
+                "BlueZ unavailable: org.bluez is not running on the system D-Bus".into(),
+            );
+        }
+        if name == "org.bluez.Error.NotConnected" {
+            return Error::NotFound(format!("{what}: the keyboard is not connected over BLE"));
+        }
+        return Error::Bluez(format!(
+            "{what}: {name}{}",
+            desc.as_deref()
+                .map(|d| format!(" ({d})"))
+                .unwrap_or_default()
+        ));
+    }
+    Error::Bluez(format!("{what}: {e}"))
+}
+
+impl Gatt for Bluez {
+    fn tree(&mut self) -> Result<Tree> {
+        self.managed_tree()
     }
 
     fn read_characteristic(&mut self, path: &str) -> Result<Vec<u8>> {
@@ -133,6 +148,7 @@ fn tree_from(managed: &Managed) -> Tree {
                 service: string(p, "Service").unwrap_or_default(),
                 uuid: string(p, "UUID").unwrap_or_default(),
                 handle: handle(p),
+                flags: strings(p, "Flags"),
                 value: bytes(p, "Value"),
             });
         }
@@ -153,6 +169,19 @@ fn string(p: &Props, key: &str) -> Option<String> {
         Some(Value::Str(s)) => Some(s.as_str().to_string()),
         Some(Value::ObjectPath(o)) => Some(o.as_str().to_string()),
         _ => None,
+    }
+}
+
+fn strings(p: &Props, key: &str) -> Vec<String> {
+    match p.get(key).map(|v| &**v) {
+        Some(Value::Array(a)) => a
+            .iter()
+            .filter_map(|v| match v {
+                Value::Str(s) => Some(s.as_str().to_string()),
+                _ => None,
+            })
+            .collect(),
+        _ => Vec::new(),
     }
 }
 

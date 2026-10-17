@@ -26,8 +26,13 @@ pub enum Error {
         context: String,
         source: std::io::Error,
     },
-    /// No response within the deadline.
-    Timeout { what: String, after: Duration },
+    /// No response within the deadline. `hint` is the transport's guess at
+    /// why (BLE: Studio only answers on the selected output endpoint).
+    Timeout {
+        what: String,
+        after: Duration,
+        hint: Option<String>,
+    },
     /// A frame or message could not be decoded, or the reply made no sense.
     Protocol(String),
     /// The keyboard answered with an RPC-level error.
@@ -76,12 +81,16 @@ impl fmt::Display for Error {
             Error::NotFound(m) => write!(f, "keyboard not found: {m}"),
             Error::Usage(m) => write!(f, "usage: {m}"),
             Error::Io { context, source } => write!(f, "{context}: {source}"),
-            Error::Timeout { what, after } => {
+            Error::Timeout { what, after, hint } => {
                 write!(
                     f,
                     "timed out after {} ms waiting for {what}",
                     after.as_millis()
-                )
+                )?;
+                match hint {
+                    Some(h) => write!(f, " ({h})"),
+                    None => Ok(()),
+                }
             }
             Error::Protocol(m) => write!(f, "protocol error: {m}"),
             Error::Rpc(m) => write!(f, "keyboard returned an error: {m}"),

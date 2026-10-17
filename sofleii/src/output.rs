@@ -142,7 +142,13 @@ pub const GLYPH_DISCONNECTED: &str = "\u{f00b2}";
 
 /// Best guess of where keystrokes go: the output priority, with ZMK's
 /// fallback to the other endpoint when the preferred one isn't connected.
-/// USB counts as connected while we talk to the keyboard over USB.
+///
+/// - Over USB, USB counts as connected (we're talking over it).
+/// - Over BLE, whether USB is plugged in is unknown, so only the priority
+///   and the active profile's connection count: a connected profile means
+///   `ble`. That also matches the firmware, which only answers Studio on the
+///   selected endpoint, so a reply over BLE means BLE is selected (and, with
+///   priority `usb`, that USB isn't connected).
 pub fn effective_output(transport: &TransportInfo, s: &Status) -> Option<&'static str> {
     let usb = transport.kind == TransportKind::Usb;
     let ble = s.profile.as_ref().is_some_and(|p| p.connected);
@@ -279,7 +285,9 @@ pub fn battery(style: Style, r: &Reading, t: Thresholds) -> String {
 
 /// Label/value rows shared by the human output and the waybar tooltip.
 fn status_rows(transport: &TransportInfo, s: &Status) -> Vec<(&'static str, String)> {
+    let over_ble = transport.kind == TransportKind::Ble;
     let output = match (effective_output(transport, s), s.output_priority) {
+        (Some("ble"), Some("usb")) if over_ble => "ble (priority usb; USB not connected)".into(),
         (Some(o), Some(p)) => format!("{o} (priority {p})"),
         (Some(o), None) => o.to_string(),
         (None, Some(p)) => format!("none (priority {p})"),
@@ -524,13 +532,53 @@ mod tests {
 
     #[test]
     fn waybar_disconnected_over_ble_transport() {
-        // Future BLE transport, profile not connected, no USB: nothing is up.
+        // Over BLE with the profile not connected: nothing known to be up.
         let v = parse(&status(
             Style::plain(Format::Waybar),
             &transport(TransportKind::Ble),
             &sample("usb", false),
         ));
         assert_eq!(v["class"], "disconnected");
+    }
+
+    #[test]
+    fn waybar_over_ble_follows_the_profile() {
+        // Over BLE, USB is unknown: a connected profile means ble, whatever
+        // the priority (ZMK only answers Studio on the selected endpoint).
+        let t = TransportInfo {
+            kind: TransportKind::Ble,
+            device: "DD:1F:23:76:6E:71".into(),
+        };
+        for priority in ["usb", "ble"] {
+            let v = parse(&status(
+                Style::plain(Format::Waybar),
+                &t,
+                &sample(priority, true),
+            ));
+            assert_eq!(v["class"], "ble", "priority {priority}");
+            assert_eq!(v["text"], format!("{GLYPH_BLE} 2"));
+        }
+        let v = parse(&status(
+            Style::plain(Format::Waybar),
+            &t,
+            &sample("usb", true),
+        ));
+        let tip = v["tooltip"].as_str().unwrap();
+        assert!(tip.contains("transport: ble DD:1F:23:76:6E:71"), "{tip}");
+        assert!(
+            tip.contains("output: ble (priority usb; USB not connected)"),
+            "{tip}"
+        );
+        let v: Value = serde_json::from_str(&status(
+            Style::plain(Format::Json),
+            &t,
+            &sample("ble", true),
+        ))
+        .unwrap();
+        assert_eq!(
+            v["transport"],
+            serde_json::json!({"kind": "ble", "address": "DD:1F:23:76:6E:71"})
+        );
     }
 
     #[test]

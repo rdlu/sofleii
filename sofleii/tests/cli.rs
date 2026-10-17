@@ -86,3 +86,35 @@ fn battery_bad_flags_are_usage_errors() {
     assert_eq!(sofleii(&["battery", "--warn-below", "101"]).0, 3);
     assert_eq!(sofleii(&["battery", "--json", "--format", "waybar"]).0, 3);
 }
+
+#[test]
+fn contradictory_transport_flags_are_usage_errors() {
+    let mac = "DD:1F:23:76:6E:71";
+    for args in [
+        &["info", "--device", "/dev/nonexistent", "--bt-address", mac][..],
+        &["info", "--transport", "usb", "--bt-address", mac][..],
+        &[
+            "status",
+            "--json",
+            "--transport",
+            "ble",
+            "--device",
+            "/dev/nonexistent",
+        ][..],
+    ] {
+        let (code, stdout) = sofleii(args);
+        assert_eq!(code, 3, "{args:?}");
+        if args.contains(&"--json") {
+            let v: serde_json::Value = serde_json::from_str(&stdout).unwrap();
+            assert_eq!(v["error"]["kind"], "usage");
+        }
+    }
+}
+
+#[test]
+fn ble_without_bluez_is_not_found() {
+    let (code, stdout) = sofleii_no_dbus(&["info", "--transport", "ble", "--json"]);
+    assert_eq!(code, 2);
+    let v: serde_json::Value = serde_json::from_str(&stdout).unwrap();
+    assert_eq!(v["error"]["kind"], "not_found");
+}

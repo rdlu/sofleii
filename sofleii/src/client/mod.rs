@@ -37,6 +37,11 @@ impl<T: Transport> Client<T> {
         }
     }
 
+    /// Changes the per-response timeout (e.g. a short probe first).
+    pub fn set_timeout(&mut self, timeout: Duration) {
+        self.timeout = timeout;
+    }
+
     pub fn transport_info(&self) -> TransportInfo {
         self.transport.info()
     }
@@ -92,6 +97,7 @@ impl<T: Transport> Client<T> {
                 return Err(Error::Timeout {
                     what: what.into(),
                     after: self.timeout,
+                    hint: self.transport.timeout_hint(),
                 });
             }
             let n = self.transport.recv(&mut buf, deadline - now)?;
