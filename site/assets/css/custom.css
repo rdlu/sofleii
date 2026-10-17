@@ -746,7 +746,10 @@ main h2.not-prose {
   font-size: calc(var(--u) * 0.26);
   line-height: 1.05;
   text-align: center;
-  overflow-wrap: anywhere;
+  /* Break only between words (and at the <wbr> after | and + the legend
+     partial adds); split a word only if it can't fit the key at all. */
+  word-break: normal;
+  overflow-wrap: break-word;
 }
 .zs-k.long .cap { font-size: calc(var(--u) * 0.2); }
 .zs-k.xlong .cap { font-size: calc(var(--u) * 0.15); }
