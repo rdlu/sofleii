@@ -22,5 +22,8 @@
     {{ $label }}
   {{- end -}}
 {{- else -}}
-  {{ $t }}
+  {{- /* A break opportunity after | and +, so "SYS|NUM" wraps as SYS| / NUM
+    and "Gui+Sft+H" at a +, never mid-word. <wbr> is markup, not a
+    character: copy, search and tooltips still see the plain label. */ -}}
+  {{ htmlEscape $t | replaceRE `([|+])` "$1<wbr>" | safeHTML }}
 {{- end -}}
