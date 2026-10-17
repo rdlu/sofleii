@@ -56,7 +56,8 @@ jobs:
           TRIGGER_SHA: ${{ github.event.workflow_run.head_sha }}
         run: |
           changed=$(git diff --name-only "$TRIGGER_SHA^" HEAD -- \
-            config/eyelash_sofle.keymap config/west.yml keymap-drawer/eyelash_sofle.svg)
+            config/eyelash_sofle.keymap config/eyelash_sofle.json config/west.yml \
+            keymap-drawer/eyelash_sofle.svg keymap-drawer/eyelash_sofle.yaml)
           echo "docs inputs changed since ${TRIGGER_SHA:0:8}^: ${changed:-none}"
           echo "deploy=$([ -n "$changed" ] && echo true || echo false)" >> "$GITHUB_OUTPUT"
 

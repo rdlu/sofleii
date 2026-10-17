@@ -1,0 +1,26 @@
+{{- /* One legend: a $$set:name$$ glyph from the keymap render, or text. Takes (dict "text" "glyphs"). */ -}}
+{{- $t := string .text -}}
+{{- $names := dict
+  "mdi:transfer" "transparent" "mdi:minus-circle-outline" "nothing"
+  "mdi:apple-keyboard-option" "Alt" "mdi:apple-keyboard-control" "Ctrl"
+  "mdi:apple-keyboard-shift" "Shift" "mdi:apple-keyboard-command" "GUI"
+  "mdi:keyboard-return" "Enter" "mdi:keyboard-esc" "Esc" "mdi:keyboard-tab" "Tab"
+  "mdi:keyboard-space" "Space" "mdi:backspace" "Backspace"
+  "mdi:backspace-reverse-outline" "Delete" "mdi:alpha-w-box" "Caps Word"
+  "mdi:arrow-up-bold" "Up" "mdi:arrow-down-bold" "Down"
+  "mdi:arrow-left-bold" "Left" "mdi:arrow-right-bold" "Right"
+  "mdi:volume-high" "Volume up" "mdi:volume-low" "Volume down"
+  "mdi:volume-off" "Mute" "mdi:play-pause" "Play/pause" "mdi:skip-next" "Next"
+  "mdi:skip-previous" "Previous" "mdi:bluetooth-off" "Bluetooth clear"
+  "mdi:bluetooth-connect" "Bluetooth profile" -}}
+{{- with findRESubmatch `^\$\$([a-z]+:[a-z0-9-]+)\$\$$` $t 1 -}}
+  {{- $g := index . 0 1 -}}
+  {{- $label := index $names $g | default (replace (index (split $g ":") 1) "-" " ") -}}
+  {{- with index $.glyphs $g -}}
+    <span class="g" role="img" aria-label="{{ $label }}">{{ . | safeHTML }}</span>
+  {{- else -}}
+    {{ $label }}
+  {{- end -}}
+{{- else -}}
+  {{ $t }}
+{{- end -}}

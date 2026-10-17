@@ -1,0 +1,139 @@
+{{- /*
+  Everything the `layer` shortcode needs, built once per site build
+  (partialCached). Sources, all mounted in hugo.toml:
+
+  - config/eyelash_sofle.keymap: the raw binding at every position of every
+    layer (shown on hover), and the macros, whose typed text is derived here
+    because keymap-drawer only prints a macro's name;
+  - keymap-drawer/eyelash_sofle.yaml: keymap-drawer's parse of that same
+    keymap through keymap_drawer.config.yaml, so the legends match the SVG
+    render exactly (tap, hold, shifted, and trans / none / held types);
+  - keymap-drawer/eyelash_sofle.svg: the glyphs ($$mdi:...$$) the legends
+    name, from the render's <defs>;
+  - config/eyelash_sofle.json: the physical layout keymap-drawer draws with.
+
+  If the parse is older than the keymap (keymap edited, `mise run draw` not
+  run yet), the build warns instead of showing stale legends silently.
+
+  Returns: layers (name -> list of {t h s type raw}), order (names, keymap
+  order), keys (list of {x y r rx ry}), box (minx miny w h), glyphs
+  (name -> inline svg).
+*/ -}}
+{{- $km := partial "zs/keymap-source.html" . -}}
+{{- $text := $km.text -}}
+
+{{- /* Raw bindings per layer, from the keymap { } block. */ -}}
+{{- $keymap := index (findRESubmatch `(?s)keymap \{\s*compatible = "zmk,keymap";(.*)` $text 1) 0 1 -}}
+{{- $raw := dict -}}
+{{- $order := slice -}}
+{{- range findRESubmatch `(?s)\w+ \{\s*bindings = <(.*?)>;.*?display-name = "([^"]+)";` $keymap -}}
+  {{- $toks := slice -}}
+  {{- range findRE `&[^&]+` (index . 1) -}}
+    {{- $toks = $toks | append (trim (replaceRE `\s+` " " .) " ") -}}
+  {{- end -}}
+  {{- $raw = merge $raw (dict (index . 2) $toks) -}}
+  {{- $order = $order | append (index . 2) -}}
+{{- end -}}
+
+{{- /* Macros: name -> the text it types, when it is only &kp presses. */ -}}
+{{- $chars := dict
+  "PIPE" "|" "GT" ">" "LT" "<" "MINUS" "-" "EQUAL" "=" "COLON" ":" "LPAR" "("
+  "RPAR" ")" "LBKT" "[" "RBKT" "]" "LBRC" "{" "RBRC" "}" "DQT" "\"" "TILDE" "~"
+  "FSLH" "/" "EXCL" "!" "UNDER" "_" "PRCNT" "%" "SPACE" " " "GRAVE" "`" -}}
+{{- $macros := dict -}}
+{{- range findRESubmatch `(?s)(\w+): \w+ \{\s*compatible = "zmk,behavior-macro";(.*?)\};` $text -}}
+  {{- $name := index . 1 -}}
+  {{- $b := index (findRESubmatch `(?s)bindings\s*=\s*(.*?);` (index . 2) 1) 0 1 -}}
+  {{- $out := "" -}}
+  {{- $lefts := 0 -}}
+  {{- $ok := true -}}
+  {{- range findRE `&[^&]+` $b -}}
+    {{- $f := findRE `\S+` (replaceRE `[<>,]` " " .) -}}
+    {{- if or (ne (index $f 0) "&kp") (ne (len $f) 2) }}{{ $ok = false }}{{ break }}{{ end -}}
+    {{- $k := index $f 1 -}}
+    {{- if eq $k "LEFT" -}}
+      {{- $lefts = add $lefts 1 -}}
+    {{- else if gt $lefts 0 -}}
+      {{- $ok = false }}{{ break -}}
+    {{- else if index $chars $k -}}
+      {{- $out = printf "%s%s" $out (index $chars $k) -}}
+    {{- else if findRE `^[A-Z]$` $k -}}
+      {{- $out = printf "%s%s" $out (lower $k) -}}
+    {{- else if findRE `^LS\([A-Z]\)$` $k -}}
+      {{- $out = printf "%s%s" $out (substr $k 3 1) -}}
+    {{- else -}}
+      {{- $ok = false }}{{ break -}}
+    {{- end -}}
+  {{- end -}}
+  {{- if $ok -}}
+    {{- /* A ▏ marks where the macro leaves the cursor. */ -}}
+    {{- if gt $lefts 0 -}}
+      {{- $cut := sub (len $out) $lefts -}}
+      {{- $out = printf "%s▏%s" (substr $out 0 $cut) (substr $out $cut) -}}
+    {{- end -}}
+    {{- $macros = merge $macros (dict $name $out) -}}
+  {{- end -}}
+{{- end -}}
+
+{{- /* keymap-drawer's legends. */ -}}
+{{- $parsed := resources.Get "keymap/eyelash_sofle.yaml" | transform.Unmarshal -}}
+{{- $layers := dict -}}
+{{- range $name := $order -}}
+  {{- $legends := index $parsed.layers $name -}}
+  {{- $rawL := index $raw $name -}}
+  {{- if or (not $legends) (ne (len $legends) (len $rawL)) -}}
+    {{- warnf "layer %q: keymap-drawer/eyelash_sofle.yaml doesn't match config/eyelash_sofle.keymap; run `mise run draw`" $name -}}
+  {{- end -}}
+  {{- $keys := slice -}}
+  {{- range $i, $r := $rawL -}}
+    {{- $l := "" -}}
+    {{- if and $legends (lt $i (len $legends)) }}{{ $l = index $legends $i }}{{ end -}}
+    {{- $e := dict -}}
+    {{- if reflect.IsMap $l }}{{ $e = $l }}{{ else }}{{ $e = dict "t" (string $l) }}{{ end -}}
+    {{- $e = merge (dict "t" "" "h" "" "s" "" "type" "") $e (dict "raw" $r) -}}
+    {{- /* Agree on trans, or the parse is stale. */ -}}
+    {{- /* (A "held" key is the &trans under the key that holds this layer.) */ -}}
+    {{- if and (ne $e.type "held") (ne (eq $r "&trans") (eq $e.type "trans")) -}}
+      {{- warnf "layer %q pos %d: keymap has %q but the keymap-drawer parse disagrees; run `mise run draw`" $name $i $r -}}
+    {{- end -}}
+    {{- /* keymap-drawer prints what it can't map as the raw binding. */ -}}
+    {{- if hasPrefix (string $e.t) "&" -}}
+      {{- $m := strings.TrimPrefix "&" (index (findRE `^&\S+` $r) 0) -}}
+      {{- with index $macros $m -}}
+        {{- $e = merge $e (dict "t" . "macro" true) -}}
+      {{- else -}}
+        {{- $e = merge $e (dict "t" (strings.TrimPrefix "&" (string $e.t))) -}}
+      {{- end -}}
+    {{- end -}}
+    {{- $keys = $keys | append $e -}}
+  {{- end -}}
+  {{- $layers = merge $layers (dict $name $keys) -}}
+{{- end -}}
+
+{{- /* Glyphs, from the render's <defs>; ids dropped (they'd repeat). */ -}}
+{{- $glyphs := dict -}}
+{{- range findRESubmatch `(?s)<svg id="([a-z]+:[a-z0-9-]+)">\s*(<svg.*?</svg>)\s*</svg>` (resources.Get "keymap/eyelash_sofle.svg").Content -}}
+  {{- $glyphs = merge $glyphs (dict (index . 1) (replaceRE ` id="[^"]*"` "" (index . 2))) -}}
+{{- end -}}
+
+{{- /* Physical layout, with the bounding box of the rotated thumb keys. */ -}}
+{{- $phys := index (resources.Get "config/eyelash_sofle.json" | transform.Unmarshal).layouts "default_layout" -}}
+{{- $keys := slice -}}
+{{- $minx := 1000.0 }}{{ $miny := 1000.0 }}{{ $maxx := -1000.0 }}{{ $maxy := -1000.0 -}}
+{{- range $phys.layout -}}
+  {{- $x := float .x }}{{ $y := float .y -}}
+  {{- $r := float (.r | default 0) -}}
+  {{- $rx := float (.rx | default $x) }}{{ $ry := float (.ry | default $y) -}}
+  {{- $keys = $keys | append (dict "x" $x "y" $y "r" $r "rx" $rx "ry" $ry) -}}
+  {{- $a := math.ToRadians $r -}}
+  {{- range $c := slice (slice 0.0 0.0) (slice 1.0 0.0) (slice 0.0 1.0) (slice 1.0 1.0) -}}
+    {{- $dx := sub (add $x (index $c 0)) $rx }}{{ $dy := sub (add $y (index $c 1)) $ry -}}
+    {{- $px := add $rx (sub (mul $dx (math.Cos $a)) (mul $dy (math.Sin $a))) -}}
+    {{- $py := add $ry (add (mul $dx (math.Sin $a)) (mul $dy (math.Cos $a))) -}}
+    {{- $minx = math.Min $minx $px }}{{ $maxx = math.Max $maxx $px -}}
+    {{- $miny = math.Min $miny $py }}{{ $maxy = math.Max $maxy $py -}}
+  {{- end -}}
+{{- end -}}
+
+{{- return dict "layers" $layers "order" $order "keys" $keys "glyphs" $glyphs
+  "box" (dict "minx" $minx "miny" $miny "w" (sub $maxx $minx) "h" (sub $maxy $miny)) -}}

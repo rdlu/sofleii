@@ -2,7 +2,7 @@
 
 This document covers manual flashing without the `mise` automation. Use this if you don't have `mise` / `gh` installed, or if you prefer the step-by-step drag-and-drop flow.
 
-For the automated flow, see the [README](README.md#flashing) — `mise run flash-release` handles everything in one command.
+For the automated flow, see the [Flashing guide](https://sofleii.dlu.one/docs/flashing/) — `mise run flash-release` handles everything in one command.
 
 ---
 
@@ -52,13 +52,13 @@ The settings reset wipes:
 - ZMK Studio's stored keymap overlay
 - Bluetooth pairings (so the halves will need to re-pair after)
 
-After this two-step flash, the compiled keymap will actually run. If the halves don't auto-pair, see [Re-pairing the halves](README.md#re-pairing-the-halves) in the README.
+After this two-step flash, the compiled keymap will actually run. If the halves don't auto-pair, see [Re-pairing the halves](https://sofleii.dlu.one/docs/bluetooth/#re-pairing-the-halves) on the docs site.
 
 ---
 
 ## Building the firmware locally
 
-If you need to build from source instead of using a release, install the toolchain and run the `mise` tasks documented in [Building Locally on Arch Linux](README.md#building-locally-on-arch-linux) in the README. The compiled artifacts land at:
+If you need to build from source instead of using a release, install the toolchain and run the `mise` tasks documented in [Building](https://sofleii.dlu.one/docs/building/) on the docs site. The compiled artifacts land at:
 
 - `eyelash_sofle_studio_left.uf2` (after `mise run build-left`)
 - `eyelash_sofle_right.uf2` (after `mise run build-right`)
@@ -89,4 +89,4 @@ Once they exist, either drag-and-drop as above or use `mise run flash-left` / `f
 
 **Halves won't pair after flashing**
 
-- See [Re-pairing the halves](README.md#re-pairing-the-halves) in the README.
+- See [Re-pairing the halves](https://sofleii.dlu.one/docs/bluetooth/#re-pairing-the-halves) on the docs site.

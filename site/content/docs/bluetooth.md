@@ -58,4 +58,4 @@ Studio edits, so re-pair your computers afterwards.
 - **Sleep**: after an hour without a key press, the board goes to deep sleep.
 - **Soft off**: hold <kbd>Q</kbd> + <kbd>S</kbd> + <kbd>Z</kbd> for two
   seconds. One press of the reset button wakes it. See
-  [Combos](../reference/combos/).
+  [Combos](../../keymap/combos/).

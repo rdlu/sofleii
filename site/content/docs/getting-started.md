@@ -42,9 +42,9 @@ That split matters in a few places:
   dependency pinned to a commit. See [Firmware](../reference/firmware/).
 - **Home-row mods** on S D F and J K L (Alt, Ctrl, Shift on each hand), held
   only when the other hand joins in. See
-  [Hold-tap timing](../reference/hold-tap/).
+  [Home-row mods & timing](../../keymap/hold-tap/).
 - **Nine layers**: BASE, NAV, CODE, MEDIA, SYS|NUM, the GAME? picker, and
-  three game layers. See [Keymap](../reference/keymap/).
+  three game layers. See [Keymap](../../keymap/).
 - **Gaming mode**: locked layers without any hold-tap. See
   [Gaming mode](../gaming-mode/).
 - **Per-layer underglow** from the in-repo `zmk-rgb-layer` module. See
@@ -54,7 +54,7 @@ That split matters in a few places:
 - **Soft off** with the combo <kbd>Q</kbd> + <kbd>S</kbd> + <kbd>Z</kbd>,
   held for two seconds; one press of the reset button wakes the board. Left
   alone, it also goes to sleep after an hour idle. See
-  [Combos](../reference/combos/).
+  [Combos](../../keymap/combos/).
 
 ## Where to go next
 

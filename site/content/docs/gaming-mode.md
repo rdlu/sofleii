@@ -8,7 +8,8 @@ weight: 7
 Home-row mods and hold-taps are good for typing and bad for games: holding
 <kbd>S</kbd> to walk back would turn into Alt. The game layers have **no
 home-row mods, no hold-tap and no caps word**. Every key is a plain key
-press, so movement, run and crouch hold the way a game expects. A game layer
+press, so movement, run and crouch hold the way a game expects. Every
+binding is drawn on [Gaming layers](../../keymap/gaming/). A game layer
 stays on until you leave it; nothing needs to be held.
 
 ## Entering
@@ -64,4 +65,5 @@ Two combos work on the game layers only:
 | the **top-left key and the 5 key** (positions 0 + 5) | back to the picker, to switch game |
 
 The corners are far apart on purpose: hard to brush in a fight, easy to hit
-when you mean it. See [Combos](../reference/combos/) for their timeouts.
+when you mean it. See [Combos](../../keymap/combos/) for their timeouts, and
+[Gaming layers](../../keymap/gaming/) for every binding.

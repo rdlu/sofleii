@@ -2,13 +2,14 @@
 title: Combos
 description: The Eyelash Sofle combos - soft off on Q+S+Z, the |> pipe operator, and the game-layer exit and re-pick - read from the keymap.
 keywords: [combos, soft off, Q+S+Z, power off, pipe operator, game exit, key positions]
-weight: 13
+aliases: [/docs/reference/combos/]
+weight: 12
 ---
 
 A combo is a set of keys pressed together that does something none of them
 does alone. This table is read from `config/eyelash_sofle.keymap` on every
 site build. The keys are named by what BASE has in those positions; see
-[Key positions](../keymap/#key-positions).
+[Key positions](../#key-positions).
 
 {{< keymap-combos >}}
 
@@ -36,4 +37,4 @@ On the game layers only:
 - the top-left key and the 5 key (positions 0 + 5) reopen the GAME? picker,
   to switch games without going through BASE.
 
-See [Gaming mode](../../gaming-mode/).
+See [Gaming layers](../gaming/) and the [Gaming mode](../../docs/gaming-mode/) guide.

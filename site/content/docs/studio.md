@@ -54,3 +54,14 @@ half and then the left firmware (see [Flashing](../flashing/#settings-reset)).
 That also clears the left half's Bluetooth bonds. To keep edits for good,
 make them in `config/eyelash_sofle.keymap` and rebuild; export them from
 Studio first if you need a copy.
+
+## Editing in the repo instead
+
+[keymap-editor](https://nickcoutsos.github.io/keymap-editor/) edits
+`config/eyelash_sofle.keymap` in the browser and commits the change to this
+repository, so the change lives in Git rather than in one keyboard's flash.
+Install its [GitHub App](https://github.com/apps/keymap-editor) on the repo
+once, sign in, and pick the repo; it finds the `.keymap` and `.json` in
+`config/`. A save that lands on `main` starts the firmware build and the
+keymap render in GitHub Actions; flash the new build with
+`mise run flash-release` (see [Flashing](../flashing/)).
