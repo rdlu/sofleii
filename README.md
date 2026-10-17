@@ -1,5 +1,7 @@
 # Eyelash Sofle — ZMK Firmware
 
+> **Docs: [sofleii.dlu.one](https://sofleii.dlu.one)** — flashing, pairing, Studio, gaming mode, underglow, building, and the full keymap reference.
+
 > [!WARNING]
 > **Personal configuration — use at your own risk.**
 > Releases are experimental and built for one specific keyboard. Key layout, timing, and layer assignments are tuned to personal preference and may change without notice. If you have the same hardware, feel free to use this as a starting point, but do not expect a stable or general-purpose firmware.
@@ -290,6 +292,15 @@ mise run build-flash
 ```
 
 > If you just want to flash a release without building from source, use `mise run flash-release` instead — it downloads the latest main artifacts from GitHub Actions. See the [Flashing](#flashing) section above.
+
+### 4a. Docs site
+
+The docs at [sofleii.dlu.one](https://sofleii.dlu.one) are built from `site/` with Hugo (from pacman; the version CI uses is `HUGO_VERSION` in `.mise.toml`):
+
+```bash
+mise run docs         # dev server on http://127.0.0.1:1313/ (live reload)
+mise run docs-build   # minified build into site/public/
+```
 
 ### 4b. Print the keymap layout (PDF)
 
