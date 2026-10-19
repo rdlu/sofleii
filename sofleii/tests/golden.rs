@@ -1,6 +1,8 @@
-//! Golden request bytes from #44, captured from the v3.0.0 firmware.
+//! Golden request bytes from #44, captured from the v3.0.0 firmware, plus
+//! live `get_split_info` requests and replies.
 
 use sofleii::client::rpc;
+use sofleii::commands::split::{self, Split};
 use sofleii::framing;
 
 fn hex(s: &str) -> Vec<u8> {
@@ -111,4 +113,72 @@ fn switch_profile_call_on_subsystem_0() {
         rpc::encode_request(4, req),
         hex("08 04 a2 06 08 12 06 12 04 1a 02 08 02")
     );
+}
+
+// get_split_info, captured live on 2026-10-19 over USB from the left half
+// running the ble-management fork's fix (rdlu/zmk-module-ble-management
+// 5ea5b4f).
+
+#[test]
+fn get_split_info_request_on_subsystem_0() {
+    // get_split_info (5): {}
+    assert_eq!(rpc::ble::get_split_info(), hex("2a 00"));
+    let req = rpc::custom_call(0, rpc::ble::get_split_info());
+    assert_eq!(
+        rpc::encode_request(7, req),
+        hex("08 07 a2 06 06 12 04 12 02 2a 00")
+    );
+}
+
+/// The `cormoran_ble` reply inside a captured `zmk.studio.RequestResponse`
+/// (the `Response` frame's `request_response`, unframed), mapped to a
+/// [`Split`].
+fn split_reply(bytes: &str) -> Split {
+    use prost::Message;
+    use sofleii::proto::{ble_management::response::ResponseType, custom, studio};
+    let rr = studio::RequestResponse::decode(hex(bytes).as_slice()).unwrap();
+    assert_eq!(rr.request_id, 7);
+    let Some(studio::request_response::Subsystem::Custom(custom::Response {
+        response_type: Some(custom::response::ResponseType::Call(c)),
+    })) = rr.subsystem
+    else {
+        panic!("not a custom call reply: {rr:?}");
+    };
+    assert_eq!(c.subsystem_index, 0);
+    let ResponseType::GetSplitInfo(r) = rpc::ble::decode(&c.payload).unwrap() else {
+        panic!("not get_split_info");
+    };
+    split::from_response(r)
+}
+
+#[test]
+fn get_split_info_reply_right_half_on() {
+    // info { is_split: 1, is_central: 1, peripheral_connected: 1 }
+    let s = split_reply("08 07 a2 06 0e 12 0c 12 0a 32 08 0a 06 08 01 10 01 18 01");
+    assert_eq!(
+        s,
+        Split {
+            known: true,
+            connected: Some(true),
+            is_split: Some(true),
+            is_central: Some(true),
+        }
+    );
+}
+
+#[test]
+fn get_split_info_reply_right_half_off() {
+    // peripheral_connected false is the proto3 default, so it is omitted.
+    let s = split_reply("08 07 a2 06 0c 12 0a 12 08 32 06 0a 04 08 01 10 01");
+    assert!(s.known && s.disconnected());
+    assert_eq!(s.connected, Some(false));
+}
+
+#[test]
+fn get_split_info_reply_without_info_is_unknown() {
+    // Older firmware (cormoran's module before the fix): get_split_info (6)
+    // is an empty message, no `info` at all.
+    let s = split_reply("08 07 a2 06 06 12 04 12 02 32 00");
+    assert_eq!(s, Split::unknown());
+    assert!(!s.disconnected());
 }

@@ -45,6 +45,9 @@ pub enum Step {
 pub struct Kb {
     pub active: u32,
     pub priority: bm::OutputPriority,
+    /// The right half is on the split link; `None` answers
+    /// `get_split_info` with no `info`, as older firmware does.
+    pub split: Option<bool>,
     /// Per opened transport, in order; then [`Mode::Normal`].
     pub modes: VecDeque<Mode>,
     /// Per connection attempt, in order; then a successful open.
@@ -67,6 +70,7 @@ impl Default for Kb {
         Self {
             active: 0,
             priority: bm::OutputPriority::Usb,
+            split: Some(true),
             modes: VecDeque::new(),
             steps: VecDeque::new(),
             usb: true,
@@ -210,6 +214,14 @@ fn answer(kb: &mut Kb, sub: crate::client::RequestSubsystem) -> Option<ResponseS
             use bm::response::ResponseType as R;
             let r = match req {
                 Ble::GetProfiles(_) => R::GetProfiles(profiles(kb.active)),
+                Ble::GetSplitInfo(_) => R::GetSplitInfo(bm::GetSplitInfoResponse {
+                    info: kb.split.map(|c| bm::SplitInfo {
+                        is_split: true,
+                        is_central: true,
+                        peripheral_connected: c,
+                        central_bonded: false,
+                    }),
+                }),
                 Ble::GetOutputPriority(_) => R::GetOutputPriority(bm::GetOutputPriorityResponse {
                     priority: kb.priority as i32,
                 }),

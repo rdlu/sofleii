@@ -4,9 +4,9 @@
 //! - [`link`]: the only thread that touches Studio RPC. It **leases** the
 //!   connection: connects for a batch of requests and drops the client after
 //!   [`Config::lease_idle`], so the exclusively opened USB port stays free
-//!   for waybar's `sofleii status`. Polls profiles and output priority,
-//!   reads `info` once per (re)connect, runs the write actions, and
-//!   reconnects with backoff.
+//!   for waybar's `sofleii status`. Polls profiles, output priority and
+//!   the split link, reads `info` once per (re)connect, runs the write
+//!   actions, and reconnects with backoff.
 //! - [`watch`]: batteries over BlueZ GATT (never RPC), USB presence (sysfs)
 //!   and BLE `Connected`, on its own BlueZ connection. Presence edges go to
 //!   `link` (an immediate retry) and to the front end.
@@ -42,6 +42,7 @@ use serde::Serialize;
 use crate::commands::battery::Reading;
 use crate::commands::info::Info;
 use crate::commands::profiles::Profiles;
+use crate::commands::split::Split;
 use crate::commands::update::{DEFAULT_REPO, Http};
 use crate::commands::{output, profile};
 use crate::connect;
@@ -58,7 +59,8 @@ pub use watch::{Probe, SystemProbe};
 /// instead of sleeping.
 #[derive(Debug, Clone)]
 pub struct Config {
-    /// Profiles and output priority, while the front end is focused.
+    /// Profiles, output priority and the split link, while the front end
+    /// is focused.
     pub poll: Duration,
     /// The same, while it isn't ([`Request::Focus`]`(false)`).
     pub poll_unfocused: Duration,
@@ -119,7 +121,7 @@ pub enum Scope {
     /// Status and info over RPC, the batteries, and the update check (which
     /// honours its cache).
     All,
-    /// Profiles and output priority.
+    /// Profiles, output priority and the split link.
     Status,
     Battery,
     Info,
@@ -308,6 +310,9 @@ pub enum Event {
     Presence(Presence),
     /// Profiles and output priority (the polled part of `status`).
     Status(Reads<Profiles>),
+    /// The split link, right after each good [`Event::Status`] (unknown on
+    /// firmware without the split-info fix).
+    Split(Reads<Split>),
     /// Once per (re)connect, and on [`Scope::Info`].
     Info(Reads<Info>),
     Battery(Reads<Reading>),

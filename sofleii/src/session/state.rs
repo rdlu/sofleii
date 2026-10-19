@@ -15,6 +15,7 @@ use super::{Config, ErrorView, Event, LinkState, LogLevel, Presence, Reads, Upda
 use crate::commands::battery::Reading;
 use crate::commands::info::{Build, Device, Info};
 use crate::commands::profiles::Profiles;
+use crate::commands::split::Split;
 
 /// A value goes stale after this many refresh intervals without a good read.
 pub const STALE_AFTER: u32 = 3;
@@ -99,6 +100,8 @@ pub struct Snapshot {
     pub info: Field<Info>,
     /// Profiles and output priority.
     pub status: Field<Profiles>,
+    /// The split link, polled with `status`.
+    pub split: Field<Split>,
     pub battery: Field<Reading>,
     pub update: Field<UpdateReport>,
     /// Oldest first, at most `log_capacity` lines.
@@ -120,6 +123,7 @@ impl Snapshot {
             presence: None,
             info: Field::default(),
             status: Field::default(),
+            split: Field::default(),
             battery: Field::default(),
             update: Field::default(),
             log: VecDeque::new(),
@@ -140,6 +144,7 @@ impl Snapshot {
             Event::Link(s) => self.link = s.clone(),
             Event::Presence(p) => self.presence = Some(*p),
             Event::Status(r) => self.status.apply(r),
+            Event::Split(r) => self.split.apply(r),
             Event::Info(r) => self.info.apply(r),
             Event::Battery(r) => self.battery.apply(r),
             Event::Update(r) => self.update.apply(r),
@@ -167,6 +172,7 @@ impl Snapshot {
             i.poll_unfocused
         };
         self.status.tick(now, Some(poll));
+        self.split.tick(now, Some(poll));
         self.info.tick(now, None);
         self.battery.tick(now, Some(i.battery));
         self.update.tick(now, Some(i.update));
@@ -257,6 +263,33 @@ mod tests {
         s.info.at = Some(t(0));
         s.tick(t(1_000_000));
         assert!(!s.info.stale);
+    }
+
+    #[test]
+    fn split_events_fold_like_status() {
+        let mut s = Snapshot::new(&Config::default());
+        let down = Split {
+            known: true,
+            connected: Some(false),
+            is_split: Some(true),
+            is_central: Some(true),
+        };
+        s.apply(&Event::Split(Stamped {
+            at: t(0),
+            value: Ok(down),
+        }));
+        assert_eq!(s.split.value, Some(down));
+        // A failed read keeps it, and it goes stale with the status interval.
+        s.apply(&Event::Split(Stamped {
+            at: t(5),
+            value: Err(err("quiet")),
+        }));
+        assert_eq!(s.split.value, Some(down));
+        assert!(s.split.error.is_some());
+        s.tick(t(16));
+        assert!(s.split.stale);
+        let json = serde_json::to_value(&s).unwrap();
+        assert_eq!(json["split"]["value"]["connected"], false);
     }
 
     #[test]

@@ -74,6 +74,12 @@ pub mod ble {
         ))
     }
 
+    pub fn get_split_info() -> Vec<u8> {
+        request(RequestType::GetSplitInfo(
+            ble_management::GetSplitInfoRequest {},
+        ))
+    }
+
     pub fn switch_profile(index: u32) -> Vec<u8> {
         request(RequestType::SwitchProfile(
             ble_management::SwitchProfileRequest { index },

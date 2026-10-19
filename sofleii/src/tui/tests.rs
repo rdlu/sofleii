@@ -130,7 +130,7 @@ fn dashboard_80x24() {
         "│ Profile    0 \"desk\"  connected               Studio     unlocked             │",
         "│ Battery    L ████████░░  82%   R ██████░░░░  61%                read 12s ago │",
         "│ Firmware   v3.1.0 (f9a665f) · up to date with v3.1.0          checked 2m ago │",
-        "│ Split      unavailable (get_split_info is broken upstream)                   │",
+        "│ Split      connected                                                         │",
         "├─ Profiles ───────────────────────────────────────────────────────────────────┤",
         "│ ▶ 0  desk     DD:1F:23:76:6E:71   active · connected · bonded                │",
         "│   1  laptop   C8:3A:35:10:22:9E   bonded                                     │",
@@ -161,7 +161,7 @@ fn dashboard_60x20_is_one_column() {
         "│ Studio     unlocked                                      │",
         "│ Battery    L ████░  82%   R ███░░  61%      read 12s ago │",
         "│ Firmware   v3.1.0 (f9a665f) · up to date with v3.1.0     │",
-        "│ Split      unavailable (broken upstream)                 │",
+        "│ Split      connected                                     │",
         "├─ Profiles ───────────────────────────────────────────────┤",
         "│ ▶ 0  desk     active · connected · bonded                │",
         "│   1  laptop   bonded                                     │",
@@ -176,6 +176,81 @@ fn dashboard_60x20_is_one_column() {
         "└ q quit · r refresh · ? help ─────────────────────────────┘",
     ];
     assert_eq!(screen(&demo(), 60, 20), expected);
+}
+
+/// `demo()` with the split read replaced (`None`: the empty reply of
+/// firmware without the split-info fix), and the right battery at the 0%
+/// the central's proxy keeps for a gone peripheral.
+fn with_split(connected: Option<bool>) -> App {
+    let mut a = demo();
+    let mut b = a.session.battery.value.clone().unwrap();
+    b.right.percent = Some(0);
+    a.apply(&Event::Battery(Stamped::now(Ok(b))), t0());
+    let split = crate::commands::split::Split {
+        known: connected.is_some(),
+        connected,
+        is_split: connected.map(|_| true),
+        is_central: connected.map(|_| true),
+    };
+    a.apply(&Event::Split(Stamped::now(Ok(split))), t0());
+    a
+}
+
+/// The rows starting with `│ <label>`.
+fn rows_of(s: &[String], label: &str) -> String {
+    let start = format!("│ {label}");
+    s.iter().find(|r| r.starts_with(&start)).cloned().unwrap()
+}
+
+#[test]
+fn split_states_render() {
+    let s = screen(&with_split(Some(false)), 80, 24);
+    assert_eq!(
+        rows_of(&s, "Split"),
+        "│ Split      disconnected (right half off or out of range)                     │"
+    );
+    // The stale 0% is not shown as a level.
+    let battery = rows_of(&s, "Battery");
+    assert!(
+        battery.starts_with("│ Battery    L ████████░░  82%   R disconnected "),
+        "{battery}"
+    );
+    assert!(!battery.contains("0%"), "{battery}");
+
+    let s = screen(&with_split(None), 80, 24);
+    assert_eq!(
+        rows_of(&s, "Split"),
+        "│ Split      unknown (firmware without the split-info fix)                     │"
+    );
+    // Unknown keeps the reading as it came.
+    assert!(rows_of(&s, "Battery").contains("R ░░░░░░░░░░   0%"));
+
+    let s = screen(&with_split(Some(true)), 80, 24);
+    assert!(rows_of(&s, "Split").starts_with("│ Split      connected  "));
+    assert!(rows_of(&s, "Battery").contains("   0%"));
+
+    // Narrow: the short forms.
+    let s = screen(&with_split(Some(false)), 60, 20);
+    assert!(
+        rows_of(&s, "Split").starts_with("│ Split      disconnected (right half off)  "),
+        "{s:#?}"
+    );
+    let s = screen(&with_split(None), 60, 20);
+    assert!(rows_of(&s, "Split").starts_with("│ Split      unknown (old firmware)  "));
+}
+
+#[test]
+fn split_read_error_is_a_note() {
+    let mut a = demo();
+    a.apply(
+        &Event::Split(Stamped::now(Err(err("split read failed")))),
+        t0(),
+    );
+    let row = rows_of(&screen(&a, 80, 24), "Split");
+    assert!(
+        row.contains("connected") && row.contains("! split read failed"),
+        "{row}"
+    );
 }
 
 #[test]

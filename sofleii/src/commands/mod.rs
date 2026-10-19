@@ -9,5 +9,6 @@ pub mod info;
 pub mod output;
 pub mod profile;
 pub mod profiles;
+pub mod split;
 pub mod status;
 pub mod update;

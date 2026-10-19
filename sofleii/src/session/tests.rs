@@ -134,6 +134,37 @@ fn first_poll_reads_info_then_status_on_one_lease() {
     assert_eq!(s.kb.lock().opened, 1);
 }
 
+fn split_read(e: &Event) -> Option<&Result<crate::commands::split::Split, ErrorView>> {
+    match e {
+        Event::Split(Stamped { value, .. }) => Some(value),
+        _ => None,
+    }
+}
+
+#[test]
+fn the_split_link_follows_each_status() {
+    for (kb_split, connected, known) in [
+        (Some(true), Some(true), true),
+        (Some(false), Some(false), true),
+        // Older firmware: an empty reply, unknown rather than disconnected.
+        (None, None, false),
+    ] {
+        let s = start(
+            |c| c,
+            Kb {
+                split: kb_split,
+                ..Kb::default()
+            },
+        );
+        let seen = s.until("split", |e| split_read(e).is_some());
+        assert!(seen.iter().any(status_ok), "split comes after status");
+        let sp = split_read(seen.last().unwrap()).unwrap().clone().unwrap();
+        assert_eq!((sp.connected, sp.known), (connected, known), "{kb_split:?}");
+        // One lease for info, status and split.
+        assert_eq!(s.kb.lock().opened, 1);
+    }
+}
+
 #[test]
 fn the_lease_drops_the_client_after_idle() {
     let s = start(
@@ -376,7 +407,8 @@ fn an_action_reports_done_then_refreshes() {
 #[test]
 fn a_bad_rename_fails_before_any_rpc() {
     let s = start(|c| c, Kb::default());
-    s.until("status", status_ok);
+    // The split read ends the first batch.
+    s.until("split", |e| split_read(e).is_some());
     let before = s.kb.lock().requests;
     let t = s.h.send(Request::RenameProfile(0, "x".repeat(40)));
     let (_, r) = s.done(t);

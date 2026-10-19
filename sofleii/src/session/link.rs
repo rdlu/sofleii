@@ -1,8 +1,8 @@
 //! The RPC worker thread: the only code in the session that touches Studio
 //! RPC. It owns the client and leases it (connect for a batch of requests,
-//! drop it after [`Config::lease_idle`] idle), polls profiles and output
-//! priority, reads `info` once per (re)connect, and runs the write actions
-//! through `commands` as the CLI does.
+//! drop it after [`Config::lease_idle`] idle), polls profiles, output
+//! priority and the split link, reads `info` once per (re)connect, and runs
+//! the write actions through `commands` as the CLI does.
 //!
 //! A newly opened link is [`LinkState::Connecting`] until a request answers
 //! on it (an open BLE link can still be deaf), then `Connected`; a deaf link
@@ -32,7 +32,7 @@ use super::{
     Ticket, jobs,
 };
 use crate::client::rpc::ble;
-use crate::commands::{info, output, profile, profiles};
+use crate::commands::{info, output, profile, profiles, split};
 use crate::connect::{self, Opener};
 use crate::transport::{Preference, TransportInfo, TransportKind};
 use crate::{Error, Result};
@@ -424,8 +424,9 @@ impl Link {
         }
     }
 
-    /// One batch: `info` if this is a new link, then the profiles. Schedules
-    /// the next poll (a failure reschedules it as a retry).
+    /// One batch: `info` if this is a new link, then the profiles and the
+    /// split link. Schedules the next poll (a failure reschedules it as a
+    /// retry).
     fn poll(&mut self) -> Result<(), ErrorView> {
         self.due = Instant::now() + self.interval();
         // Reads are only reported from a live link: a failed connect is the
@@ -459,6 +460,12 @@ impl Link {
         });
         let out = r.as_ref().map(drop).map_err(Clone::clone);
         self.emit(Event::Status(Stamped::now(r)));
+        // The split link rides along on the same lease. Its failure is its
+        // own read's error; the batch stands on the profiles.
+        if let (Ok(()), Some(i)) = (&out, self.ble_index) {
+            let r = self.with_client(|c, _| split::fetch(c, i));
+            self.emit(Event::Split(Stamped::now(r)));
+        }
         out
     }
 
