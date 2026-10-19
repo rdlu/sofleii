@@ -8,7 +8,8 @@ pub type Result<T, E = Error> = std::result::Result<T, E>;
 /// Process exit codes (the stable contract from #44).
 pub mod exit {
     pub const OK: u8 = 0;
-    /// Check failed / attention needed (`battery --warn-below`).
+    /// Check failed / attention needed (`battery --warn-below`, an update
+    /// available or an unknown build in `update check`).
     pub const CHECK_FAILED: u8 = 1;
     pub const NOT_FOUND: u8 = 2;
     pub const USAGE: u8 = 3;
@@ -39,6 +40,11 @@ pub enum Error {
     Rpc(String),
     /// A D-Bus or GATT call to BlueZ failed (battery levels).
     Bluez(String),
+    /// The firmware lacks what the command needs (`update check` on a build
+    /// without the `zmk__device_info` subsystem).
+    Unsupported(String),
+    /// A GitHub REST API call failed: network, TLS, rate limit, bad status.
+    GitHub(String),
 }
 
 impl Error {
@@ -50,7 +56,9 @@ impl Error {
             | Error::Timeout { .. }
             | Error::Protocol(_)
             | Error::Rpc(_)
-            | Error::Bluez(_) => exit::TRANSPORT,
+            | Error::Bluez(_)
+            | Error::Unsupported(_)
+            | Error::GitHub(_) => exit::TRANSPORT,
         }
     }
 
@@ -71,6 +79,8 @@ impl Error {
             Error::Protocol(_) => "protocol",
             Error::Rpc(_) => "rpc",
             Error::Bluez(_) => "bluez",
+            Error::Unsupported(_) => "unsupported",
+            Error::GitHub(_) => "github",
         }
     }
 }
@@ -95,6 +105,8 @@ impl fmt::Display for Error {
             Error::Protocol(m) => write!(f, "protocol error: {m}"),
             Error::Rpc(m) => write!(f, "keyboard returned an error: {m}"),
             Error::Bluez(m) => write!(f, "BlueZ error: {m}"),
+            Error::Unsupported(m) => write!(f, "unsupported by this firmware: {m}"),
+            Error::GitHub(m) => write!(f, "GitHub API: {m}"),
         }
     }
 }

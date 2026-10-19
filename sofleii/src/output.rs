@@ -12,6 +12,7 @@ use crate::commands::{
     info::Info,
     profiles::Profiles,
     status::{BatteryLevel, Status},
+    update::{self, short},
 };
 use crate::transport::{TransportInfo, TransportKind};
 
@@ -442,6 +443,86 @@ pub fn info(style: Style, transport: &TransportInfo, i: &Info) -> String {
     String::from_utf8(out).expect("utf-8")
 }
 
+/// The running build as a version: `v3.1.0 (f9a665f)`, `v3.0.0+68
+/// (f9a665f)`, or just the commit (or raw version) with no release.
+fn running_version(r: &update::Running) -> String {
+    let id = match (&r.commit, &r.version) {
+        (Some(c), _) => short(c).to_string(),
+        // `git describe --dirty` already appends "-dirty"; the row says it once.
+        (None, Some(v)) => v.strip_suffix("-dirty").unwrap_or(v).to_string(),
+        (None, None) => "-".into(),
+    };
+    match &r.release {
+        Some(rel) => format!("{} ({id})", rel.label()),
+        None => id,
+    }
+}
+
+/// The one-line verdict, led by versions: `up to date: v3.1.0 (f9a665f)`,
+/// `v3.1.0 available, running v3.0.0+68 (f9a665f)`, `ahead of v3.1.0:
+/// running v3.1.0+3 (abc1234)`. The commit counts stay in the JSON.
+pub fn update_headline(c: &update::Check) -> String {
+    let tag = &c.latest.tag;
+    let mut running = running_version(&c.running);
+    if c.running.release.is_none() {
+        running.push_str(" (no release)");
+    }
+    match c.status {
+        update::Status::UpToDate => format!("up to date: {running}"),
+        update::Status::Behind => format!("{tag} available, running {running}"),
+        update::Status::Ahead => format!("ahead of {tag}: running {running}"),
+        update::Status::Unknown => format!("can't compare with {tag}: running {running}"),
+    }
+}
+
+/// `sofleii update check`: the verdict, then `running`/`latest` rows and a
+/// note for dirty or unknown builds.
+pub fn update_check(style: Style, transport: &TransportInfo, c: &update::Check) -> String {
+    if style.format == Format::Json {
+        return json(transport, c);
+    }
+    let mut out = Vec::new();
+    let w = &mut out;
+    let label = |s: &str| style.dim(&format!("{s:<16}"));
+    let headline = update_headline(c);
+    let headline = match c.status {
+        update::Status::UpToDate | update::Status::Ahead => style.green(&headline),
+        _ => style.paint("33", &headline),
+    };
+    let _ = writeln!(w, "{}", style.bold(&headline));
+    let r = &c.running;
+    let mut running = running_version(r);
+    if r.dirty {
+        running.push_str(&format!(" {}", style.paint("33", "(dirty)")));
+    }
+    let _ = writeln!(w, "{}{running}", label("running"));
+    let published = c
+        .latest
+        .published_at
+        .as_deref()
+        .map(|p| format!(", published {p}"))
+        .unwrap_or_default();
+    let _ = writeln!(
+        w,
+        "{}{} {}{published}",
+        label("latest"),
+        c.latest.tag,
+        short(&c.latest.commit)
+    );
+    if r.dirty {
+        let base = r.commit.as_deref().map_or("its commit", short);
+        let _ = writeln!(
+            w,
+            "{}dirty build: uncommitted changes on top of {base}, compared as {base}",
+            label("note")
+        );
+    }
+    if let Some(n) = &c.note {
+        let _ = writeln!(w, "{}{n}", label("note"));
+    }
+    String::from_utf8(out).expect("utf-8")
+}
+
 pub fn profiles(style: Style, transport: &TransportInfo, p: &Profiles) -> String {
     if style.format == Format::Json {
         return json(transport, p);
@@ -859,5 +940,136 @@ mod tests {
         );
         assert!(out.contains("build           unavailable: this firmware has no zmk__device_info"));
         assert!(!out.contains("\nfirmware "));
+    }
+
+    fn update_sample(
+        version: &str,
+        status: update::Status,
+        behind: u32,
+        ahead: u32,
+        release: Option<(&str, u32)>,
+    ) -> update::Check {
+        let known = status != update::Status::Unknown;
+        update::Check {
+            running: update::Running {
+                version: Some(version.into()),
+                commit: match update::parse_describe(version).0 {
+                    update::Describe::Commit(c) => Some(c),
+                    _ => None,
+                },
+                dirty: version.ends_with("-dirty"),
+                release: release.map(|(tag, n)| update::Release {
+                    tag: tag.into(),
+                    exact: n == 0,
+                    commits_after: n,
+                }),
+            },
+            latest: update::Latest {
+                tag: "v3.1.0".into(),
+                commit: "5c53b30fce99031611442b1a3ccbbe7052327020".into(),
+                published_at: Some("2026-10-19T19:20:31Z".into()),
+            },
+            status,
+            commits_behind: known.then_some(behind),
+            commits_ahead: known.then_some(ahead),
+            note: None,
+        }
+    }
+
+    #[test]
+    fn update_check_human() {
+        use update::Status::*;
+        let t = transport(TransportKind::Usb);
+        let human = |c: &update::Check| update_check(Style::plain(Format::Human), &t, c);
+        let out = human(&update_sample(
+            "f9a665f",
+            UpToDate,
+            1,
+            0,
+            Some(("v3.1.0", 0)),
+        ));
+        assert_eq!(
+            out,
+            "up to date: v3.1.0 (f9a665f)\n\
+             running         v3.1.0 (f9a665f)\n\
+             latest          v3.1.0 5c53b30, published 2026-10-19T19:20:31Z\n"
+        );
+        let out = human(&update_sample(
+            "v3.0.0-68-gf9a665f-dirty",
+            Behind,
+            3,
+            0,
+            Some(("v3.0.0", 68)),
+        ));
+        assert!(
+            out.starts_with("v3.1.0 available, running v3.0.0+68 (f9a665f)\n"),
+            "{out}"
+        );
+        assert!(!out.contains("3 commits"), "{out}");
+        assert!(
+            out.contains("running         v3.0.0+68 (f9a665f) (dirty)\n"),
+            "{out}"
+        );
+        assert!(
+            out.contains("note            dirty build: uncommitted changes on top of f9a665f"),
+            "{out}"
+        );
+        for (c, want) in [
+            (
+                update_sample("abc1234", Ahead, 0, 3, Some(("v3.1.0", 3))),
+                "ahead of v3.1.0: running v3.1.0+3 (abc1234)\n",
+            ),
+            (
+                update_sample("abc1234", Behind, 4, 2, Some(("v3.0.0", 9))),
+                "v3.1.0 available, running v3.0.0+9 (abc1234)\n",
+            ),
+            (
+                update_sample("abc1234", Behind, 4, 0, None),
+                "v3.1.0 available, running abc1234 (no release)\n",
+            ),
+            (
+                update_sample("abc1234", Unknown, 0, 0, None),
+                "can't compare with v3.1.0: running abc1234 (no release)\n",
+            ),
+        ] {
+            let out = human(&c);
+            assert!(out.starts_with(want), "{out}");
+        }
+        // An exact tag shows the commit it resolved to.
+        let mut c = update_sample("v3.1.0", UpToDate, 0, 0, Some(("v3.1.0", 0)));
+        c.running.commit = Some(c.latest.commit.clone());
+        assert!(human(&c).contains("running         v3.1.0 (5c53b30)\n"));
+    }
+
+    #[test]
+    fn update_check_json_envelope() {
+        let v: Value = serde_json::from_str(&update_check(
+            Style::plain(Format::Json),
+            &transport(TransportKind::Usb),
+            &update_sample(
+                "5c53b30",
+                update::Status::UpToDate,
+                0,
+                0,
+                Some(("v3.1.0", 0)),
+            ),
+        ))
+        .unwrap();
+        assert_eq!(
+            v,
+            serde_json::json!({
+                "schema": 1,
+                "transport": {"kind": "usb", "device": "/dev/ttyACM1"},
+                "running": {"version": "5c53b30", "commit": "5c53b30", "dirty": false,
+                            "release": {"tag": "v3.1.0", "exact": true, "commits_after": 0}},
+                "latest": {"tag": "v3.1.0",
+                           "commit": "5c53b30fce99031611442b1a3ccbbe7052327020",
+                           "published_at": "2026-10-19T19:20:31Z"},
+                "status": "up_to_date",
+                "commits_behind": 0,
+                "commits_ahead": 0,
+                "note": null
+            })
+        );
     }
 }

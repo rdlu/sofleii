@@ -11,8 +11,10 @@ use sofleii::client::Client;
 use sofleii::client::DEFAULT_TIMEOUT;
 use sofleii::commands::battery::{self, DEFAULT_CRITICAL_BELOW, DEFAULT_WARN_BELOW, Thresholds};
 use sofleii::commands::status::Battery;
+use sofleii::commands::update::DEFAULT_REPO;
 use sofleii::error::exit;
 use sofleii::gatt::{Query, find_device};
+use sofleii::github::GitHub;
 use sofleii::output::{self, Format, Style};
 use sofleii::transport::{
     Plan, Preference, Transport, ble::BleTransport, plan, serial, serial::SerialTransport,
@@ -24,6 +26,8 @@ const STATUS_BATTERY_TIMEOUT: Duration = Duration::from_millis(1000);
 /// With `--transport auto`, USB gets this long to answer before sofleii
 /// falls back to BLE (Studio only answers on the selected output endpoint).
 const AUTO_USB_PROBE: Duration = Duration::from_millis(1000);
+/// Each GitHub API request (`update check`) gets this long, all in.
+const GITHUB_TIMEOUT: Duration = Duration::from_secs(10);
 
 /// Sofle Interactive Interface: talk to the Eyelash Sofle over ZMK Studio RPC.
 #[derive(Parser, Debug)]
@@ -111,6 +115,40 @@ enum Command {
         #[arg(long)]
         json: bool,
     },
+    /// Firmware updates against the GitHub releases.
+    Update {
+        #[command(subcommand)]
+        command: UpdateCommand,
+    },
+}
+
+#[derive(Subcommand, Debug)]
+enum UpdateCommand {
+    /// Compare the running firmware with the latest GitHub release. Exit 0
+    /// up to date (or ahead), 1 behind or unknown build.
+    Check {
+        /// Print the versioned JSON contract instead of text.
+        #[arg(long)]
+        json: bool,
+        /// GitHub repository whose releases to compare with.
+        #[arg(long, value_name = "OWNER/NAME", default_value = DEFAULT_REPO,
+              value_parser = parse_repo)]
+        repo: String,
+    },
+}
+
+fn parse_repo(s: &str) -> std::result::Result<String, String> {
+    let ok = |p: &str| {
+        !p.is_empty()
+            && p != "."
+            && p != ".."
+            && p.bytes()
+                .all(|b| b.is_ascii_alphanumeric() || matches!(b, b'-' | b'_' | b'.'))
+    };
+    match s.split_once('/') {
+        Some((owner, name)) if ok(owner) && ok(name) => Ok(s.to_string()),
+        _ => Err("expected OWNER/NAME, like rdlu/sofleii".into()),
+    }
 }
 
 fn parse_mac(s: &str) -> std::result::Result<String, String> {
@@ -151,7 +189,10 @@ fn main() -> ExitCode {
         Command::Status { json }
         | Command::Battery { json, .. }
         | Command::Info { json }
-        | Command::Profiles { json } => json,
+        | Command::Profiles { json }
+        | Command::Update {
+            command: UpdateCommand::Check { json, .. },
+        } => json,
     };
     let is_battery = matches!(command, Command::Battery { .. });
     let format = match (json_flag, cli.format) {
@@ -319,6 +360,7 @@ fn run(cli: &Cli, command: &Command, style: Style) -> Result<(String, u8)> {
 
     let mut client = connect(cli, timeout)?;
     let info = client.transport_info();
+    let mut code = exit::OK;
     let text = match command {
         Command::Status { .. } => {
             let mut s = commands::status::run(&mut client)?;
@@ -333,11 +375,19 @@ fn run(cli: &Cli, command: &Command, style: Style) -> Result<(String, u8)> {
         Command::Profiles { .. } => {
             output::profiles(style, &info, &commands::profiles::run(&mut client)?)
         }
+        Command::Update {
+            command: UpdateCommand::Check { repo, .. },
+        } => {
+            let mut github = GitHub::new(GITHUB_TIMEOUT);
+            let c = commands::update::run(&mut client, &mut github, repo)?;
+            code = c.status.exit_code();
+            output::update_check(style, &info, &c)
+        }
         Command::Battery { .. } => unreachable!("handled above"),
     };
     let n = client.notifications().len();
     if n > 0 {
         eprintln!("sofleii: {n} notification(s) received and set aside");
     }
-    Ok((text, exit::OK))
+    Ok((text, code))
 }

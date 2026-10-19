@@ -6,3 +6,4 @@ pub mod battery;
 pub mod info;
 pub mod profiles;
 pub mod status;
+pub mod update;
