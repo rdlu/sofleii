@@ -3,7 +3,7 @@
 
 use std::io::{BufRead, IsTerminal, Write};
 use std::process::ExitCode;
-use std::time::Duration;
+use std::time::{Duration, SystemTime};
 
 use clap::{CommandFactory, Parser, Subcommand, ValueEnum};
 
@@ -13,6 +13,7 @@ use sofleii::connect::{self, Connected, Connector, STATUS_BATTERY_TIMEOUT, read_
 use sofleii::error::exit;
 use sofleii::github::GitHub;
 use sofleii::output::{self, Format, Style};
+use sofleii::session::jobs::{Checker, UPDATE_TTL, default_cache_dir};
 use sofleii::transport::{Preference, TransportKind};
 use sofleii::{Error, Result, commands};
 
@@ -21,7 +22,7 @@ const GITHUB_TIMEOUT: Duration = Duration::from_secs(10);
 
 /// Sofle Interactive Interface: talk to the Eyelash Sofle over ZMK Studio RPC.
 #[derive(Parser, Debug)]
-#[command(name = "sofleii", version, about, long_about = None)]
+#[command(name = "sofleii", version, long_version = sofleii::version::LONG, about, long_about = None)]
 struct Cli {
     /// Serial device to use instead of auto-detecting "Eyelash Sofle".
     /// Implies `--transport usb`.
@@ -105,7 +106,7 @@ enum Command {
         #[arg(long)]
         json: bool,
     },
-    /// Firmware updates against the GitHub releases.
+    /// Firmware and sofleii updates against the GitHub releases.
     Update {
         #[command(subcommand)]
         command: UpdateCommand,
@@ -173,8 +174,12 @@ enum OutputArg {
 
 #[derive(Subcommand, Debug)]
 enum UpdateCommand {
-    /// Compare the running firmware with the latest GitHub release. Exit 0
-    /// up to date (or ahead), 1 behind or unknown build.
+    /// Compare the running firmware with the newest firmware release (a
+    /// `v*` tag), and this sofleii with the newest sofleii release (a
+    /// `sofleii-v*` tag). Answers from the shared 6 h cache when it can.
+    /// Exit 0 when nothing needs doing, 1 when either checked part is
+    /// behind (or the firmware build is unknown; no sofleii release yet is
+    /// not a failure).
     Check {
         /// Print the versioned JSON contract instead of text.
         #[arg(long)]
@@ -183,6 +188,15 @@ enum UpdateCommand {
         #[arg(long, value_name = "OWNER/NAME", default_value = DEFAULT_REPO,
               value_parser = parse_repo)]
         repo: String,
+        /// Only check the firmware.
+        #[arg(long, conflicts_with = "cli")]
+        firmware: bool,
+        /// Only check sofleii itself (no keyboard needed).
+        #[arg(long)]
+        cli: bool,
+        /// Ask GitHub even if the cache is fresh (the answer is still cached).
+        #[arg(long)]
+        refresh: bool,
     },
 }
 
@@ -369,6 +383,33 @@ fn confirm_unpair(
     }
 }
 
+/// `update check`: the keyboard first when the firmware is checked (so "not
+/// found" exits 2 without touching the network), then the shared cache or
+/// GitHub (one release list for both parts).
+fn update_check(
+    cli: &Cli,
+    style: Style,
+    repo: &str,
+    firmware: bool,
+    cli_part: bool,
+    refresh: bool,
+) -> Result<(String, u8)> {
+    let (transport, running) = if firmware {
+        let mut connector = Connector::new(connect_config(cli));
+        let Connected { mut client, info } = connector.connect()?;
+        let running = commands::update::read_running(&mut client)?;
+        (Some(info), Some(running))
+    } else {
+        (None, None)
+    };
+    let checker = Checker::new(repo.to_string(), UPDATE_TTL, default_cache_dir());
+    let mut github = GitHub::new(GITHUB_TIMEOUT);
+    let now = SystemTime::now();
+    let c = checker.check(&mut github, running.as_ref(), cli_part, refresh, now)?;
+    let text = output::update_check(style, transport.as_ref(), &c, now);
+    Ok((text, c.exit_code()))
+}
+
 /// Runs a command; returns the text for stdout and the exit code.
 fn run(cli: &Cli, command: &Command, style: Style) -> Result<(String, u8)> {
     let config = connect_config(cli);
@@ -400,6 +441,25 @@ fn run(cli: &Cli, command: &Command, style: Style) -> Result<(String, u8)> {
         return Ok((output::battery(style, &r, t), code));
     }
 
+    if let Command::Update {
+        command:
+            UpdateCommand::Check {
+                repo,
+                firmware,
+                cli: cli_only,
+                refresh,
+                ..
+            },
+    } = command
+    {
+        // Neither flag: both parts.
+        let (want_fw, want_cli) = match (*firmware, *cli_only) {
+            (false, false) => (true, true),
+            flags => flags,
+        };
+        return update_check(cli, style, repo, want_fw, want_cli, *refresh);
+    }
+
     // Usage errors that need no keyboard come before connecting.
     match command {
         Command::Profile {
@@ -417,7 +477,6 @@ fn run(cli: &Cli, command: &Command, style: Style) -> Result<(String, u8)> {
 
     let mut connector = Connector::new(config);
     let Connected { mut client, info } = connector.connect()?;
-    let mut code = exit::OK;
     let text = match command {
         Command::Status { .. } => {
             let mut s = commands::status::run(&mut client)?;
@@ -432,14 +491,6 @@ fn run(cli: &Cli, command: &Command, style: Style) -> Result<(String, u8)> {
         Command::Info { .. } => output::info(style, &info, &commands::info::run(&mut client)?),
         Command::Profiles { .. } => {
             output::profiles(style, &info, &commands::profiles::run(&mut client)?)
-        }
-        Command::Update {
-            command: UpdateCommand::Check { repo, .. },
-        } => {
-            let mut github = GitHub::new(GITHUB_TIMEOUT);
-            let c = commands::update::run(&mut client, &mut github, repo)?;
-            code = c.status.exit_code();
-            output::update_check(style, &info, &c)
         }
         Command::Output { target, .. } => {
             let target = match target {
@@ -471,13 +522,13 @@ fn run(cli: &Cli, command: &Command, style: Style) -> Result<(String, u8)> {
             };
             output::profile_action(style, &info, &o)
         }
-        Command::Battery { .. } => unreachable!("handled above"),
+        Command::Battery { .. } | Command::Update { .. } => unreachable!("handled above"),
     };
     let n = client.notifications().len();
     if n > 0 {
         eprintln!("sofleii: {n} notification(s) received and set aside");
     }
-    Ok((text, code))
+    Ok((text, exit::OK))
 }
 
 #[cfg(test)]

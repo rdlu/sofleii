@@ -149,6 +149,56 @@ fn update_check_not_found_exits_2_before_github() {
 }
 
 #[test]
+fn update_check_firmware_flag_still_needs_the_keyboard_first() {
+    // --firmware (and --refresh) still read the keyboard before GitHub.
+    for extra in [
+        &["--firmware"][..],
+        &["--firmware", "--refresh"],
+        &["--refresh"],
+    ] {
+        let mut args = vec!["--device", "/dev/nonexistent", "update", "check", "--json"];
+        args.extend_from_slice(extra);
+        let (code, stdout) = sofleii(&args);
+        assert_eq!(code, 2, "{extra:?}");
+        let v: serde_json::Value = serde_json::from_str(&stdout).unwrap();
+        assert_eq!(v["error"]["kind"], "not_found", "{extra:?}");
+    }
+}
+
+#[test]
+fn update_check_firmware_and_cli_conflict() {
+    let (code, stdout) = sofleii(&["update", "check", "--firmware", "--cli"]);
+    assert_eq!(code, 3);
+    assert!(stdout.is_empty());
+}
+
+#[test]
+fn version_names_the_firmware_line() {
+    let (code, stdout) = sofleii(&["--version"]);
+    assert_eq!(code, 0);
+    let mut lines = stdout.lines();
+    assert_eq!(
+        lines.next(),
+        Some(concat!("sofleii ", env!("CARGO_PKG_VERSION")))
+    );
+    assert!(stdout.contains("firmware line: ZMK main+dya"), "{stdout}");
+    for m in [
+        "zmk-studio-messages",
+        "zmk-module-ble-management",
+        "zmk-feature-device-info",
+    ] {
+        assert!(stdout.contains(m), "{stdout}");
+    }
+    // -V stays one line.
+    let (code, stdout) = sofleii(&["-V"]);
+    assert_eq!(code, 0);
+    assert_eq!(
+        stdout.trim_end(),
+        concat!("sofleii ", env!("CARGO_PKG_VERSION"))
+    );
+}
+
+#[test]
 fn update_check_rejects_a_malformed_repo() {
     for repo in ["sofleii", "rdlu/", "a/b/c", "rdlu/so fleii"] {
         let (code, stdout) = sofleii(&["update", "check", "--repo", repo]);

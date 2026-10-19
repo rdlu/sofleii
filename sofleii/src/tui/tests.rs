@@ -458,6 +458,24 @@ fn update_states() {
     assert!(r.contains("· ahead of v3.1.0"), "{r}");
     let r = row(&with_update(update::Status::Unknown, "v3.1.0"));
     assert!(r.contains("· unknown build (v3.1.0)"), "{r}");
+    assert!(!r.contains("sofleii-v"), "{r}");
+
+    // A newer sofleii release is named after the firmware verdict.
+    let mut app = demo();
+    let mut u = app.session.update.value.clone().unwrap();
+    u.cli = update::cli_check(
+        "0.1.0",
+        Some(&update::Listed {
+            tag: "sofleii-v0.2.0".into(),
+            published_at: None,
+        }),
+    );
+    app.apply(&Event::Update(Stamped::now(Ok(u))), t0());
+    let r = screen(&app, 120, 24)[4].clone();
+    assert!(
+        r.contains("up to date with v3.1.0 · sofleii v0.2.0 available"),
+        "{r}"
+    );
 
     // Never checked: the firmware's own version.
     let mut app = demo();

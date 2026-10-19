@@ -1,8 +1,15 @@
-//! `sofleii update check` (#47): the running firmware's `zmk_config_version`
-//! (from `zmk__device_info`) against the latest GitHub release of the repo.
+//! `sofleii update check` (#47, #83): the running firmware's
+//! `zmk_config_version` (from `zmk__device_info`) against the newest
+//! firmware release of the repo, and this binary's version against the
+//! newest sofleii release. Both come from one release list
+//! ([`list_releases`]): firmware releases are tagged `v*`, sofleii's own
+//! `sofleii-v*` (published with `--latest=false`, so GitHub's "latest"
+//! stays the firmware; this module never asks for `releases/latest`).
 //! HTTP goes through the [`Http`] trait (the real client is
 //! [`crate::github`]), so this module has no network code and its tests run
 //! on canned JSON.
+
+use std::cmp::Ordering;
 
 use serde::{Deserialize, Serialize};
 
@@ -93,6 +100,260 @@ impl Release {
 
 /// How many older releases a `behind` bare SHA may compare against.
 pub const RELEASE_SCAN: u32 = 10;
+
+/// Releases per page of the one list request. GitHub lists newest first,
+/// and both tag families fit in one page for years to come (19 releases
+/// on 2026-10-19).
+pub const RELEASE_PAGE: u32 = 50;
+
+/// Tag prefix of the firmware releases (`v3.1.0`).
+pub const FIRMWARE_TAG_PREFIX: &str = "v";
+/// Tag prefix of sofleii's own releases (`sofleii-v0.1.0`).
+pub const CLI_TAG_PREFIX: &str = "sofleii-v";
+/// This binary's version (`Cargo.toml`).
+pub const CLI_VERSION: &str = env!("CARGO_PKG_VERSION");
+
+/// The one request both checks share.
+pub fn release_list_path(repo: &str) -> String {
+    format!("/repos/{repo}/releases?per_page={RELEASE_PAGE}")
+}
+
+/// A semantic version (`3.1.0`, `0.2.0-rc.1`); build metadata is dropped.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Version {
+    pub major: u64,
+    pub minor: u64,
+    pub patch: u64,
+    /// The pre-release part after `-`, if any.
+    pub pre: Option<String>,
+}
+
+impl Version {
+    /// `MAJOR.MINOR.PATCH[-PRE][+BUILD]`, nothing else.
+    pub fn parse(s: &str) -> Option<Version> {
+        let s = s.split_once('+').map_or(s, |(v, _)| v);
+        let (core, pre) = match s.split_once('-') {
+            Some((_, "")) => return None,
+            Some((c, p)) => (c, Some(p.to_string())),
+            None => (s, None),
+        };
+        let mut it = core.split('.');
+        let mut num = || -> Option<u64> {
+            let p = it.next()?;
+            if p.is_empty() || !p.bytes().all(|b| b.is_ascii_digit()) {
+                return None;
+            }
+            p.parse().ok()
+        };
+        let (major, minor, patch) = (num()?, num()?, num()?);
+        if it.next().is_some() {
+            return None;
+        }
+        Some(Version {
+            major,
+            minor,
+            patch,
+            pre,
+        })
+    }
+}
+
+impl Ord for Version {
+    fn cmp(&self, o: &Self) -> Ordering {
+        (self.major, self.minor, self.patch)
+            .cmp(&(o.major, o.minor, o.patch))
+            .then_with(|| match (&self.pre, &o.pre) {
+                (None, None) => Ordering::Equal,
+                // A pre-release sorts before its release.
+                (None, Some(_)) => Ordering::Greater,
+                (Some(_), None) => Ordering::Less,
+                (Some(a), Some(b)) => cmp_pre(a, b),
+            })
+    }
+}
+
+impl PartialOrd for Version {
+    fn partial_cmp(&self, o: &Self) -> Option<Ordering> {
+        Some(self.cmp(o))
+    }
+}
+
+/// semver's pre-release precedence: dot-separated identifiers, numeric
+/// ones numerically and below alphanumeric ones, then the longer wins.
+fn cmp_pre(a: &str, b: &str) -> Ordering {
+    let (mut x, mut y) = (a.split('.'), b.split('.'));
+    loop {
+        let o = match (x.next(), y.next()) {
+            (None, None) => return Ordering::Equal,
+            (None, Some(_)) => return Ordering::Less,
+            (Some(_), None) => return Ordering::Greater,
+            (Some(p), Some(q)) => match (p.parse::<u64>(), q.parse::<u64>()) {
+                (Ok(m), Ok(n)) => m.cmp(&n),
+                (Ok(_), Err(_)) => Ordering::Less,
+                (Err(_), Ok(_)) => Ordering::Greater,
+                (Err(_), Err(_)) => p.cmp(q),
+            },
+        };
+        if o != Ordering::Equal {
+            return o;
+        }
+    }
+}
+
+/// One published release from the list.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Listed {
+    pub tag: String,
+    /// ISO 8601, UTC, as GitHub gives it.
+    pub published_at: Option<String>,
+}
+
+/// The repo's published releases (no drafts, no prereleases), split by tag
+/// family, each newest first by semver.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct Releases {
+    /// `v*` tags (never `sofleii-v*`).
+    pub firmware: Vec<Listed>,
+    /// `sofleii-v*` tags.
+    pub cli: Vec<Listed>,
+}
+
+impl Releases {
+    /// Splits GitHub's list. A tag that isn't semver after its prefix, or
+    /// belongs to neither family (`canary-zephyr-4.1`), is skipped.
+    fn from_list(list: Vec<ReleaseListJson>) -> Releases {
+        let mut fw = Vec::new();
+        let mut cli = Vec::new();
+        for r in list {
+            if r.draft || r.prerelease {
+                continue;
+            }
+            let (bucket, rest) = if let Some(v) = r.tag_name.strip_prefix(CLI_TAG_PREFIX) {
+                (&mut cli, v)
+            } else if let Some(v) = r.tag_name.strip_prefix(FIRMWARE_TAG_PREFIX) {
+                (&mut fw, v)
+            } else {
+                continue;
+            };
+            if let Some(v) = Version::parse(rest) {
+                let listed = Listed {
+                    tag: r.tag_name.clone(),
+                    published_at: r.published_at,
+                };
+                bucket.push((v, listed));
+            }
+        }
+        // Stable: equal versions keep GitHub's (newest-first) order.
+        let sorted = |mut v: Vec<(Version, Listed)>| -> Vec<Listed> {
+            v.sort_by(|a, b| b.0.cmp(&a.0));
+            v.into_iter().map(|(_, l)| l).collect()
+        };
+        Releases {
+            firmware: sorted(fw),
+            cli: sorted(cli),
+        }
+    }
+}
+
+/// `GET /repos/{repo}/releases`, once, for both checks.
+pub fn list_releases<H: Http + ?Sized>(http: &mut H, repo: &str) -> Result<Releases> {
+    let r = http.get(&release_list_path(repo), ACCEPT_JSON)?;
+    if r.status == 404 && !r.rate_limited {
+        return Err(Error::GitHub(format!(
+            "no published release found for {repo} (HTTP 404: no such repo, \
+             or a private repo without a token)"
+        )));
+    }
+    let list: Vec<ReleaseListJson> = parse(&ok(r, "release list")?, "release list")?;
+    Ok(Releases::from_list(list))
+}
+
+/// This binary against the newest sofleii release.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct CliCheck {
+    /// The running binary's version, e.g. `0.1.0`.
+    pub version: String,
+    /// The newest release's version (its tag without `sofleii-v`); `null`
+    /// when there is none.
+    pub latest: Option<String>,
+    /// Its tag, e.g. `sofleii-v0.1.0`.
+    pub tag: Option<String>,
+    pub published_at: Option<String>,
+    /// `unknown` when there is no release to compare with.
+    pub status: Status,
+    pub note: Option<String>,
+}
+
+impl CliCheck {
+    /// 1 only when a newer sofleii is out: no release yet is not a failure.
+    pub fn exit_code(&self) -> u8 {
+        match self.status {
+            Status::Behind => exit::CHECK_FAILED,
+            Status::UpToDate | Status::Ahead | Status::Unknown => exit::OK,
+        }
+    }
+}
+
+/// The parts of an update check that were asked for (`session::jobs`'s
+/// `Checker` answers it, from its cache or GitHub).
+#[derive(Debug, Clone, PartialEq)]
+pub struct Checked {
+    /// The running firmware against the newest `v*` release.
+    pub firmware: Option<Check>,
+    /// This binary against the newest `sofleii-v*` release.
+    pub cli: Option<CliCheck>,
+    /// When GitHub was asked; for a cached answer, the older part's time.
+    pub checked_at: std::time::SystemTime,
+    pub from_cache: bool,
+}
+
+impl Checked {
+    /// 1 if a checked part needs doing (see [`Status::exit_code`] and
+    /// [`CliCheck::exit_code`]), else 0.
+    pub fn exit_code(&self) -> u8 {
+        let fw = self
+            .firmware
+            .as_ref()
+            .map_or(exit::OK, |c| c.status.exit_code());
+        let cli = self.cli.as_ref().map_or(exit::OK, CliCheck::exit_code);
+        fw.max(cli)
+    }
+}
+
+/// Why the CLI part is `unknown` with no `sofleii-v*` release.
+pub const NO_CLI_RELEASE: &str = "no sofleii release yet (no sofleii-v* tag published)";
+
+/// `current` (a semver string, normally [`CLI_VERSION`]) against `latest`,
+/// the newest `sofleii-v*` release (the first of [`Releases::cli`]).
+pub fn cli_check(current: &str, latest: Option<&Listed>) -> CliCheck {
+    let mut c = CliCheck {
+        version: current.to_string(),
+        latest: None,
+        tag: None,
+        published_at: None,
+        status: Status::Unknown,
+        note: None,
+    };
+    let Some(l) = latest else {
+        c.note = Some(NO_CLI_RELEASE.into());
+        return c;
+    };
+    let v = l.tag.strip_prefix(CLI_TAG_PREFIX).unwrap_or(&l.tag);
+    c.latest = Some(v.to_string());
+    c.tag = Some(l.tag.clone());
+    c.published_at = l.published_at.clone();
+    match (Version::parse(current), Version::parse(v)) {
+        (Some(mine), Some(theirs)) => {
+            c.status = match mine.cmp(&theirs) {
+                Ordering::Less => Status::Behind,
+                Ordering::Equal => Status::UpToDate,
+                Ordering::Greater => Status::Ahead,
+            };
+        }
+        _ => c.note = Some(format!("can't compare {current:?} with {v:?} as semver")),
+    }
+    c
+}
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Latest {
@@ -218,19 +479,18 @@ pub fn run<T: Transport, H: Http>(
     http: &mut H,
     repo: &str,
 ) -> Result<Check> {
-    let subsystems = client.list_custom_subsystems()?;
-    let build = match info::fetch_build(client, &subsystems)? {
-        Some((b, _)) if b.available => b,
-        Some(_) => return Err(Error::Unsupported(BUILD_EMPTY_NOTE.into())),
-        None => return Err(Error::Unsupported(NO_DEVICE_INFO.into())),
-    };
-    check(http, repo, running_from(&build))
+    let running = read_running(client)?;
+    check(http, repo, running)
 }
 
-#[derive(Deserialize)]
-struct ReleaseJson {
-    tag_name: String,
-    published_at: Option<String>,
+/// The running build from `zmk__device_info`; `unsupported` without it.
+pub fn read_running<T: Transport>(client: &mut Client<T>) -> Result<Running> {
+    let subsystems = client.list_custom_subsystems()?;
+    match info::fetch_build(client, &subsystems)? {
+        Some((b, _)) if b.available => Ok(running_from(&b)),
+        Some(_) => Err(Error::Unsupported(BUILD_EMPTY_NOTE.into())),
+        None => Err(Error::Unsupported(NO_DEVICE_INFO.into())),
+    }
 }
 
 #[derive(Deserialize)]
@@ -238,6 +498,7 @@ struct ReleaseListJson {
     tag_name: String,
     draft: bool,
     prerelease: bool,
+    published_at: Option<String>,
 }
 
 #[derive(Deserialize)]
@@ -249,12 +510,24 @@ struct CompareJson {
     files: Option<Vec<serde::de::IgnoredAny>>,
 }
 
-/// Compares `running` with the latest release of `repo` (`OWNER/NAME`),
-/// then names the release it is or follows (`running.release`), cheapest
-/// way first: the verdict itself, then the describe string, and only for
-/// a bare SHA that's behind, a scan of older releases.
-pub fn check<H: Http>(http: &mut H, repo: &str, running: Running) -> Result<Check> {
-    let mut c = compare_latest(http, repo, running)?;
+/// [`list_releases`], then [`check_with`].
+pub fn check<H: Http + ?Sized>(http: &mut H, repo: &str, running: Running) -> Result<Check> {
+    let releases = list_releases(http, repo)?;
+    check_with(http, repo, &releases, running)
+}
+
+/// Compares `running` with the newest firmware release of `repo`
+/// (`OWNER/NAME`) in `releases`, then names the release it is or follows
+/// (`running.release`), cheapest way first: the verdict itself, then the
+/// describe string, and only for a bare SHA that's behind, a scan of older
+/// releases from the same list.
+pub fn check_with<H: Http + ?Sized>(
+    http: &mut H,
+    repo: &str,
+    releases: &Releases,
+    running: Running,
+) -> Result<Check> {
+    let mut c = compare_latest(http, repo, releases, running)?;
     let described = c.running.version.as_deref().and_then(describe_release);
     let tag = &c.latest.tag;
     c.running.release = match c.status {
@@ -263,7 +536,7 @@ pub fn check<H: Http>(http: &mut H, repo: &str, running: Running) -> Result<Chec
         Status::Unknown => described,
         Status::Behind => match (described, c.running.commit.clone()) {
             (Some(r), _) => Some(r),
-            (None, Some(commit)) => match scan_releases(http, repo, tag, &commit) {
+            (None, Some(commit)) => match scan_releases(http, repo, releases, tag, &commit) {
                 Ok(r) => r,
                 Err(e) => {
                     let n = format!("couldn't map {} to a release: {e}", short(&commit));
@@ -280,29 +553,23 @@ pub fn check<H: Http>(http: &mut H, repo: &str, running: Running) -> Result<Chec
     Ok(c)
 }
 
-/// The newest older release that `commit` is (same commit or tree) or
-/// comes after: lists up to [`RELEASE_SCAN`] releases (no drafts or
-/// prereleases), skips `latest_tag` (already compared), and compares each
+/// The newest older firmware release that `commit` is (same commit or
+/// tree) or comes after: takes up to [`RELEASE_SCAN`] of `releases` other
+/// than `latest_tag` (already compared), and compares each
 /// `{tag}...{commit}` newest-first until one fits.
-fn scan_releases<H: Http>(
+fn scan_releases<H: Http + ?Sized>(
     http: &mut H,
     repo: &str,
+    releases: &Releases,
     latest_tag: &str,
     commit: &str,
 ) -> Result<Option<Release>> {
-    let r = http.get(
-        &format!("/repos/{repo}/releases?per_page={RELEASE_SCAN}"),
-        ACCEPT_JSON,
-    )?;
-    let list: Vec<ReleaseListJson> = parse(&ok(r, "release list")?, "release list")?;
-    for rel in list.iter().take(RELEASE_SCAN as usize) {
-        if rel.draft || rel.prerelease || rel.tag_name == latest_tag {
-            continue;
-        }
+    let older = releases.firmware.iter().filter(|r| r.tag != latest_tag);
+    for rel in older.take(RELEASE_SCAN as usize) {
         let r = http.get(
             &format!(
                 "/repos/{repo}/compare/{}...{commit}?per_page=1",
-                encode_ref(&rel.tag_name)
+                encode_ref(&rel.tag)
             ),
             ACCEPT_JSON,
         )?;
@@ -313,25 +580,27 @@ fn scan_releases<H: Http>(
         // Here the build is the head: GitHub's `ahead` = commits after the tag.
         let same_tree = cmp.files.is_some_and(|f| f.is_empty());
         match cmp.status.as_str() {
-            "identical" => return Ok(Some(Release::exact(&rel.tag_name))),
-            _ if same_tree => return Ok(Some(Release::exact(&rel.tag_name))),
-            "ahead" => return Ok(Some(Release::after(&rel.tag_name, cmp.ahead_by))),
+            "identical" => return Ok(Some(Release::exact(&rel.tag))),
+            _ if same_tree => return Ok(Some(Release::exact(&rel.tag))),
+            "ahead" => return Ok(Some(Release::after(&rel.tag, cmp.ahead_by))),
             _ => {}
         }
     }
     Ok(None)
 }
 
-fn compare_latest<H: Http>(http: &mut H, repo: &str, mut running: Running) -> Result<Check> {
-    let r = http.get(&format!("/repos/{repo}/releases/latest"), ACCEPT_JSON)?;
-    if r.status == 404 && !r.rate_limited {
-        return Err(Error::GitHub(format!(
-            "no published release found for {repo} (HTTP 404: no such repo, no releases, \
-             or a private repo without a token)"
-        )));
-    }
-    let release: ReleaseJson = parse(&ok(r, "latest release")?, "latest release")?;
-    let tag = release.tag_name;
+fn compare_latest<H: Http + ?Sized>(
+    http: &mut H,
+    repo: &str,
+    releases: &Releases,
+    mut running: Running,
+) -> Result<Check> {
+    let release = releases.firmware.first().ok_or_else(|| {
+        Error::GitHub(format!(
+            "no published firmware release (a {FIRMWARE_TAG_PREFIX}X.Y.Z tag) found for {repo}"
+        ))
+    })?;
+    let tag = release.tag.clone();
     let latest_sha = resolve(http, repo, &tag)?.ok_or_else(|| {
         Error::GitHub(format!(
             "release tag {tag} doesn't resolve to a commit (HTTP 404)"
@@ -340,7 +609,7 @@ fn compare_latest<H: Http>(http: &mut H, repo: &str, mut running: Running) -> Re
     let latest = Latest {
         tag: tag.clone(),
         commit: latest_sha.clone(),
-        published_at: release.published_at,
+        published_at: release.published_at.clone(),
     };
 
     let mut note = None;
@@ -450,7 +719,7 @@ fn unknown(running: Running, latest: Latest, note: Option<String>) -> Check {
 }
 
 /// A tag's (or any ref's) full commit SHA; `None` on 404.
-fn resolve<H: Http>(http: &mut H, repo: &str, git_ref: &str) -> Result<Option<String>> {
+fn resolve<H: Http + ?Sized>(http: &mut H, repo: &str, git_ref: &str) -> Result<Option<String>> {
     let r = http.get(
         &format!("/repos/{repo}/commits/{}", encode_ref(git_ref)),
         ACCEPT_SHA,
@@ -532,14 +801,17 @@ pub(crate) mod tests {
     }
 
     impl FakeHttp {
-        /// `rdlu/sofleii` with v3.1.0 at [`RELEASE_SHA`] as the latest release.
+        /// `rdlu/sofleii` with v3.1.0 at [`RELEASE_SHA`] as the newest
+        /// firmware release, and no sofleii release.
         pub fn released() -> Self {
+            Self::with_releases(&[("v3.1.0", false, false)])
+        }
+
+        /// Like [`released`](Self::released) (v3.1.0 resolves to
+        /// [`RELEASE_SHA`]), with this release list.
+        pub fn with_releases(tags: &[(&str, bool, bool)]) -> Self {
             let mut f = Self::default();
-            f.reply(
-                "/repos/rdlu/sofleii/releases/latest",
-                200,
-                r#"{"tag_name":"v3.1.0","published_at":"2026-10-19T19:20:31Z","assets":[]}"#,
-            );
+            f.reply(LIST, 200, &release_list(tags));
             f.reply("/repos/rdlu/sofleii/commits/v3.1.0", 200, RELEASE_SHA);
             f
         }
@@ -653,6 +925,41 @@ pub(crate) mod tests {
     }
 
     #[test]
+    fn combined_exit_code_is_the_worse_checked_part() {
+        let mut http = FakeHttp::released();
+        let fw = |v: &str, http: &mut FakeHttp| check(http, DEFAULT_REPO, running(v)).unwrap();
+        let up = fw("5c53b30", &mut http);
+        let unknown = fw("", &mut http);
+        let cli = |mine: &str, latest: Option<&str>| {
+            let l = latest.map(|v| Listed {
+                tag: format!("sofleii-v{v}"),
+                published_at: None,
+            });
+            cli_check(mine, l.as_ref())
+        };
+        let both = |f: Option<&Check>, c: Option<CliCheck>| {
+            Checked {
+                firmware: f.cloned(),
+                cli: c,
+                checked_at: std::time::SystemTime::UNIX_EPOCH,
+                from_cache: false,
+            }
+            .exit_code()
+        };
+        // Both fine, or no sofleii release yet: 0.
+        assert_eq!(both(Some(&up), Some(cli("0.1.0", Some("0.1.0")))), 0);
+        assert_eq!(both(Some(&up), Some(cli("0.1.0", None))), 0);
+        // Either behind: 1.
+        assert_eq!(both(Some(&up), Some(cli("0.1.0", Some("0.2.0")))), 1);
+        assert_eq!(both(Some(&unknown), Some(cli("0.1.0", None))), 1);
+        // --cli / --firmware: only that part counts.
+        assert_eq!(both(None, Some(cli("0.1.0", None))), 0);
+        assert_eq!(both(None, Some(cli("0.1.0", Some("0.2.0")))), 1);
+        assert_eq!(both(Some(&up), None), 0);
+        assert_eq!(both(Some(&unknown), None), 1);
+    }
+
+    #[test]
     fn ci_build_at_the_release_is_up_to_date_without_compare() {
         let mut http = FakeHttp::released();
         let c = check(&mut http, DEFAULT_REPO, running("5c53b30")).unwrap();
@@ -740,16 +1047,24 @@ pub(crate) mod tests {
 
     #[test]
     fn api_failures_are_errors() {
-        // Bogus repo: releases/latest 404.
+        // Bogus repo: the list 404s.
         let mut http = FakeHttp::released();
         let e = check(&mut http, "rdlu/nope", running("5c53b30")).unwrap_err();
         assert_eq!(e.kind(), "github");
         assert!(e.to_string().contains("no published release"), "{e}");
 
+        // Only sofleii releases (or none): no firmware to compare with.
+        let mut http = FakeHttp::with_releases(&[("sofleii-v0.1.0", false, false)]);
+        let e = check(&mut http, DEFAULT_REPO, running("5c53b30")).unwrap_err();
+        assert!(
+            e.to_string().contains("no published firmware release"),
+            "{e}"
+        );
+
         // Rate limited.
         let mut http = FakeHttp::released();
         http.replies.insert(
-            "/repos/rdlu/sofleii/releases/latest".into(),
+            LIST.into(),
             Reply {
                 status: 403,
                 body: r#"{"message":"API rate limit exceeded"}"#.into(),
@@ -762,11 +1077,7 @@ pub(crate) mod tests {
 
         // Other statuses carry GitHub's message.
         let mut http = FakeHttp::released();
-        http.reply(
-            "/repos/rdlu/sofleii/releases/latest",
-            500,
-            r#"{"message":"Server Error"}"#,
-        );
+        http.reply(LIST, 500, r#"{"message":"Server Error"}"#);
         let e = check(&mut http, DEFAULT_REPO, running("5c53b30")).unwrap_err();
         assert!(e.to_string().contains("HTTP 500: Server Error"), "{e}");
     }
@@ -865,7 +1176,7 @@ pub(crate) mod tests {
         assert_eq!(rel("v3.1.0", true, 0).unwrap().label(), "v3.1.0");
     }
 
-    /// Requests after `releases/latest` + `commits/{tag}`, which every check makes.
+    /// Requests after the release list + `commits/{tag}`, which every check makes.
     fn extra(http: &FakeHttp) -> Vec<&str> {
         http.requested[2..].iter().map(String::as_str).collect()
     }
@@ -906,33 +1217,40 @@ pub(crate) mod tests {
         assert_eq!(extra(&http).len(), 1, "{:?}", http.requested);
     }
 
-    fn release_list(tags: &[(&str, bool, bool)]) -> String {
+    /// A release list as GitHub returns it (trimmed); v3.1.0 carries the
+    /// real release's `published_at`.
+    pub fn release_list(tags: &[(&str, bool, bool)]) -> String {
         let items: Vec<String> = tags
             .iter()
             .map(|(t, draft, pre)| {
-                format!(r#"{{"tag_name":"{t}","draft":{draft},"prerelease":{pre}}}"#)
+                let published = if *t == "v3.1.0" {
+                    r#""2026-10-19T19:20:31Z""#.to_string()
+                } else if *draft {
+                    "null".into()
+                } else {
+                    r#""2026-10-01T00:00:00Z""#.into()
+                };
+                format!(
+                    r#"{{"tag_name":"{t}","draft":{draft},"prerelease":{pre},"published_at":{published},"assets":[]}}"#
+                )
             })
             .collect();
         format!("[{}]", items.join(","))
     }
 
-    const LIST: &str = "/repos/rdlu/sofleii/releases?per_page=10";
+    pub const LIST: &str = "/repos/rdlu/sofleii/releases?per_page=50";
 
     #[test]
     fn behind_bare_sha_scans_older_releases_skipping_drafts_and_prereleases() {
-        let mut http = FakeHttp::released();
+        let mut http = FakeHttp::with_releases(&[
+            ("v3.2.0", true, false),
+            ("sofleii-v0.1.0", false, false),
+            ("v3.1.0", false, false),
+            ("v3.1.0-rc1", false, true),
+            ("v3.0.0", false, false),
+            ("v2.8.0", false, false),
+        ]);
         http.compare("1a2b3c4", "ahead", 30, 0);
-        http.reply(
-            LIST,
-            200,
-            &release_list(&[
-                ("v3.2.0-draft", true, false),
-                ("v3.1.0", false, false),
-                ("v3.1.0-rc1", false, true),
-                ("v3.0.0", false, false),
-                ("v2.8.0", false, false),
-            ]),
-        );
         http.reply(
             "/repos/rdlu/sofleii/compare/v3.0.0...1a2b3c4?per_page=1",
             200,
@@ -941,26 +1259,22 @@ pub(crate) mod tests {
         let c = check(&mut http, DEFAULT_REPO, running("1a2b3c4")).unwrap();
         assert_eq!(c.status, Status::Behind);
         assert_eq!(c.running.release, rel("v3.0.0", false, 12));
-        // compare with latest, the list, one compare (v3.0.0); stops there.
+        // compare with latest, one compare (v3.0.0) from the same list; stops there.
         assert_eq!(
             extra(&http),
             vec![
                 format!("/repos/rdlu/sofleii/compare/1a2b3c4...{RELEASE_SHA}?per_page=1").as_str(),
-                LIST,
                 "/repos/rdlu/sofleii/compare/v3.0.0...1a2b3c4?per_page=1",
             ]
         );
+        assert_eq!(http.requested.iter().filter(|p| *p == LIST).count(), 1);
     }
 
     #[test]
     fn scan_finds_an_exact_older_release_by_tree() {
-        let mut http = FakeHttp::released();
+        let mut http =
+            FakeHttp::with_releases(&[("v3.1.0", false, false), ("v3.0.0", false, false)]);
         http.compare("1a2b3c4", "diverged", 5, 1);
-        http.reply(
-            LIST,
-            200,
-            &release_list(&[("v3.1.0", false, false), ("v3.0.0", false, false)]),
-        );
         http.reply(
             "/repos/rdlu/sofleii/compare/v3.0.0...1a2b3c4?per_page=1",
             200,
@@ -977,14 +1291,12 @@ pub(crate) mod tests {
 
     #[test]
     fn scan_is_capped_and_can_find_nothing() {
-        let mut http = FakeHttp::released();
-        http.compare("1a2b3c4", "diverged", 5, 1);
-        // 12 listed (GitHub would honour per_page; the cap holds anyway),
-        // none fit: every compare is "diverged" or a 404.
+        // 12 older ones listed, none fit: every compare is "diverged" or a 404.
         let tags: Vec<String> = (0..12).map(|i| format!("v2.{i}.0")).collect();
-        let list: Vec<(&str, bool, bool)> =
-            tags.iter().map(|t| (t.as_str(), false, false)).collect();
-        http.reply(LIST, 200, &release_list(&list));
+        let mut list: Vec<(&str, bool, bool)> = vec![("v3.1.0", false, false)];
+        list.extend(tags.iter().map(|t| (t.as_str(), false, false)));
+        let mut http = FakeHttp::with_releases(&list);
+        http.compare("1a2b3c4", "diverged", 5, 1);
         for t in &tags[..3] {
             http.reply(
                 &format!("/repos/rdlu/sofleii/compare/{t}...1a2b3c4?per_page=1"),
@@ -994,16 +1306,23 @@ pub(crate) mod tests {
         }
         let c = check(&mut http, DEFAULT_REPO, running("1a2b3c4")).unwrap();
         assert_eq!(c.running.release, None);
-        // compare with latest + list + 10 compares, not 12.
-        assert_eq!(extra(&http).len(), 12, "{:?}", http.requested);
+        // compare with latest + 10 compares, not 12.
+        assert_eq!(extra(&http).len(), 11, "{:?}", http.requested);
+        // Newest first by semver: v2.11.0 before v2.9.0.
+        assert!(
+            extra(&http)[1].contains("/v2.11.0..."),
+            "{:?}",
+            http.requested
+        );
     }
 
     #[test]
     fn scan_failure_keeps_the_verdict_with_a_note() {
-        let mut http = FakeHttp::released();
+        let mut http =
+            FakeHttp::with_releases(&[("v3.1.0", false, false), ("v3.0.0", false, false)]);
         http.compare("1a2b3c4", "ahead", 3, 0);
         http.replies.insert(
-            LIST.into(),
+            "/repos/rdlu/sofleii/compare/v3.0.0...1a2b3c4?per_page=1".into(),
             Reply {
                 status: 403,
                 body: "{}".into(),
@@ -1025,6 +1344,111 @@ pub(crate) mod tests {
         let mut http = FakeHttp::released();
         let c = check(&mut http, DEFAULT_REPO, running("deadbee")).unwrap();
         assert_eq!(c.running.release, None);
-        assert!(!http.requested.iter().any(|p| p.contains("/releases?")));
+        // The list once, the tag, the failed compare: no scan.
+        assert_eq!(http.requested.len(), 3, "{:?}", http.requested);
+    }
+
+    #[test]
+    fn never_asks_for_releases_latest() {
+        let mut http = FakeHttp::released();
+        check(&mut http, DEFAULT_REPO, running("5c53b30")).unwrap();
+        assert!(!http.requested.iter().any(|p| p.contains("releases/latest")));
+    }
+
+    #[test]
+    fn firmware_ignores_sofleii_tags_drafts_and_prereleases() {
+        // A sofleii release newer than everything (GitHub would call it
+        // "latest" without --latest=false) and a newer draft/prerelease.
+        let mut http = FakeHttp::with_releases(&[
+            ("sofleii-v0.1.0", false, false),
+            ("v3.3.0", true, false),
+            ("v3.2.0-rc1", false, true),
+            ("canary-zephyr-4.1", false, true),
+            ("nightly", false, false),
+            ("v3.1.0", false, false),
+            ("v3.0.0", false, false),
+        ]);
+        let c = check(&mut http, DEFAULT_REPO, running("5c53b30")).unwrap();
+        assert_eq!(c.latest.tag, "v3.1.0");
+        assert_eq!(c.status, Status::UpToDate);
+    }
+
+    #[test]
+    fn releases_split_by_family_newest_first_by_semver() {
+        let mut http = FakeHttp::with_releases(&[
+            // GitHub's created_at order: a backported v2.8.1 after v3.1.0.
+            ("v2.8.1", false, false),
+            ("sofleii-v0.1.0", false, false),
+            ("sofleii-v0.2.0", false, false),
+            ("sofleii-v0.3.0", true, false),
+            ("sofleii-v0.3.0-rc.1", false, true),
+            ("sofleii-vNext", false, false),
+            ("v3.1.0", false, false),
+            ("v10.0", false, false),
+        ]);
+        let r = list_releases(&mut http, DEFAULT_REPO).unwrap();
+        let tags = |v: &[Listed]| v.iter().map(|l| l.tag.clone()).collect::<Vec<_>>();
+        assert_eq!(tags(&r.firmware), ["v3.1.0", "v2.8.1"]);
+        assert_eq!(tags(&r.cli), ["sofleii-v0.2.0", "sofleii-v0.1.0"]);
+    }
+
+    #[test]
+    fn semver_order() {
+        let v = |s: &str| Version::parse(s).unwrap_or_else(|| panic!("{s}"));
+        assert!(v("0.2.0") > v("0.1.9"));
+        assert!(v("0.10.0") > v("0.9.0"));
+        assert!(v("1.0.0") > v("1.0.0-rc.1"));
+        assert!(v("1.0.0-rc.10") > v("1.0.0-rc.2"));
+        assert!(v("1.0.0-beta") > v("1.0.0-2"));
+        assert!(v("1.0.0-rc.1.1") > v("1.0.0-rc.1"));
+        assert_eq!(v("1.2.3+build.5"), v("1.2.3"));
+        for bad in [
+            "", "1", "1.2", "1.2.3.4", "v1.2.3", "1.x.3", "1.2.3-", "01a.2.3",
+        ] {
+            assert_eq!(Version::parse(bad), None, "{bad:?}");
+        }
+    }
+
+    fn listed(tag: &str) -> Listed {
+        Listed {
+            tag: tag.into(),
+            published_at: Some("2026-10-20T12:00:00Z".into()),
+        }
+    }
+
+    #[test]
+    fn cli_version_comparison() {
+        for (mine, latest, want, code) in [
+            ("0.1.0", "sofleii-v0.1.0", Status::UpToDate, 0),
+            ("0.1.0", "sofleii-v0.2.0", Status::Behind, 1),
+            ("0.1.0", "sofleii-v0.1.1", Status::Behind, 1),
+            ("0.2.0", "sofleii-v0.1.0", Status::Ahead, 0),
+            ("0.2.0-dev", "sofleii-v0.1.0", Status::Ahead, 0),
+            ("0.2.0-dev", "sofleii-v0.2.0", Status::Behind, 1),
+        ] {
+            let c = cli_check(mine, Some(&listed(latest)));
+            assert_eq!(c.status, want, "{mine} vs {latest}");
+            assert_eq!(c.exit_code(), code, "{mine} vs {latest}");
+            assert_eq!(c.tag.as_deref(), Some(latest));
+            assert_eq!(c.latest.as_deref(), latest.strip_prefix("sofleii-v"));
+            assert_eq!(c.note, None);
+        }
+        let c = cli_check("garbage", Some(&listed("sofleii-v0.1.0")));
+        assert_eq!(c.status, Status::Unknown);
+        assert!(c.note.unwrap().contains("semver"));
+    }
+
+    #[test]
+    fn no_cli_release_is_unknown_with_a_note_and_exit_0() {
+        let c = cli_check(CLI_VERSION, None);
+        assert_eq!(c.status, Status::Unknown);
+        assert_eq!(c.exit_code(), 0);
+        assert_eq!(
+            serde_json::to_value(&c).unwrap(),
+            serde_json::json!({
+                "version": CLI_VERSION, "latest": null, "tag": null,
+                "published_at": null, "status": "unknown", "note": NO_CLI_RELEASE
+            })
+        );
     }
 }

@@ -467,12 +467,113 @@ pub fn update_headline(c: &update::Check) -> String {
     }
 }
 
-/// `sofleii update check`: the verdict, then `running`/`latest` rows and a
-/// note for dirty or unknown builds.
-pub fn update_check(style: Style, transport: &TransportInfo, c: &update::Check) -> String {
-    if style.format == Format::Json {
-        return json(transport, c);
+/// `update check --json`: the firmware fields at the top level as before
+/// (all `null` under `--cli`), plus the additive `cli` object (`null`
+/// under `--firmware`) and the cache fields.
+#[derive(Serialize)]
+struct UpdateJson<'a> {
+    schema: u32,
+    /// `null` under `--cli`: the keyboard isn't asked.
+    transport: Option<&'a TransportInfo>,
+    running: Option<&'a update::Running>,
+    latest: Option<&'a update::Latest>,
+    status: Option<update::Status>,
+    commits_behind: Option<u32>,
+    commits_ahead: Option<u32>,
+    note: Option<&'a str>,
+    cli: Option<&'a update::CliCheck>,
+    /// When GitHub was asked (by whoever filled the cache, when cached).
+    checked_at_ms: u64,
+    from_cache: bool,
+}
+
+/// The CLI part's verdict: `up to date: v0.1.0`, `v0.2.0 available,
+/// running v0.1.0`, `ahead of v0.1.0: running v0.2.0`, `no sofleii
+/// release yet (running v0.1.0)`.
+pub fn cli_headline(c: &update::CliCheck) -> String {
+    let mine = format!("v{}", c.version);
+    let latest = c.latest.as_deref().map(|l| format!("v{l}"));
+    match (c.status, latest) {
+        (update::Status::UpToDate, _) => format!("up to date: {mine}"),
+        (update::Status::Behind, Some(l)) => format!("{l} available, running {mine}"),
+        (update::Status::Ahead, Some(l)) => format!("ahead of {l}: running {mine}"),
+        (_, None) => format!("no sofleii release yet (running {mine})"),
+        (_, Some(l)) => format!("can't compare with {l}: running {mine}"),
     }
+}
+
+/// `12s ago`, `2m ago`, `3h ago`, `2d ago`.
+pub fn ago(d: std::time::Duration) -> String {
+    let s = d.as_secs();
+    match s {
+        0..60 => format!("{s}s ago"),
+        60..3600 => format!("{}m ago", s / 60),
+        3600..86_400 => format!("{}h ago", s / 3600),
+        _ => format!("{}d ago", s / 86_400),
+    }
+}
+
+/// `sofleii update check`: the firmware verdict with its `running`/`latest`
+/// rows and notes, then the `sofleii` row (the CLI part), then where the
+/// answer came from when it was cached. `transport` is `None` under
+/// `--cli`; `now` dates a cached answer.
+pub fn update_check(
+    style: Style,
+    transport: Option<&TransportInfo>,
+    c: &update::Checked,
+    now: std::time::SystemTime,
+) -> String {
+    if style.format == Format::Json {
+        let fw = c.firmware.as_ref();
+        let env = UpdateJson {
+            schema: SCHEMA,
+            transport,
+            running: fw.map(|f| &f.running),
+            latest: fw.map(|f| &f.latest),
+            status: fw.map(|f| f.status),
+            commits_behind: fw.and_then(|f| f.commits_behind),
+            commits_ahead: fw.and_then(|f| f.commits_ahead),
+            note: fw.and_then(|f| f.note.as_deref()),
+            cli: c.cli.as_ref(),
+            checked_at_ms: c
+                .checked_at
+                .duration_since(std::time::UNIX_EPOCH)
+                .map_or(0, |d| d.as_millis() as u64),
+            from_cache: c.from_cache,
+        };
+        return serde_json::to_string_pretty(&env).expect("serialising plain data cannot fail");
+    }
+    let label = |s: &str| style.dim(&format!("{s:<16}"));
+    let mut text = c
+        .firmware
+        .as_ref()
+        .map(|f| firmware_check(style, f))
+        .unwrap_or_default();
+    if let Some(cli) = &c.cli {
+        let line = cli_headline(cli);
+        let line = match cli.status {
+            update::Status::UpToDate | update::Status::Ahead => style.green(&line),
+            update::Status::Behind => style.paint("33", &line),
+            update::Status::Unknown => line,
+        };
+        text.push_str(&format!("{}{line}\n", label("sofleii")));
+        if let Some(n) = cli.note.as_deref().filter(|_| cli.latest.is_some()) {
+            text.push_str(&format!("{}{n}\n", label("note")));
+        }
+    }
+    if c.from_cache {
+        let age = now.duration_since(c.checked_at).unwrap_or_default();
+        text.push_str(&format!(
+            "{}{}, cached (--refresh asks GitHub again)\n",
+            label("checked"),
+            ago(age)
+        ));
+    }
+    text
+}
+
+/// The firmware part of `update check`'s text.
+fn firmware_check(style: Style, c: &update::Check) -> String {
     let mut out = Vec::new();
     let w = &mut out;
     let label = |s: &str| style.dim(&format!("{s:<16}"));
@@ -1107,7 +1208,14 @@ mod tests {
     fn update_check_human() {
         use update::Status::*;
         let t = transport(TransportKind::Usb);
-        let human = |c: &update::Check| update_check(Style::plain(Format::Human), &t, c);
+        let human = |c: &update::Check| {
+            update_check(
+                Style::plain(Format::Human),
+                Some(&t),
+                &checked(Some(c.clone()), None, false),
+                t0(),
+            )
+        };
         let out = human(&update_sample(
             "f9a665f",
             UpToDate,
@@ -1170,16 +1278,18 @@ mod tests {
 
     #[test]
     fn update_check_json_envelope() {
+        let fw = update_sample(
+            "5c53b30",
+            update::Status::UpToDate,
+            0,
+            0,
+            Some(("v3.1.0", 0)),
+        );
         let v: Value = serde_json::from_str(&update_check(
             Style::plain(Format::Json),
-            &transport(TransportKind::Usb),
-            &update_sample(
-                "5c53b30",
-                update::Status::UpToDate,
-                0,
-                0,
-                Some(("v3.1.0", 0)),
-            ),
+            Some(&transport(TransportKind::Usb)),
+            &checked(Some(fw), Some(cli_sample("0.1.0", Some("0.2.0"))), true),
+            t0(),
         ))
         .unwrap();
         assert_eq!(
@@ -1195,8 +1305,129 @@ mod tests {
                 "status": "up_to_date",
                 "commits_behind": 0,
                 "commits_ahead": 0,
-                "note": null
+                "note": null,
+                "cli": {"version": "0.1.0", "latest": "0.2.0", "tag": "sofleii-v0.2.0",
+                        "published_at": "2026-10-20T12:00:00Z", "status": "behind",
+                        "note": null},
+                "checked_at_ms": 1_800_000_000_000u64 - 2 * 3_600_000,
+                "from_cache": true
             })
+        );
+
+        // --cli: no keyboard, so no transport and the firmware fields null.
+        let v: Value = serde_json::from_str(&update_check(
+            Style::plain(Format::Json),
+            None,
+            &checked(None, Some(cli_sample("0.1.0", None)), false),
+            t0(),
+        ))
+        .unwrap();
+        assert_eq!(
+            v,
+            serde_json::json!({
+                "schema": 1, "transport": null, "running": null, "latest": null,
+                "status": null, "commits_behind": null, "commits_ahead": null, "note": null,
+                "cli": {"version": "0.1.0", "latest": null, "tag": null, "published_at": null,
+                        "status": "unknown", "note": update::NO_CLI_RELEASE},
+                "checked_at_ms": 1_800_000_000_000u64 - 2 * 3_600_000,
+                "from_cache": false
+            })
+        );
+        // --firmware: `cli` is null.
+        let v: Value = serde_json::from_str(&update_check(
+            Style::plain(Format::Json),
+            Some(&transport(TransportKind::Usb)),
+            &checked(
+                Some(update_sample(
+                    "5c53b30",
+                    update::Status::UpToDate,
+                    0,
+                    0,
+                    None,
+                )),
+                None,
+                false,
+            ),
+            t0(),
+        ))
+        .unwrap();
+        assert_eq!(v["cli"], Value::Null);
+        assert_eq!(v["status"], "up_to_date");
+    }
+
+    fn t0() -> std::time::SystemTime {
+        std::time::SystemTime::UNIX_EPOCH + std::time::Duration::from_millis(1_800_000_000_000)
+    }
+
+    /// Checked 2 h before [`t0`].
+    fn checked(
+        firmware: Option<update::Check>,
+        cli: Option<update::CliCheck>,
+        from_cache: bool,
+    ) -> update::Checked {
+        update::Checked {
+            firmware,
+            cli,
+            checked_at: t0() - std::time::Duration::from_secs(2 * 3600),
+            from_cache,
+        }
+    }
+
+    fn cli_sample(mine: &str, latest: Option<&str>) -> update::CliCheck {
+        let l = latest.map(|v| update::Listed {
+            tag: format!("sofleii-v{v}"),
+            published_at: Some("2026-10-20T12:00:00Z".into()),
+        });
+        update::cli_check(mine, l.as_ref())
+    }
+
+    #[test]
+    fn update_check_cli_rows() {
+        let t = transport(TransportKind::Usb);
+        let human =
+            |c: &update::Checked| update_check(Style::plain(Format::Human), Some(&t), c, t0());
+        for (mine, latest, want) in [
+            (
+                "0.1.0",
+                Some("0.1.0"),
+                "sofleii         up to date: v0.1.0\n",
+            ),
+            (
+                "0.1.0",
+                Some("0.2.0"),
+                "sofleii         v0.2.0 available, running v0.1.0\n",
+            ),
+            (
+                "0.2.0",
+                Some("0.1.0"),
+                "sofleii         ahead of v0.1.0: running v0.2.0\n",
+            ),
+            (
+                "0.1.0",
+                None,
+                "sofleii         no sofleii release yet (running v0.1.0)\n",
+            ),
+        ] {
+            // --cli alone: just the row.
+            let out = human(&checked(None, Some(cli_sample(mine, latest)), false));
+            assert_eq!(out, want);
+        }
+        // Both: the firmware block, then the row, then the cache line.
+        let fw = update_sample(
+            "f9a665f",
+            update::Status::UpToDate,
+            0,
+            0,
+            Some(("v3.1.0", 0)),
+        );
+        let out = human(&checked(Some(fw), Some(cli_sample("0.1.0", None)), true));
+        assert_eq!(
+            out,
+            "up to date: v3.1.0 (f9a665f)\n\
+             running         v3.1.0 (f9a665f)\n\
+             latest          v3.1.0 5c53b30, published 2026-10-19T19:20:31Z\n\
+             sofleii         no sofleii release yet (running v0.1.0)\n\
+             checked         2h ago, cached (--refresh asks GitHub again)\n"
         );
     }
 

@@ -111,6 +111,9 @@ pub struct UpdateState {
     pub latest: String,
     /// How long ago GitHub was asked.
     pub age: Duration,
+    /// The newer sofleii release's version (`0.2.0`) when this binary is
+    /// behind it; else `None`.
+    pub cli_available: Option<String>,
     pub from_cache: bool,
 }
 
@@ -217,6 +220,9 @@ impl Snapshot {
                         status: u.check.status,
                         latest: u.check.latest.tag.clone(),
                         age: now.duration_since(u.checked_at).unwrap_or(Duration::ZERO),
+                        cli_available: (u.cli.status == update::Status::Behind)
+                            .then(|| u.cli.latest.clone())
+                            .flatten(),
                         from_cache: u.from_cache,
                     }),
                     update_health: Health::of(&s.update, now),
@@ -359,6 +365,7 @@ pub fn demo(now: SystemTime) -> session::Snapshot {
                     commits_ahead: Some(0),
                     note: None,
                 },
+                cli: update::cli_check(update::CLI_VERSION, None),
                 checked_at: ago(120),
                 from_cache: true,
             }),
