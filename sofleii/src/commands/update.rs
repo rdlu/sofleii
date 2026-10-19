@@ -38,7 +38,7 @@ pub trait Http {
     fn get(&mut self, path: &str, accept: &str) -> Result<Reply>;
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Running {
     /// `zmk_config_version` as the firmware reports it (`git describe
     /// --dirty --always --tags`), `null` when empty.
@@ -55,7 +55,7 @@ pub struct Running {
     pub release: Option<Release>,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Release {
     pub tag: String,
     /// The build is that release (same commit, or the same source tree).
@@ -94,7 +94,7 @@ impl Release {
 /// How many older releases a `behind` bare SHA may compare against.
 pub const RELEASE_SCAN: u32 = 10;
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Latest {
     pub tag: String,
     /// Full SHA of the commit the tag points at.
@@ -103,7 +103,7 @@ pub struct Latest {
     pub published_at: Option<String>,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum Status {
     /// The release's commit, or one with the same source tree (a PR-branch
@@ -130,7 +130,7 @@ impl Status {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Check {
     pub running: Running,
     pub latest: Latest,

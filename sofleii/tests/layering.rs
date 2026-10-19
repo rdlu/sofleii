@@ -1,6 +1,6 @@
 //! Source checks for the layering rules in `lib.rs`: core diagnostics go
 //! through `log` (only `main.rs` prints to stderr directly), and the core
-//! never depends on the TUI.
+//! (`session` included) never depends on the TUI.
 
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -48,7 +48,7 @@ fn mentions_tui(text: &str) -> bool {
 fn core_never_depends_on_the_tui() {
     assert!(mentions_tui("use crate::tui::App;") && mentions_tui("ratatui::Frame"));
     assert!(!mentions_tui("front ends (CLI and TUI); intuitive"));
-    for dir in ["commands", "client", "transport"] {
+    for dir in ["commands", "client", "transport", "session"] {
         let mut files = Vec::new();
         rust_files(&src().join(dir), &mut files);
         assert!(!files.is_empty(), "{dir}");

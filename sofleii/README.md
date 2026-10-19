@@ -744,6 +744,11 @@ src/
   github.rs      GitHub REST API over ureq (blocking, rustls): the Http trait
   output.rs      human, JSON and waybar rendering
   logger.rs      the CLI's stderr logger for core `log` records
+  session/       the long-running core the TUI (and a later GUI) runs on, no UI code: mod.rs
+                 (Request/Event/Risk, SessionHandle); link.rs (the RPC thread: lease, polling,
+                 deaf/lost handling, the write actions through commands/); watch.rs (batteries and
+                 presence over BlueZ and sysfs); jobs.rs (update check + its cache); state.rs
+                 (Snapshot, the pure reducer); fake.rs + tests.rs (a fake keyboard, no hardware)
   tui/           the TUI: event loop, terminal restore, signals (mod.rs); snapshot.rs (plain data
                  the view draws, Searching state, demo fixture); view.rs (rendering); log_pane.rs
                  (the TUI's logger); tests.rs (TestBackend renders, keys). Nothing in transport/,
@@ -753,7 +758,8 @@ proto/           vendored .proto files (see proto/README.md for sources and lice
 tests/golden.rs  request bytes captured from the v3.0.0 firmware, plus the zmk__device_info call and
                  the cormoran_ble write payloads (worked out from the proto; confirmed by the 2026-10-19 live test)
 tests/cli.rs     exit codes and error output with no keyboard (not found, usage; no network)
-tests/layering.rs  no eprintln! outside main.rs; transport/, client/, commands/ never name the TUI
+tests/layering.rs  no eprintln! outside main.rs; transport/, client/, commands/, session/ never name the TUI
+tests/session_live.rs  #[ignore]d: a read-only session against the keyboard, printing its events for 10 s
 ```
 
 License: MIT (see the repository's `LICENSE`). The vendored protos keep

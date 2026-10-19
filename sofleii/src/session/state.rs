@@ -1,0 +1,301 @@
+//! The shared state the front ends render, folded from the event stream by
+//! a pure reducer ([`Snapshot::apply`]); [`Snapshot::tick`] marks values
+//! stale as time passes. The TUI derives its view from this, and a GUI can
+//! keep the same struct on its side of the event stream.
+//!
+//! A failed read keeps the last good value (its error is shown next to it),
+//! and a value goes stale once it is 3x older than its refresh interval.
+
+use std::collections::VecDeque;
+use std::time::{Duration, SystemTime};
+
+use serde::Serialize;
+
+use super::{Config, ErrorView, Event, LinkState, LogLevel, Presence, Reads, UpdateReport, ser};
+use crate::commands::battery::Reading;
+use crate::commands::info::{Build, Device, Info};
+use crate::commands::profiles::Profiles;
+
+/// A value goes stale after this many refresh intervals without a good read.
+pub const STALE_AFTER: u32 = 3;
+
+/// One polled value: the last good read and the latest error.
+#[derive(Debug, Clone, PartialEq, Serialize)]
+pub struct Field<T> {
+    /// The last good value.
+    pub value: Option<T>,
+    /// When `value` was read.
+    #[serde(rename = "at_ms", serialize_with = "ser::opt_unix_ms")]
+    pub at: Option<SystemTime>,
+    /// The latest read's error; cleared by a good read.
+    pub error: Option<ErrorView>,
+    /// `value` is older than [`STALE_AFTER`] intervals.
+    pub stale: bool,
+}
+
+impl<T> Default for Field<T> {
+    fn default() -> Self {
+        Self {
+            value: None,
+            at: None,
+            error: None,
+            stale: false,
+        }
+    }
+}
+
+impl<T: Clone> Field<T> {
+    fn apply(&mut self, r: &Reads<T>) {
+        match &r.value {
+            Ok(v) => {
+                self.value = Some(v.clone());
+                self.at = Some(r.at);
+                self.error = None;
+                self.stale = false;
+            }
+            Err(e) => self.error = Some(e.clone()),
+        }
+    }
+}
+
+impl<T> Field<T> {
+    /// How old `value` is at `now` (zero if the clock went back).
+    pub fn age(&self, now: SystemTime) -> Option<Duration> {
+        self.at
+            .map(|at| now.duration_since(at).unwrap_or(Duration::ZERO))
+    }
+
+    fn tick(&mut self, now: SystemTime, every: Option<Duration>) {
+        self.stale = match (self.age(now), every) {
+            (Some(age), Some(every)) => age > every.saturating_mul(STALE_AFTER),
+            _ => false,
+        };
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct LogEntry {
+    #[serde(rename = "at_ms", serialize_with = "ser::unix_ms")]
+    pub at: SystemTime,
+    pub level: LogLevel,
+    pub msg: String,
+}
+
+/// The refresh intervals staleness is judged by.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct Intervals {
+    poll: Duration,
+    poll_unfocused: Duration,
+    battery: Duration,
+    update: Duration,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct Snapshot {
+    pub link: LinkState,
+    /// `None` until the first presence probe.
+    pub presence: Option<Presence>,
+    /// Read once per (re)connect; never stale by time.
+    pub info: Field<Info>,
+    /// Profiles and output priority.
+    pub status: Field<Profiles>,
+    pub battery: Field<Reading>,
+    pub update: Field<UpdateReport>,
+    /// Oldest first, at most `log_capacity` lines.
+    pub log: VecDeque<LogEntry>,
+    /// Mirrors the last [`Request::Focus`](super::Request::Focus) the front
+    /// end sent: the status interval (and so its staleness) depends on it.
+    pub focused: bool,
+    #[serde(skip)]
+    intervals: Intervals,
+    #[serde(skip)]
+    log_capacity: usize,
+}
+
+impl Snapshot {
+    /// Nothing known yet: the "Searching…" state.
+    pub fn new(cfg: &Config) -> Self {
+        Self {
+            link: LinkState::Searching,
+            presence: None,
+            info: Field::default(),
+            status: Field::default(),
+            battery: Field::default(),
+            update: Field::default(),
+            log: VecDeque::new(),
+            focused: true,
+            intervals: Intervals {
+                poll: cfg.poll,
+                poll_unfocused: cfg.poll_unfocused,
+                battery: cfg.battery_every,
+                update: cfg.update_every,
+            },
+            log_capacity: cfg.log_capacity.max(1),
+        }
+    }
+
+    /// Folds one event in. Pure: no clock, no I/O.
+    pub fn apply(&mut self, e: &Event) {
+        match e {
+            Event::Link(s) => self.link = s.clone(),
+            Event::Presence(p) => self.presence = Some(*p),
+            Event::Status(r) => self.status.apply(r),
+            Event::Info(r) => self.info.apply(r),
+            Event::Battery(r) => self.battery.apply(r),
+            Event::Update(r) => self.update.apply(r),
+            Event::Log { at, level, msg } => {
+                if self.log.len() >= self.log_capacity {
+                    self.log.pop_front();
+                }
+                self.log.push_back(LogEntry {
+                    at: *at,
+                    level: *level,
+                    msg: msg.clone(),
+                });
+            }
+            // The front end matches tickets itself.
+            Event::Done { .. } => {}
+        }
+    }
+
+    /// Re-marks staleness for `now`; call it on the front end's tick.
+    pub fn tick(&mut self, now: SystemTime) {
+        let i = self.intervals;
+        let poll = if self.focused {
+            i.poll
+        } else {
+            i.poll_unfocused
+        };
+        self.status.tick(now, Some(poll));
+        self.info.tick(now, None);
+        self.battery.tick(now, Some(i.battery));
+        self.update.tick(now, Some(i.update));
+    }
+
+    /// The device name and serial, from `info`.
+    pub fn device(&self) -> Option<&Device> {
+        self.info.value.as_ref().map(|i| &i.device)
+    }
+
+    /// The running firmware build, from `info`.
+    pub fn build(&self) -> Option<&Build> {
+        self.info.value.as_ref().map(|i| &i.build)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::commands::profiles::Profile;
+    use crate::session::{ConnectedVia, Stamped};
+    use crate::transport::{TransportInfo, TransportKind};
+
+    fn t(secs: u64) -> SystemTime {
+        ser::from_ms(1_800_000_000_000 + secs * 1000)
+    }
+
+    fn profiles(active: u32) -> Profiles {
+        Profiles {
+            max_profiles: 2,
+            active_profile: Some(active),
+            output_priority: Some("usb"),
+            profiles: vec![Profile {
+                index: active,
+                active: true,
+                connected: true,
+                bonded: true,
+                address: None,
+                name: None,
+            }],
+        }
+    }
+
+    fn err(m: &str) -> ErrorView {
+        ErrorView {
+            kind: "timeout",
+            message: m.into(),
+            exit_code: 4,
+        }
+    }
+
+    fn status(at: SystemTime, r: Result<Profiles, ErrorView>) -> Event {
+        Event::Status(Stamped { at, value: r })
+    }
+
+    #[test]
+    fn a_failed_read_keeps_the_last_good_value() {
+        let mut s = Snapshot::new(&Config::default());
+        s.apply(&status(t(0), Ok(profiles(1))));
+        s.apply(&status(t(5), Err(err("quiet"))));
+        assert_eq!(s.status.value.as_ref().unwrap().active_profile, Some(1));
+        assert_eq!(s.status.at, Some(t(0)));
+        assert_eq!(s.status.error.as_ref().unwrap().message, "quiet");
+        s.apply(&status(t(10), Ok(profiles(0))));
+        assert_eq!(s.status.error, None);
+        assert_eq!(s.status.value.as_ref().unwrap().active_profile, Some(0));
+    }
+
+    #[test]
+    fn stale_after_three_intervals() {
+        let mut s = Snapshot::new(&Config::default());
+        s.tick(t(1000));
+        assert!(!s.status.stale, "nothing to be stale yet");
+        s.apply(&status(t(0), Ok(profiles(0))));
+        s.tick(t(15));
+        assert!(!s.status.stale, "3 x 5 s is the limit");
+        s.tick(t(16));
+        assert!(s.status.stale);
+        // Unfocused, the interval is 30 s.
+        s.focused = false;
+        s.tick(t(16));
+        assert!(!s.status.stale);
+        s.tick(t(91));
+        assert!(s.status.stale);
+        // A good read clears it; info is never stale by time.
+        s.apply(&status(t(91), Ok(profiles(0))));
+        assert!(!s.status.stale);
+        s.info.at = Some(t(0));
+        s.tick(t(1_000_000));
+        assert!(!s.info.stale);
+    }
+
+    #[test]
+    fn the_log_is_bounded() {
+        let cfg = Config {
+            log_capacity: 3,
+            ..Config::default()
+        };
+        let mut s = Snapshot::new(&cfg);
+        for i in 0..5 {
+            s.apply(&Event::Log {
+                at: t(i),
+                level: LogLevel::Info,
+                msg: format!("line {i}"),
+            });
+        }
+        let msgs: Vec<_> = s.log.iter().map(|l| l.msg.as_str()).collect();
+        assert_eq!(msgs, ["line 2", "line 3", "line 4"]);
+    }
+
+    #[test]
+    fn link_and_presence_follow_the_events() {
+        let mut s = Snapshot::new(&Config::default());
+        let via = ConnectedVia {
+            transport: TransportInfo {
+                kind: TransportKind::Ble,
+                device: "DD:1F:23:76:6E:71".into(),
+            },
+            auto: true,
+        };
+        s.apply(&Event::Link(LinkState::Connected { via }));
+        s.apply(&Event::Presence(Presence {
+            usb: false,
+            ble: true,
+        }));
+        assert_eq!(s.link.kind(), Some(TransportKind::Ble));
+        assert!(s.presence.unwrap().ble);
+        let json = serde_json::to_value(&s).unwrap();
+        assert_eq!(json["link"]["state"], "connected");
+        assert!(json.get("intervals").is_none());
+    }
+}
