@@ -53,6 +53,25 @@ pub struct BtDevice {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize)]
 pub struct BatteryLevel {
     pub percent: Option<u8>,
+    /// [`DISCONNECTED`] when `status` knows the half is off the split link
+    /// (`percent` is then `null`); `null` otherwise. Always `null` from
+    /// `battery`, which reads GATT only and never knows the link.
+    pub state: Option<&'static str>,
+}
+
+/// [`BatteryLevel::state`] of a half known to be off the split link. The
+/// central's battery proxy keeps reporting 0% for a disconnected
+/// peripheral, so that 0 is dropped rather than shown.
+pub const DISCONNECTED: &str = "disconnected";
+
+impl BatteryLevel {
+    /// A half known to be off the split link: no percent.
+    pub const fn disconnected() -> Self {
+        Self {
+            percent: None,
+            state: Some(DISCONNECTED),
+        }
+    }
 }
 
 /// The result of `sofleii battery`.
@@ -162,9 +181,11 @@ pub fn run(gatt: &mut dyn Gatt, query: &Query) -> Result<Reading> {
         },
         left: BatteryLevel {
             percent: left.percent,
+            state: None,
         },
         right: BatteryLevel {
             percent: right.percent,
+            state: None,
         },
         note: (!notes.is_empty()).then(|| notes.join("; ")),
         warnings,
@@ -466,8 +487,8 @@ mod tests {
             serde_json::json!({
                 "source": "bluez",
                 "device": {"name": "Eyelash Sofle", "address": "DD:1F:23:76:6E:71"},
-                "left": {"percent": 100},
-                "right": {"percent": 77},
+                "left": {"percent": 100, "state": null},
+                "right": {"percent": 77, "state": null},
                 "note": null
             })
         );
@@ -531,7 +552,10 @@ mod tests {
         assert_eq!(pct(&r), (Some(90), None));
         assert!(r.note.as_deref().unwrap().contains("#45"));
         let v = serde_json::to_value(&r).unwrap();
-        assert_eq!(v["right"], serde_json::json!({"percent": null}));
+        assert_eq!(
+            v["right"],
+            serde_json::json!({"percent": null, "state": null})
+        );
     }
 
     #[test]

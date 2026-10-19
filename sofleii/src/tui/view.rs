@@ -373,12 +373,25 @@ fn summary(snap: &Snapshot, wide: bool, t: Theme) -> Vec<Row<'static>> {
     let (fw, checked) = firmware(k, t);
     rows.push(Row::Full(kv("Firmware", fw, t), checked));
     let split = match &k.split {
-        Some(s) if s.peripheral_connected => Span::styled("connected", t.good()),
-        Some(_) => Span::styled("disconnected", t.bad()),
-        None if wide => Span::styled("unavailable (get_split_info is broken upstream)", t.label()),
-        None => Span::styled("unavailable (broken upstream)", t.label()),
+        Some(s) => match (s.connected, s.known) {
+            (Some(true), _) => Span::styled("connected", t.good()),
+            (Some(false), _) if wide => {
+                Span::styled("disconnected (right half off or out of range)", t.bad())
+            }
+            (Some(false), _) => Span::styled("disconnected (right half off)", t.bad()),
+            (None, true) => Span::styled("unknown (not a split central)", t.label()),
+            (None, false) if wide => {
+                Span::styled("unknown (firmware without the split-info fix)", t.label())
+            }
+            (None, false) => Span::styled("unknown (old firmware)", t.label()),
+        },
+        None => Span::styled("—", t.label()),
     };
-    rows.push(Row::Full(kv("Split", vec![split], t), None));
+    let h = &k.split_health;
+    rows.push(Row::Full(
+        kv("Split", freshness(vec![split], h.stale), t),
+        note(h, None, t),
+    ));
     rows
 }
 
@@ -509,7 +522,13 @@ fn battery(k: &Keyboard, cells: usize, t: Theme) -> Vec<Span<'static>> {
     };
     let mut s = half("L", k.battery.left);
     s.push(Span::raw("   "));
-    s.extend(half("R", k.battery.right));
+    if k.battery.right_disconnected {
+        s.extend([Span::raw("R "), Span::styled("disconnected", t.bad())]);
+    } else if k.battery.right_settling {
+        s.extend([Span::raw("R "), Span::styled("reading…", t.label())]);
+    } else {
+        s.extend(half("R", k.battery.right));
+    }
     s
 }
 

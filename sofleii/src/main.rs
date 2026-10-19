@@ -8,7 +8,6 @@ use std::time::Duration;
 use clap::{CommandFactory, Parser, Subcommand, ValueEnum};
 
 use sofleii::commands::battery::{DEFAULT_CRITICAL_BELOW, DEFAULT_WARN_BELOW, Thresholds};
-use sofleii::commands::status::Battery;
 use sofleii::commands::update::DEFAULT_REPO;
 use sofleii::connect::{self, Connected, Connector, STATUS_BATTERY_TIMEOUT, read_battery};
 use sofleii::error::exit;
@@ -422,8 +421,9 @@ fn run(cli: &Cli, command: &Command, style: Style) -> Result<(String, u8)> {
     let text = match command {
         Command::Status { .. } => {
             let mut s = commands::status::run(&mut client)?;
-            // The battery never fails `status`: unavailable is a note.
-            s.battery = Battery::from_reading(read_battery(
+            // The battery never fails `status`: unavailable is a note. A
+            // right half known to be off the split link shows disconnected.
+            s.set_battery(read_battery(
                 cli.bt_address.as_deref(),
                 timeout.min(STATUS_BATTERY_TIMEOUT),
             ));

@@ -15,6 +15,7 @@ use super::{Config, ErrorView, Event, LinkState, LogLevel, Presence, Reads, Upda
 use crate::commands::battery::Reading;
 use crate::commands::info::{Build, Device, Info};
 use crate::commands::profiles::Profiles;
+use crate::commands::split::Split;
 
 /// A value goes stale after this many refresh intervals without a good read.
 pub const STALE_AFTER: u32 = 3;
@@ -88,6 +89,7 @@ struct Intervals {
     poll_unfocused: Duration,
     battery: Duration,
     update: Duration,
+    split_settle: Duration,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -99,6 +101,13 @@ pub struct Snapshot {
     pub info: Field<Info>,
     /// Profiles and output priority.
     pub status: Field<Profiles>,
+    /// The split link, polled with `status`.
+    pub split: Field<Split>,
+    /// When the split link last went from disconnected to connected, while
+    /// the right half hasn't read non-zero since: see
+    /// [`right_settling`](Self::right_settling).
+    #[serde(rename = "rejoined_at_ms", serialize_with = "ser::opt_unix_ms")]
+    pub rejoined_at: Option<SystemTime>,
     pub battery: Field<Reading>,
     pub update: Field<UpdateReport>,
     /// Oldest first, at most `log_capacity` lines.
@@ -120,6 +129,8 @@ impl Snapshot {
             presence: None,
             info: Field::default(),
             status: Field::default(),
+            split: Field::default(),
+            rejoined_at: None,
             battery: Field::default(),
             update: Field::default(),
             log: VecDeque::new(),
@@ -129,6 +140,7 @@ impl Snapshot {
                 poll_unfocused: cfg.poll_unfocused,
                 battery: cfg.battery_every,
                 update: cfg.update_every,
+                split_settle: cfg.split_settle,
             },
             log_capacity: cfg.log_capacity.max(1),
         }
@@ -140,8 +152,25 @@ impl Snapshot {
             Event::Link(s) => self.link = s.clone(),
             Event::Presence(p) => self.presence = Some(*p),
             Event::Status(r) => self.status.apply(r),
+            Event::Split(r) => {
+                let was_down = self.split.value.is_some_and(|s| s.disconnected());
+                self.split.apply(r);
+                match &r.value {
+                    Ok(s) if was_down && s.connected == Some(true) => self.rejoined_at = Some(r.at),
+                    Ok(s) if s.connected != Some(true) => self.rejoined_at = None,
+                    _ => {}
+                }
+            }
             Event::Info(r) => self.info.apply(r),
-            Event::Battery(r) => self.battery.apply(r),
+            Event::Battery(r) => {
+                self.battery.apply(r);
+                // A real level ends the settling window early.
+                if let Ok(b) = &r.value
+                    && b.right.percent.is_some_and(|p| p > 0)
+                {
+                    self.rejoined_at = None;
+                }
+            }
             Event::Update(r) => self.update.apply(r),
             Event::Log { at, level, msg } => {
                 if self.log.len() >= self.log_capacity {
@@ -167,9 +196,27 @@ impl Snapshot {
             i.poll_unfocused
         };
         self.status.tick(now, Some(poll));
+        self.split.tick(now, Some(poll));
         self.info.tick(now, None);
         self.battery.tick(now, Some(i.battery));
         self.update.tick(now, Some(i.update));
+    }
+
+    /// The right half reads 0% within [`Config::split_settle`] of rejoining
+    /// the split link: most likely the central's proxy before it has fetched
+    /// the real level, so a front end shows "reading…". A 0% that lasts
+    /// past the window is shown as read (a flat battery is real).
+    pub fn right_settling(&self, now: SystemTime) -> bool {
+        let Some(at) = self.rejoined_at else {
+            return false;
+        };
+        let within = now.duration_since(at).unwrap_or(Duration::ZERO) < self.intervals.split_settle;
+        let zero = self
+            .battery
+            .value
+            .as_ref()
+            .is_some_and(|b| b.right.percent == Some(0));
+        within && zero
     }
 
     /// The device name and serial, from `info`.
@@ -257,6 +304,116 @@ mod tests {
         s.info.at = Some(t(0));
         s.tick(t(1_000_000));
         assert!(!s.info.stale);
+    }
+
+    #[test]
+    fn split_events_fold_like_status() {
+        let mut s = Snapshot::new(&Config::default());
+        let down = Split {
+            known: true,
+            connected: Some(false),
+            is_split: Some(true),
+            is_central: Some(true),
+        };
+        s.apply(&Event::Split(Stamped {
+            at: t(0),
+            value: Ok(down),
+        }));
+        assert_eq!(s.split.value, Some(down));
+        // A failed read keeps it, and it goes stale with the status interval.
+        s.apply(&Event::Split(Stamped {
+            at: t(5),
+            value: Err(err("quiet")),
+        }));
+        assert_eq!(s.split.value, Some(down));
+        assert!(s.split.error.is_some());
+        s.tick(t(16));
+        assert!(s.split.stale);
+        let json = serde_json::to_value(&s).unwrap();
+        assert_eq!(json["split"]["value"]["connected"], false);
+    }
+
+    fn split_at(at: SystemTime, connected: bool) -> Event {
+        Event::Split(Stamped {
+            at,
+            value: Ok(Split {
+                known: true,
+                connected: Some(connected),
+                is_split: Some(true),
+                is_central: Some(true),
+            }),
+        })
+    }
+
+    fn right_at(at: SystemTime, percent: u8) -> Event {
+        use crate::commands::battery::{BatteryLevel, BtDevice};
+        let lvl = |p| BatteryLevel {
+            percent: Some(p),
+            state: None,
+        };
+        Event::Battery(Stamped {
+            at,
+            value: Ok(Reading {
+                source: "bluez",
+                device: BtDevice {
+                    name: "Eyelash Sofle".into(),
+                    address: "DD:1F:23:76:6E:71".into(),
+                },
+                left: lvl(100),
+                right: lvl(percent),
+                note: None,
+                warnings: Vec::new(),
+            }),
+        })
+    }
+
+    /// Default `split_settle` is 10 s.
+    fn rejoined() -> Snapshot {
+        let mut s = Snapshot::new(&Config::default());
+        s.apply(&split_at(t(0), true));
+        s.apply(&split_at(t(5), false));
+        s.apply(&split_at(t(10), true));
+        s
+    }
+
+    #[test]
+    fn a_zero_right_after_rejoining_is_settling() {
+        let mut s = rejoined();
+        // The proxy's 0% while the central fetches the real level.
+        s.apply(&right_at(t(11), 0));
+        assert!(s.right_settling(t(12)));
+        // Another poll that still says connected keeps the window.
+        s.apply(&split_at(t(15), true));
+        assert!(s.right_settling(t(15)));
+        // A real level ends it early, and a later 0 is shown as read.
+        s.apply(&right_at(t(16), 66));
+        assert!(!s.right_settling(t(16)));
+        s.apply(&right_at(t(17), 0));
+        assert!(!s.right_settling(t(17)));
+    }
+
+    #[test]
+    fn a_zero_past_the_window_is_real() {
+        let mut s = rejoined();
+        s.apply(&right_at(t(11), 0));
+        s.apply(&right_at(t(16), 0));
+        assert!(s.right_settling(t(19)));
+        assert!(!s.right_settling(t(20)), "10 s after the rejoin at t(10)");
+    }
+
+    #[test]
+    fn no_window_without_a_down_to_up_edge() {
+        let mut s = Snapshot::new(&Config::default());
+        // First read connected: no edge.
+        s.apply(&split_at(t(0), true));
+        s.apply(&right_at(t(1), 0));
+        assert!(!s.right_settling(t(1)));
+        // Going down clears a window.
+        let mut s = rejoined();
+        s.apply(&right_at(t(11), 0));
+        s.apply(&split_at(t(12), false));
+        assert!(!s.right_settling(t(12)));
+        assert_eq!(s.rejoined_at, None);
     }
 
     #[test]

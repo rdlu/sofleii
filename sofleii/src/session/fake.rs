@@ -45,6 +45,9 @@ pub enum Step {
 pub struct Kb {
     pub active: u32,
     pub priority: bm::OutputPriority,
+    /// The right half is on the split link; `None` answers
+    /// `get_split_info` with no `info`, as older firmware does.
+    pub split: Option<bool>,
     /// Per opened transport, in order; then [`Mode::Normal`].
     pub modes: VecDeque<Mode>,
     /// Per connection attempt, in order; then a successful open.
@@ -60,6 +63,8 @@ pub struct Kb {
     pub plans: usize,
     /// Every RPC request answered or swallowed.
     pub requests: usize,
+    /// Battery reads through [`FakeProbe`].
+    pub battery_reads: usize,
 }
 
 impl Default for Kb {
@@ -67,6 +72,7 @@ impl Default for Kb {
         Self {
             active: 0,
             priority: bm::OutputPriority::Usb,
+            split: Some(true),
             modes: VecDeque::new(),
             steps: VecDeque::new(),
             usb: true,
@@ -75,6 +81,7 @@ impl Default for Kb {
             dropped: 0,
             plans: 0,
             requests: 0,
+            battery_reads: 0,
         }
     }
 }
@@ -210,6 +217,14 @@ fn answer(kb: &mut Kb, sub: crate::client::RequestSubsystem) -> Option<ResponseS
             use bm::response::ResponseType as R;
             let r = match req {
                 Ble::GetProfiles(_) => R::GetProfiles(profiles(kb.active)),
+                Ble::GetSplitInfo(_) => R::GetSplitInfo(bm::GetSplitInfoResponse {
+                    info: kb.split.map(|c| bm::SplitInfo {
+                        is_split: true,
+                        is_central: true,
+                        peripheral_connected: c,
+                        central_bonded: false,
+                    }),
+                }),
                 Ble::GetOutputPriority(_) => R::GetOutputPriority(bm::GetOutputPriorityResponse {
                     priority: kb.priority as i32,
                 }),
@@ -298,7 +313,8 @@ pub fn connector(kb: &Shared) -> connect::Connector<FakeOpener> {
     )
 }
 
-/// Presence from `kb.usb` and a flag; the batteries are never readable.
+/// Presence from `kb.usb` and a flag; the batteries are never readable
+/// (each try counts in `kb.battery_reads`).
 #[derive(Clone)]
 pub struct FakeProbe {
     pub kb: Shared,
@@ -322,6 +338,7 @@ impl Probe for FakeProbe {
         self.ble.load(Ordering::SeqCst)
     }
     fn battery(&mut self) -> Result<Reading> {
+        self.kb.lock().battery_reads += 1;
         Err(Error::NotFound("fake: no BLE".into()))
     }
 }

@@ -134,6 +134,88 @@ fn first_poll_reads_info_then_status_on_one_lease() {
     assert_eq!(s.kb.lock().opened, 1);
 }
 
+fn split_read(e: &Event) -> Option<&Result<crate::commands::split::Split, ErrorView>> {
+    match e {
+        Event::Split(Stamped { value, .. }) => Some(value),
+        _ => None,
+    }
+}
+
+#[test]
+fn the_split_link_follows_each_status() {
+    for (kb_split, connected, known) in [
+        (Some(true), Some(true), true),
+        (Some(false), Some(false), true),
+        // Older firmware: an empty reply, unknown rather than disconnected.
+        (None, None, false),
+    ] {
+        let s = start(
+            |c| c,
+            Kb {
+                split: kb_split,
+                ..Kb::default()
+            },
+        );
+        let seen = s.until("split", |e| split_read(e).is_some());
+        assert!(seen.iter().any(status_ok), "split comes after status");
+        let sp = split_read(seen.last().unwrap()).unwrap().clone().unwrap();
+        assert_eq!((sp.connected, sp.known), (connected, known), "{kb_split:?}");
+        // One lease for info, status and split.
+        assert_eq!(s.kb.lock().opened, 1);
+    }
+}
+
+#[test]
+fn a_split_edge_rereads_the_batteries_now_and_later() {
+    let s = start(
+        |c| Config {
+            battery_after_split: Duration::from_millis(50),
+            ..c
+        },
+        Kb::default(),
+    );
+    s.until("split", |e| split_read(e).is_some());
+    // The start-up read only (battery_every is an hour away).
+    s.wait_kb("first battery read", |kb| kb.battery_reads == 1);
+    // No edge: a poll with the link still up reads nothing more.
+    let t = s.h.send(Request::Refresh(Scope::Status));
+    assert!(s.done(t).1.is_ok());
+    assert_eq!(s.kb.lock().battery_reads, 1);
+
+    // The right half goes off: a read at once, and the follow-up.
+    s.kb.lock().split = Some(false);
+    let t = s.h.send(Request::Refresh(Scope::Status));
+    assert!(s.done(t).1.is_ok());
+    s.wait_kb("read on the edge + follow-up", |kb| kb.battery_reads == 3);
+    // And back on: the same again.
+    s.kb.lock().split = Some(true);
+    let t = s.h.send(Request::Refresh(Scope::Status));
+    assert!(s.done(t).1.is_ok());
+    s.wait_kb("read on the edge + follow-up", |kb| kb.battery_reads == 5);
+    std::thread::sleep(Duration::from_millis(120));
+    assert_eq!(s.kb.lock().battery_reads, 5, "one follow-up per edge");
+}
+
+#[test]
+fn an_unknown_split_never_rereads_the_batteries() {
+    let s = start(
+        |c| Config {
+            battery_after_split: Duration::from_millis(10),
+            ..c
+        },
+        Kb {
+            split: None,
+            ..Kb::default()
+        },
+    );
+    s.until("split", |e| split_read(e).is_some());
+    s.wait_kb("first battery read", |kb| kb.battery_reads == 1);
+    let t = s.h.send(Request::Refresh(Scope::Status));
+    assert!(s.done(t).1.is_ok());
+    std::thread::sleep(Duration::from_millis(50));
+    assert_eq!(s.kb.lock().battery_reads, 1);
+}
+
 #[test]
 fn the_lease_drops_the_client_after_idle() {
     let s = start(
@@ -376,7 +458,8 @@ fn an_action_reports_done_then_refreshes() {
 #[test]
 fn a_bad_rename_fails_before_any_rpc() {
     let s = start(|c| c, Kb::default());
-    s.until("status", status_ok);
+    // The split read ends the first batch.
+    s.until("split", |e| split_read(e).is_some());
     let before = s.kb.lock().requests;
     let t = s.h.send(Request::RenameProfile(0, "x".repeat(40)));
     let (_, r) = s.done(t);

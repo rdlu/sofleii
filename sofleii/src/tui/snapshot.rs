@@ -51,9 +51,11 @@ pub struct Keyboard {
     pub status: Health,
     pub battery: Battery,
     pub firmware: Firmware,
-    /// `None` while the firmware can't report it (always, for now: see
-    /// [`crate::commands::status::SPLIT_NOTE`]).
+    /// `None` until the first read; `known: false` on firmware without the
+    /// split-info fix.
     pub split: Option<Split>,
+    /// The split read.
+    pub split_health: Health,
 }
 
 /// How fresh one session field is.
@@ -80,7 +82,14 @@ impl Health {
 #[derive(Debug, Clone, Default)]
 pub struct Battery {
     pub left: Option<u8>,
+    /// `None` when [`right_disconnected`](Self::right_disconnected): the
+    /// central's proxy keeps a stale 0% for a gone right half.
     pub right: Option<u8>,
+    /// The split link is known to be down.
+    pub right_disconnected: bool,
+    /// A 0% right after the right half rejoined: shown as "reading…"
+    /// ([`session::Snapshot::right_settling`]).
+    pub right_settling: bool,
     pub health: Health,
 }
 
@@ -176,6 +185,7 @@ impl Snapshot {
                 .and_then(|v| status::effective(&v.transport, priority, active))
                 .and_then(kind);
             let over_ble = via.is_some_and(|v| v.transport.kind == TransportKind::Ble);
+            let right_gone = s.split.value.is_some_and(|sp| sp.disconnected());
             let level = |b: Option<&Reading>, left: bool| {
                 b.and_then(|r| if left { r.left } else { r.right }.percent)
             };
@@ -195,7 +205,9 @@ impl Snapshot {
                 status: Health::of(&s.status, now),
                 battery: Battery {
                     left: level(s.battery.value.as_ref(), true),
-                    right: level(s.battery.value.as_ref(), false),
+                    right: level(s.battery.value.as_ref(), false).filter(|_| !right_gone),
+                    right_disconnected: right_gone,
+                    right_settling: !right_gone && s.right_settling(now),
                     health: Health::of(&s.battery, now),
                 },
                 firmware: Firmware {
@@ -209,7 +221,8 @@ impl Snapshot {
                     }),
                     update_health: Health::of(&s.update, now),
                 },
-                split: None,
+                split: s.split.value,
+                split_health: Health::of(&s.split, now),
             }
         });
         let mut log: Vec<LogLine> = s
@@ -293,6 +306,15 @@ pub fn demo(now: SystemTime) -> session::Snapshot {
                 ],
             }),
         }),
+        Event::Split(Stamped {
+            at: ago(2),
+            value: Ok(Split {
+                known: true,
+                connected: Some(true),
+                is_split: Some(true),
+                is_central: Some(true),
+            }),
+        }),
         Event::Battery(Stamped {
             at: ago(12),
             value: Ok(Reading {
@@ -301,8 +323,14 @@ pub fn demo(now: SystemTime) -> session::Snapshot {
                     name: "Eyelash Sofle".into(),
                     address: "DD:1F:23:76:6E:71".into(),
                 },
-                left: BatteryLevel { percent: Some(82) },
-                right: BatteryLevel { percent: Some(61) },
+                left: BatteryLevel {
+                    percent: Some(82),
+                    state: None,
+                },
+                right: BatteryLevel {
+                    percent: Some(61),
+                    state: None,
+                },
                 note: None,
                 warnings: Vec::new(),
             }),

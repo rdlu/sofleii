@@ -10,7 +10,7 @@ use crate::commands::{
     battery::{Reading, Thresholds},
     info::Info,
     profiles::Profiles,
-    status::{BatteryLevel, Status, effective_output},
+    status::{BatteryLevel, Split, Status, effective_output},
     update::{self, short},
 };
 use crate::commands::{output as output_cmd, profile};
@@ -261,6 +261,16 @@ pub fn battery(style: Style, r: &Reading, t: Thresholds) -> String {
 pub const USB_LEFT_ONLY: &str =
     "USB not connected to the left half (the right half's USB only charges)";
 
+/// The split link in words, for `status` and its waybar tooltip.
+pub fn split_text(s: &Split) -> &'static str {
+    match s.connected {
+        Some(true) => "connected",
+        Some(false) => "disconnected (right half off or out of range)",
+        None if s.known => "unknown (not a split central)",
+        None => "unknown (firmware without the split-info fix)",
+    }
+}
+
 /// Label/value rows shared by the human output and the waybar tooltip.
 fn status_rows(transport: &TransportInfo, s: &Status) -> Vec<(&'static str, String)> {
     let over_ble = transport.kind == TransportKind::Ble;
@@ -289,14 +299,19 @@ fn status_rows(transport: &TransportInfo, s: &Status) -> Vec<(&'static str, Stri
         }
         None => "-".to_string(),
     };
-    let split = match &s.split {
-        Some(sp) if sp.peripheral_connected => "connected",
-        Some(_) => "disconnected",
-        None => "unknown (not readable yet)",
+    let split = match (&s.split, s.split_note.as_deref()) {
+        (Some(sp), _) => split_text(sp).to_string(),
+        (None, Some(note)) => note.to_string(),
+        (None, None) => "-".to_string(),
     };
-    let pct = |b: Option<BatteryLevel>| match b.and_then(|b| b.percent) {
-        Some(p) => format!("{p}%"),
-        None => "-".to_string(),
+    let pct = |b: Option<BatteryLevel>| match b {
+        Some(BatteryLevel {
+            percent: Some(p), ..
+        }) => format!("{p}%"),
+        Some(BatteryLevel {
+            state: Some(st), ..
+        }) => st.to_string(),
+        _ => "-".to_string(),
     };
     let mut battery = format!(
         "left {}, right {}",
@@ -847,7 +862,7 @@ mod tests {
             serde_json::json!({
                 "schema": 1, "source": "bluez",
                 "device": {"name": "Eyelash Sofle", "address": "DD:1F:23:76:6E:71"},
-                "left": {"percent": 100}, "right": {"percent": 77}, "note": null
+                "left": {"percent": 100, "state": null}, "right": {"percent": 77, "state": null}, "note": null
             })
         );
         let human = battery(
@@ -879,6 +894,59 @@ mod tests {
                 .unwrap()
                 .contains("battery: left 100%, right 77%")
         );
+    }
+
+    fn split(connected: Option<bool>) -> crate::Result<Split> {
+        Ok(Split {
+            known: connected.is_some(),
+            connected,
+            is_split: connected.map(|_| true),
+            is_central: connected.map(|_| true),
+        })
+    }
+
+    #[test]
+    fn status_split_rows() {
+        let usb = transport(TransportKind::Usb);
+        let cases = [
+            (Some(true), "connected"),
+            (Some(false), "disconnected (right half off or out of range)"),
+            (None, "unknown (firmware without the split-info fix)"),
+        ];
+        for (connected, want) in cases {
+            let mut s = sample("usb", true);
+            s.set_split(split(connected));
+            let out = status(Style::plain(Format::Human), &usb, &s);
+            assert!(out.contains(&format!("split link      {want}\n")), "{out}");
+            let v = parse(&status(Style::plain(Format::Waybar), &usb, &s));
+            let tip = v["tooltip"].as_str().unwrap();
+            assert!(tip.contains(&format!("\nsplit link: {want}\n")), "{tip}");
+        }
+        // Not read at all: the note.
+        let out = status(Style::plain(Format::Human), &usb, &sample("usb", true));
+        assert!(
+            out.contains("split link      unavailable: not read\n"),
+            "{out}"
+        );
+    }
+
+    #[test]
+    fn status_right_battery_disconnected() {
+        let mut s = sample("usb", true);
+        s.set_split(split(Some(false)));
+        let mut r = reading();
+        r.right.percent = Some(0);
+        s.set_battery(Ok(r));
+        let usb = transport(TransportKind::Usb);
+        let out = status(Style::plain(Format::Human), &usb, &s);
+        assert!(out.contains("left 100%, right disconnected\n"), "{out}");
+        let v: Value = serde_json::from_str(&status(Style::plain(Format::Json), &usb, &s)).unwrap();
+        assert_eq!(
+            v["battery"]["right"],
+            serde_json::json!({"percent": null, "state": "disconnected"})
+        );
+        assert_eq!(v["split"]["connected"], false);
+        assert_eq!(v["split_note"], Value::Null);
     }
 
     fn info_sample(build: info::Build, hardware: info::Hardware) -> Info {

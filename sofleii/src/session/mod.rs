@@ -4,9 +4,9 @@
 //! - [`link`]: the only thread that touches Studio RPC. It **leases** the
 //!   connection: connects for a batch of requests and drops the client after
 //!   [`Config::lease_idle`], so the exclusively opened USB port stays free
-//!   for waybar's `sofleii status`. Polls profiles and output priority,
-//!   reads `info` once per (re)connect, runs the write actions, and
-//!   reconnects with backoff.
+//!   for waybar's `sofleii status`. Polls profiles, output priority and
+//!   the split link, reads `info` once per (re)connect, runs the write
+//!   actions, and reconnects with backoff.
 //! - [`watch`]: batteries over BlueZ GATT (never RPC), USB presence (sysfs)
 //!   and BLE `Connected`, on its own BlueZ connection. Presence edges go to
 //!   `link` (an immediate retry) and to the front end.
@@ -42,6 +42,7 @@ use serde::Serialize;
 use crate::commands::battery::Reading;
 use crate::commands::info::Info;
 use crate::commands::profiles::Profiles;
+use crate::commands::split::Split;
 use crate::commands::update::{DEFAULT_REPO, Http};
 use crate::commands::{output, profile};
 use crate::connect;
@@ -58,7 +59,8 @@ pub use watch::{Probe, SystemProbe};
 /// instead of sleeping.
 #[derive(Debug, Clone)]
 pub struct Config {
-    /// Profiles and output priority, while the front end is focused.
+    /// Profiles, output priority and the split link, while the front end
+    /// is focused.
     pub poll: Duration,
     /// The same, while it isn't ([`Request::Focus`]`(false)`).
     pub poll_unfocused: Duration,
@@ -68,6 +70,13 @@ pub struct Config {
     pub backoff_base: Duration,
     pub backoff_cap: Duration,
     pub battery_every: Duration,
+    /// After the split link changes, the batteries are read at once and
+    /// again this much later: a reconnected right half's level takes the
+    /// central a moment to fetch (until then its proxy says 0%).
+    pub battery_after_split: Duration,
+    /// How long after the right half rejoins a right-half 0% shows as
+    /// "reading…" ([`Snapshot::right_settling`]) instead of 0%.
+    pub split_settle: Duration,
     pub usb_every: Duration,
     pub ble_every: Duration,
     /// How often the update check runs while the session is up.
@@ -95,6 +104,8 @@ impl Default for Config {
             backoff_base: Duration::from_millis(500),
             backoff_cap: Duration::from_secs(5),
             battery_every: Duration::from_secs(60),
+            battery_after_split: Duration::from_secs(5),
+            split_settle: Duration::from_secs(10),
             usb_every: Duration::from_secs(2),
             ble_every: Duration::from_secs(5),
             update_every: Duration::from_secs(6 * 3600),
@@ -119,7 +130,7 @@ pub enum Scope {
     /// Status and info over RPC, the batteries, and the update check (which
     /// honours its cache).
     All,
-    /// Profiles and output priority.
+    /// Profiles, output priority and the split link.
     Status,
     Battery,
     Info,
@@ -308,6 +319,9 @@ pub enum Event {
     Presence(Presence),
     /// Profiles and output priority (the polled part of `status`).
     Status(Reads<Profiles>),
+    /// The split link, right after each good [`Event::Status`] (unknown on
+    /// firmware without the split-info fix).
+    Split(Reads<Split>),
     /// Once per (re)connect, and on [`Scope::Info`].
     Info(Reads<Info>),
     Battery(Reads<Reading>),
@@ -356,8 +370,17 @@ impl Session {
     pub fn spawn_with(config: Config, b: Backends) -> (SessionHandle, Receiver<Event>) {
         let (events, rx) = mpsc::channel();
         let jobs = jobs::spawn(config.clone(), b.http, events.clone());
-        let link = link::spawn(config.clone(), b.connector, events.clone(), jobs.clone());
-        let watch = watch::spawn(config, b.probe, events.clone(), link.clone());
+        // Made first: the link tells watch about split edges, and watch
+        // tells the link about presence edges.
+        let (watch, watch_rx) = mpsc::channel();
+        let link = link::spawn(
+            config.clone(),
+            b.connector,
+            events.clone(),
+            jobs.clone(),
+            watch.clone(),
+        );
+        watch::spawn(config, b.probe, events.clone(), link.clone(), watch_rx);
         let handle = SessionHandle {
             link,
             watch,

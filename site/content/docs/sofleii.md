@@ -27,7 +27,11 @@ reports which build is running (see [Firmware](../reference/firmware/#modules)).
 ## What it will do
 
 - **Status**: whether the halves are connected to each other, and the
-  connection to the host.
+  connection to the host. `sofleii status` and the TUI already show the
+  split link (`connected`, `disconnected`, or `unknown` on firmware older
+  than the `get_split_info` fix in our `ble-management` fork), and show the
+  right half's battery as disconnected instead of the 0% the left half
+  keeps reporting for it.
 - **BLE profiles**: list, switch, rename and unpair (`sofleii profile
   switch|rename|unpair <n>`, 0-based like `sofleii profiles`; unpair asks
   first unless `--yes`).

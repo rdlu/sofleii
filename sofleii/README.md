@@ -39,7 +39,7 @@ to the port (the `uucp` group on Arch). Over BLE, see
 
 | Command | What it reads |
 |---|---|
-| `sofleii status [--json] [--format waybar]` | One-shot summary: transport, device, Studio lock, active BLE profile (connected, bonded, address, name), output priority, both batteries. Built from `get_device_info`, `get_lock_state` and `cormoran_ble` `get_profiles` + `get_output_priority` (`get_profiles` doesn't carry the priority), plus the `battery` reader with a 1 s timeout. `split` is `null` for now, see below. |
+| `sofleii status [--json] [--format waybar]` | One-shot summary: transport, device, Studio lock, active BLE profile (connected, bonded, address, name), output priority, the split link, both batteries. Built from `get_device_info`, `get_lock_state` and `cormoran_ble` `get_profiles` + `get_output_priority` (`get_profiles` doesn't carry the priority) + `get_split_info`, plus the `battery` reader with a 1 s timeout. See [JSON](#json) for `split`. |
 | `sofleii battery [--json] [--format waybar] [--warn-below <pct>] [--critical-below <pct>]` | Both halves' levels over BLE GATT (BlueZ, system D-Bus), not Studio RPC. See [Battery](#battery). |
 | `sofleii info [--json]` | `core.get_device_info` (name, serial number), Studio lock state, `custom.list_custom_subsystems`, and the firmware build from the `zmk__device_info` subsystem (#46, looked up by identifier): versions, config commit + dirty flag, build time, board, build hash, hardware id and reset cause. See [`info`](#info). |
 | `sofleii profiles [--json]` | `cormoran_ble.get_profiles` and `get_output_priority` (the subsystem index is looked up by identifier, never hardcoded). |
@@ -68,12 +68,25 @@ output          usb (priority usb)
 ble profile     0 connected 84:9E:56:52:6A:D2
 bonded slots    1 of 5
 studio          unlocked
-split link      unknown (not readable yet)
-battery         left 100%, right 76%
+split link      connected
+battery         left 100%, right 71%
 ```
 
 When BLE isn't available, the battery row reads `left -, right -
 (unavailable: …)` with the reason, and `status` still exits 0.
+
+`split link` comes from `cormoran_ble`'s `get_split_info`: `connected`,
+`disconnected (right half off or out of range)`, or `unknown (firmware
+without the split-info fix)`. The last is cormoran's module before our fork's
+fix (`rdlu/zmk-module-ble-management` `5ea5b4f`), which answers with no
+`info` at all; sofleii never reads that as disconnected. With the right half
+off, the central's battery proxy keeps reporting 0% for it, so when the link
+is known to be down the battery row reads `right disconnected` instead of
+`right 0%` (an unknown link keeps the level as read). With the link up, a
+right half at exactly 0% keeps its level but gets a `battery.note`: `right
+0% right after a reconnect may be stale; re-run in a few seconds` (a half
+that's really flat isn't on the link). The waybar tooltip has the same
+`split link:` and `battery:` lines.
 
 `output` is the endpoint keystrokes most likely go to: the output priority,
 with ZMK's fallback to the other endpoint when the preferred one isn't
@@ -96,9 +109,9 @@ USB:
 ┌─ sofleii · Eyelash Sofle ──────────────────────── ● usb /dev/ttyACM0 (auto) ─┐
 │ Transport  USB /dev/ttyACM0 (auto)           Output     USB  (priority usb)  │
 │ Profile    0  connected                      Studio     unlocked             │
-│ Battery    L ██████████ 100%   R ███████░░░  72%                read 13s ago │
-│ Firmware   v3.1.0 (f9a665f) · up to date with v3.1.0          checked 2m ago │
-│ Split      unavailable (get_split_info is broken upstream)                   │
+│ Battery    L ██████████ 100%   R ███████░░░  71%                 read 5s ago │
+│ Firmware   v3.1.0 (2474a13) · up to date with v3.1.0          checked 5s ago │
+│ Split      connected                                                         │
 ├─ Profiles ───────────────────────────────────────────────────────────────────┤
 │ ▶ 0  —        84:9E:56:52:6A:D2   active · connected · bonded                │
 │   1  —                            empty                                      │
@@ -111,8 +124,8 @@ USB:
 - **Live, read-only.** The TUI runs the core's session (`src/session/`)
   with the global `--transport`, `--device`, `--bt-address` and `--timeout`
   (contradicting flags exit 3 before the screen opens), and renders a view
-  derived from its `Snapshot`. Profiles and output priority are polled every
-  5 s (30 s while the terminal is unfocused, through focus reporting), the
+  derived from its `Snapshot`. Profiles, output priority and the split link
+  are polled every 5 s (30 s while the terminal is unfocused, through focus reporting), the
   batteries every 60 s over BlueZ, and the update check uses the shared 6 h
   cache. The RPC link is leased, so `sofleii status` (waybar) still works
   while the TUI runs. `SOFLEII_TUI_DEMO=1` shows a fixture instead, with no
@@ -139,6 +152,15 @@ USB:
   `Ctrl-C` quit (`Esc` closes the help first). Switching profile (`⏎`) and
   output (`o`) are in the help as coming soon. Quitting is instant: no
   thread is joined.
+- **Split** is polled with the profiles: `connected`, `disconnected (right
+  half off or out of range)` or `unknown (firmware without the split-info
+  fix)` (shorter below 70 columns). While it's disconnected the battery row
+  shows `R disconnected` instead of the proxy's stale 0%. A change of the
+  link (either way) re-reads the batteries at once and again 5 s later: a
+  rejoined right half's level takes the central a moment to fetch, and until
+  then the proxy says 0%. For 10 s after the right half rejoins, a right 0%
+  shows as `R reading…`; a non-zero read ends that early, and a 0% that
+  lasts past it is shown as 0% (a flat battery is real).
 - Square panes as on the docs site; below 70 columns the summary is one
   column. Battery bars use `battery`'s defaults (warning below 20%,
   critical below 10%). `NO_COLOR` turns colour off (bold and dim remain).
@@ -261,16 +283,26 @@ terminal, and never with `--json` or `NO_COLOR`.
   "active_profile": 0,
   "profile": { "index": 0, "active": true, "connected": true, "bonded": true,
                "address": "84:9E:56:52:6A:D2", "name": null },
-  "split": null,
-  "split_note": "unavailable: cormoran_ble get_split_info is broken upstream; …",
-  "battery": { "left": { "percent": 100 }, "right": { "percent": 76 },
-               "note": null }
+  "split": { "known": true, "connected": true, "is_split": true,
+             "is_central": true },
+  "split_note": null,
+  "battery": { "left": { "percent": 100, "state": null },
+               "right": { "percent": 71, "state": null }, "note": null }
 }
 ```
 
-- `split` is always `null`: `cormoran_ble`'s `get_split_info` is broken
-  upstream (always empty, `peripheral_connected` hardcoded false), so sofleii
-  doesn't call it. `split_note` says why; both stay in the schema.
+- `split` is `cormoran_ble`'s `get_split_info`. `connected` is whether the
+  right half is on the split link (`null` unless the answering half is a
+  split central). On firmware without the split-info fix the reply carries
+  no `info`: `split` is `{"known": false, "connected": null, "is_split":
+  null, "is_central": null}` and `split_note` is `"unknown: …"`, never a
+  disconnected link. `split` is `null` only when it couldn't be read (no
+  `cormoran_ble`, an RPC error), with `split_note` saying why; a failed split
+  read never fails `status`.
+- With `split.connected` `false`, `battery.right` is `{"percent": null,
+  "state": "disconnected"}` rather than the central proxy's stale 0%. With
+  the link up or unknown the levels are as read and `state` is `null` (it is
+  always present, never omitted; see [Battery](#battery)).
 - `battery` comes from the same reader as `sofleii battery`, with a timeout
   of at most 1 s. When BLE isn't available (keyboard not connected over BLE
   to this host, BlueZ not running, a GATT error), `left`/`right` stay `null`
@@ -639,16 +671,28 @@ right 76%
   "schema": 1,
   "source": "bluez",
   "device": { "name": "Eyelash Sofle", "address": "DD:1F:23:76:6E:71" },
-  "left": { "percent": 100 },
-  "right": { "percent": 76 },
+  "left": { "percent": 100, "state": null },
+  "right": { "percent": 76, "state": null },
   "note": null
 }
 ```
 
-- A half is `{"percent": null}` when it's unknown, e.g. only one Battery
+- `state` is always present and always `null` here (`battery` reads GATT
+  only and never knows the split link; added in schema 1 alongside the
+  split link, see the next bullets). `status` sets it to `"disconnected"`.
+- A half is `{"percent": null, "state": null}` when it's unknown, e.g. only one Battery
   Service is exposed (firmware before #45, or the right half isn't
   forwarded); `note` then says why. `note` is `null` when there's nothing to
   add. Notes and warnings also go to stderr in human mode.
+- **Right half off:** the central's proxy keeps reporting `right 0%` for a
+  disconnected right half, and GATT can't tell that 0 from a flat battery.
+  `battery` stays GATT-only on purpose and shows it as read (`state`
+  stays `null`): knowing the
+  split link takes a Studio RPC call, which means opening the exclusive USB
+  port (it would fight a running TUI or `status`) or BLE RPC (deaf while USB
+  is the selected output), and the waybar battery module must keep working
+  without either. `status` and the TUI, which hold an RPC link anyway, show
+  that half as `disconnected` when `get_split_info` says the link is down.
 - **Exit codes:** 0 when read. **1 only when `--warn-below` is given** and a
   known half is below it (the default threshold of 20 only sets the waybar
   class, it never fails the command; an unknown half never triggers 1).
@@ -755,7 +799,8 @@ src/
                  WriteValue); mock.rs (tests)
   client/        request ids (random first id per process), response matching, notifications set
                  aside, is_dead (link lost vs deaf); rpc.rs = pure request builders
-  commands/      status, info, profiles (status reuses profiles::fetch), battery (Gatt trait,
+  commands/      status, info, profiles (status reuses profiles::fetch and split::fetch), split
+                 (get_split_info; empty reply = unknown), battery (Gatt trait,
                  half identification; tested with a fake BlueZ tree), update (Http trait, version
                  parsing, compare; tested with canned GitHub JSON); the writes profile and output,
                  sharing handover (the expected silence, the read-back over the other transport):
