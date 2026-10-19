@@ -40,7 +40,7 @@ to the port (the `uucp` group on Arch). Over BLE, see
 | `sofleii battery [--json] [--format waybar] [--warn-below <pct>] [--critical-below <pct>]` | Both halves' levels over BLE GATT (BlueZ, system D-Bus), not Studio RPC. See [Battery](#battery). |
 | `sofleii info [--json]` | `core.get_device_info` (name, serial number), Studio lock state, `custom.list_custom_subsystems`, and the firmware build from the `zmk__device_info` subsystem (#46, looked up by identifier): versions, config commit + dirty flag, build time, board, build hash, hardware id and reset cause. See [`info`](#info). |
 | `sofleii profiles [--json]` | `cormoran_ble.get_profiles` and `get_output_priority` (the subsystem index is looked up by identifier, never hardcoded). |
-| `sofleii update check [--json] [--repo OWNER/NAME]` | The running build (`zmk_config_version` from `zmk__device_info`) against the latest GitHub release of `--repo` (default `rdlu/sofleii`), shown as release versions (`v3.1.0`, `v3.0.0+68`): up to date, behind (update available), ahead, diverged, or unknown. See [`update check`](#update-check). |
+| `sofleii update check [--json] [--repo OWNER/NAME]` | The running build (`zmk_config_version` from `zmk__device_info`) against the latest GitHub release of `--repo` (default `rdlu/sofleii`), shown as release versions (`v3.1.0`, `v3.0.0+68`): up to date, behind (update available), ahead, or unknown. See [`update check`](#update-check). |
 
 Global options: `--transport auto|usb|ble` (default `auto`, see
 [Transports](#transports)), `--device <path>` (serial port for Studio RPC;
@@ -301,7 +301,10 @@ GitHub REST API, without `gh`:
 3. If the running SHA is a prefix of the release's, it's **up to date**.
    Otherwise `GET /repos/{repo}/compare/{running}...{latest}`: the release
    is the head, so GitHub's `ahead_by` is how far the keyboard is
-   **behind**. A 404 there means the commit isn't on GitHub (an unpushed
+   **behind**. GitHub's `diverged` (a branch build off an older release)
+   is `behind` too: the version decides, so `v3.0.0+9` is behind `v3.1.0`.
+   Its own commits stay in `commits_ahead`, and `note` says `also has N
+   commits not in v3.1.0 (unreleased changes)`. A 404 there means the commit isn't on GitHub (an unpushed
    local build): `unknown`.
 4. When the compare changes **no files**, the status is `up_to_date` even
    though the counts aren't 0. That's a PR-branch build whose branch was
@@ -320,7 +323,7 @@ GitHub REST API, without `gh`:
    - A local `git describe` string already names the tag and the count
      (`v3.0.0-68-gf9a665f` = `v3.0.0+68`; `v3.1.0` = exact). No extra
      request; this also covers `unknown`.
-   - `behind` or `diverged` with a bare SHA: `GET
+   - `behind` with a bare SHA: `GET
      /repos/{repo}/releases?per_page=10` (drafts and prereleases skipped,
      the latest one too, since it was already compared), then newest
      first `compare/{tag}...{running}` until one fits. `identical` or no
@@ -344,8 +347,7 @@ note            same source as v3.1.0: the commits between f9a665f and 5c53b30 c
 ```
 
 Other verdicts: `v3.1.0 available, running v3.0.0+68 (f9a665f)`, `ahead of
-v3.1.0: running v3.1.0+3 (abc1234)`, `diverged from v3.1.0: running
-v3.0.0+9 (abc1234)`, `can't compare with v3.1.0: running f9a665f (no
+v3.1.0: running v3.1.0+3 (abc1234)`, `can't compare with v3.1.0: running f9a665f (no
 release)` (with the reason as a `note`). `(no release)` replaces the
 version when no release precedes the build.
 
@@ -365,7 +367,9 @@ version when no release precedes the build.
 }
 ```
 
-- `status`: `up_to_date`, `behind`, `ahead`, `diverged` or `unknown`.
+- `status`: `up_to_date`, `behind`, `ahead` or `unknown` (#47's schema).
+  `commits_ahead` > 0 on `behind` means the build also has unreleased
+  commits.
   `commits_behind` / `commits_ahead` are `null` only when `unknown`.
 - `running.version` is the raw string, `-dirty` included. `running.commit`
   is the abbreviated SHA from it, or the full SHA an exact tag resolved to.
@@ -374,7 +378,7 @@ version when no release precedes the build.
   is 0 when `exact`), or `null` when no release precedes the build.
 - `note` explains an `unknown` status, a same-source `up_to_date`, or a
   failed release lookup; otherwise `null`.
-- **Exit codes:** 0 `up_to_date` or `ahead`; **1** `behind`, `diverged` or
+- **Exit codes:** 0 `up_to_date` or `ahead`; **1** `behind` or
   `unknown` (worth a look; usable as `sofleii update check || notify-send
   "Sofle firmware update"`); 2 keyboard not found (checked before any
   network call); 3 usage (e.g. a malformed `--repo`); **4** transport or
@@ -537,7 +541,7 @@ JSON:
 | Code | Meaning |
 |---|---|
 | 0 | OK |
-| 1 | Check failed / attention needed: `battery --warn-below` with a half below it; `update check` behind, diverged or unknown |
+| 1 | Check failed / attention needed: `battery --warn-below` with a half below it; `update check` behind or unknown |
 | 2 | Keyboard not found / not connected (a `--device` path that does not exist; `auto` with neither USB nor BLE; over BLE or for `battery`, not connected or BlueZ/D-Bus unavailable) |
 | 3 | Usage error (bad flag; `--device`/`--bt-address`/`--transport` contradicting each other) |
 | 4 | Transport or protocol error: timeout (over BLE, usually USB being the selected output), bad frame, RPC error (including a failing `zmk__device_info` call), D-Bus/GATT error, GitHub API failure (`update check`). A firmware *without* `zmk__device_info` is not an error for `info` (exit 0, `build.available: false`), but is for `update check` |

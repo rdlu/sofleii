@@ -471,7 +471,6 @@ pub fn update_headline(c: &update::Check) -> String {
         update::Status::UpToDate => format!("up to date: {running}"),
         update::Status::Behind => format!("{tag} available, running {running}"),
         update::Status::Ahead => format!("ahead of {tag}: running {running}"),
-        update::Status::Diverged => format!("diverged from {tag}: running {running}"),
         update::Status::Unknown => format!("can't compare with {tag}: running {running}"),
     }
 }
@@ -1021,8 +1020,8 @@ mod tests {
                 "ahead of v3.1.0: running v3.1.0+3 (abc1234)\n",
             ),
             (
-                update_sample("abc1234", Diverged, 4, 2, Some(("v3.0.0", 9))),
-                "diverged from v3.1.0: running v3.0.0+9 (abc1234)\n",
+                update_sample("abc1234", Behind, 4, 2, Some(("v3.0.0", 9))),
+                "v3.1.0 available, running v3.0.0+9 (abc1234)\n",
             ),
             (
                 update_sample("abc1234", Behind, 4, 0, None),

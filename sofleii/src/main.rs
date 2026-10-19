@@ -125,7 +125,7 @@ enum Command {
 #[derive(Subcommand, Debug)]
 enum UpdateCommand {
     /// Compare the running firmware with the latest GitHub release. Exit 0
-    /// up to date (or ahead), 1 behind, diverged or unknown build.
+    /// up to date (or ahead), 1 behind or unknown build.
     Check {
         /// Print the versioned JSON contract instead of text.
         #[arg(long)]

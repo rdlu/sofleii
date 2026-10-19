@@ -91,7 +91,7 @@ impl Release {
     }
 }
 
-/// How many older releases `behind`/`diverged` may compare against.
+/// How many older releases a `behind` bare SHA may compare against.
 pub const RELEASE_SCAN: u32 = 10;
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
@@ -110,11 +110,12 @@ pub enum Status {
     /// build that was merged as is: the counts then show the merge commit).
     UpToDate,
     /// The release has commits the keyboard doesn't: an update is available.
+    /// That includes GitHub's `diverged` (a branch build off an older
+    /// release): the version decides, so `v3.0.0+9` is behind `v3.1.0`, and
+    /// `commits_ahead` plus a note keep the unreleased commits visible.
     Behind,
     /// The keyboard runs commits past the release (a newer main build).
     Ahead,
-    /// Both: a branch build that isn't in the release, and vice versa.
-    Diverged,
     /// No commit to compare (unknown or untagged version, or not on GitHub).
     Unknown,
 }
@@ -124,7 +125,7 @@ impl Status {
     pub fn exit_code(self) -> u8 {
         match self {
             Status::UpToDate | Status::Ahead => exit::OK,
-            Status::Behind | Status::Diverged | Status::Unknown => exit::CHECK_FAILED,
+            Status::Behind | Status::Unknown => exit::CHECK_FAILED,
         }
     }
 }
@@ -260,12 +261,16 @@ pub fn check<H: Http>(http: &mut H, repo: &str, running: Running) -> Result<Chec
         Status::UpToDate => Some(Release::exact(tag)),
         Status::Ahead => Some(Release::after(tag, c.commits_ahead.unwrap_or(0))),
         Status::Unknown => described,
-        Status::Behind | Status::Diverged => match (described, c.running.commit.clone()) {
+        Status::Behind => match (described, c.running.commit.clone()) {
             (Some(r), _) => Some(r),
             (None, Some(commit)) => match scan_releases(http, repo, tag, &commit) {
                 Ok(r) => r,
                 Err(e) => {
-                    c.note = Some(format!("couldn't map {} to a release: {e}", short(&commit)));
+                    let n = format!("couldn't map {} to a release: {e}", short(&commit));
+                    c.note = Some(match c.note.take() {
+                        Some(prev) => format!("{prev}; {n}"),
+                        None => n,
+                    });
                     None
                 }
             },
@@ -388,6 +393,17 @@ fn compare_latest<H: Http>(http: &mut H, repo: &str, mut running: Running) -> Re
             short(&latest_sha)
         ));
     }
+    // GitHub's `diverged`, folded into behind: say what the release lacks.
+    if status == Status::Behind && ahead > 0 {
+        note = Some(format!(
+            "also has {} not in {tag} (unreleased changes)",
+            if ahead == 1 {
+                "1 commit".to_string()
+            } else {
+                format!("{ahead} commits")
+            }
+        ));
+    }
     Ok(Check {
         running,
         latest,
@@ -407,7 +423,7 @@ pub fn from_compare(status: &str, ahead_by: u32, behind_by: u32) -> Result<(Stat
         "identical" => Status::UpToDate,
         "ahead" => Status::Behind,
         "behind" => Status::Ahead,
-        "diverged" => Status::Diverged,
+        "diverged" => Status::Behind,
         other => {
             return Err(Error::GitHub(format!(
                 "unexpected compare status {other:?}"
@@ -616,7 +632,7 @@ pub(crate) mod tests {
         assert_eq!(from_compare("behind", 0, 2).unwrap(), (Status::Ahead, 0, 2));
         assert_eq!(
             from_compare("diverged", 4, 1).unwrap(),
-            (Status::Diverged, 4, 1)
+            (Status::Behind, 4, 1)
         );
         assert_eq!(
             from_compare("identical", 0, 0).unwrap(),
@@ -630,7 +646,6 @@ pub(crate) mod tests {
         assert_eq!(Status::UpToDate.exit_code(), 0);
         assert_eq!(Status::Ahead.exit_code(), 0);
         assert_eq!(Status::Behind.exit_code(), 1);
-        assert_eq!(Status::Diverged.exit_code(), 1);
         assert_eq!(Status::Unknown.exit_code(), 1);
         let e = Error::Unsupported(NO_DEVICE_INFO.into());
         assert_eq!(e.exit_code(), exit::TRANSPORT);
@@ -649,11 +664,11 @@ pub(crate) mod tests {
     }
 
     #[test]
-    fn behind_ahead_and_diverged_via_compare() {
+    fn behind_and_ahead_via_compare() {
         for (gh, ahead_by, behind_by, want) in [
             ("ahead", 3, 0, Status::Behind),
             ("behind", 0, 2, Status::Ahead),
-            ("diverged", 4, 1, Status::Diverged),
+            ("diverged", 4, 1, Status::Behind),
         ] {
             let mut http = FakeHttp::released();
             http.compare("f9a665f", gh, ahead_by, behind_by);
@@ -662,6 +677,10 @@ pub(crate) mod tests {
             assert_eq!(c.commits_behind, Some(ahead_by));
             assert_eq!(c.commits_ahead, Some(behind_by));
             assert!(c.running.dirty);
+            // Only a diverged build gets the unreleased-commits note.
+            let want_note = (gh == "diverged")
+                .then(|| "also has 1 commit not in v3.1.0 (unreleased changes)".to_string());
+            assert_eq!(c.note, want_note);
         }
     }
 
@@ -948,7 +967,11 @@ pub(crate) mod tests {
             r#"{"status":"ahead","ahead_by":1,"behind_by":0,"files":[]}"#,
         );
         let c = check(&mut http, DEFAULT_REPO, running("1a2b3c4")).unwrap();
-        assert_eq!(c.status, Status::Diverged);
+        assert_eq!(c.status, Status::Behind);
+        assert_eq!(
+            c.note.as_deref(),
+            Some("also has 1 commit not in v3.1.0 (unreleased changes)")
+        );
         assert_eq!(c.running.release, rel("v3.0.0", true, 0));
     }
 
