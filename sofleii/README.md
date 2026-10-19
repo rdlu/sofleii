@@ -1,9 +1,9 @@
 # sofleii
 
-**Sofle Interactive Interface**: a command-line tool (a ratatui TUI comes
-later) that talks to the Eyelash Sofle over the **ZMK Studio RPC** protocol,
-the same protocol the Studio web app uses, without a browser. Design and
-roadmap: [#44](https://github.com/rdlu/sofleii/issues/44).
+**Sofle Interactive Interface**: a command-line tool and a ratatui TUI (a
+skeleton so far) that talk to the Eyelash Sofle over the **ZMK Studio RPC**
+protocol, the same protocol the Studio web app uses, without a browser.
+Design and roadmap: [#44](https://github.com/rdlu/sofleii/issues/44).
 
 Status: **spike.** Studio RPC over USB serial (left half) or BLE GATT
 through BlueZ; batteries over BLE GATT; update checks over the GitHub REST
@@ -56,7 +56,9 @@ named `Eyelash Sofle`, for the batteries and Studio RPC; implies BLE),
 `--timeout <ms>` per response (default 3000), `--format
 human|json|waybar` (default `human`; `--json` is the same as `--format json`;
 `waybar` is `status` and `battery` only, a usage error elsewhere). With no
-subcommand, sofleii prints usage.
+subcommand, sofleii opens the [TUI](#tui-skeleton) when stdout is a terminal
+and prints usage (exit 0) when it isn't; `--json`/`--format` without a
+subcommand is a usage error (exit 3).
 
 ```
 $ sofleii status
@@ -80,6 +82,44 @@ whether USB is plugged in, so a connected active profile means `ble`
 (whatever the priority). The firmware agrees: Studio only answers on the
 selected endpoint, so a reply over BLE means BLE is selected. With priority
 `usb` the row then reads `ble (priority usb; USB not connected)`.
+
+## TUI (skeleton)
+
+`sofleii` with no subcommand, on a terminal (`mise run sofleii`):
+
+```
+┌─ sofleii · Eyelash Sofle ─────────────────────────────── ● usb /dev/ttyACM1 ─┐
+│ Transport  USB /dev/ttyACM1 (auto)           Output     USB  (priority usb)  │
+│ Profile    0 "desk"  connected               Studio     unlocked             │
+│ Battery    L ████████░░  82%   R ██████░░░░  61%                read 12s ago │
+│ Firmware   v3.1.0 (f9a665f) · up to date with v3.1.0          checked 2m ago │
+│ Split      unavailable (get_split_info is broken upstream)                   │
+├─ Profiles ───────────────────────────────────────────────────────────────────┤
+│ ▶ 0  desk     DD:1F:23:76:6E:71   active · connected · bonded                │
+│   1  laptop   C8:3A:35:10:22:9E   bonded                                     │
+│   2  —                            empty                                      │
+├─ Log ────────────────────────────────────────────────────────────────────────┤
+│ 17:42:10 USB went quiet (output BLE?), switched to BLE DD:1F:23:76:6E:71     │
+└ q quit · r refresh · ↑↓/jk select · ⏎ switch · o output · u update · ? help ─┘
+```
+
+- **No live data yet.** The dashboard is drawn from a plain `Snapshot`
+  that nothing fills from the keyboard so far, so it shows the
+  "Searching…" state. `SOFLEII_TUI_DEMO=1` shows the fixture above instead
+  (for screenshots). Live reads come with the session thread (#44's PR
+  plan).
+- Keys: `q`, `Esc` or `Ctrl-C` quit (`Esc` closes the help first), `↑↓`/`jk`
+  select a profile, `?` help. `r`, `⏎`, `o` and `u` are listed but not
+  wired yet.
+- Square panes as on the docs site; below 70 columns the summary is one
+  column. Battery bars use `battery`'s defaults (warning below 20%,
+  critical below 10%). `NO_COLOR` turns colour off (bold and dim remain).
+- The terminal is restored on quit, on SIGTERM/SIGHUP/SIGINT, and on a
+  panic (ratatui's panic hook runs before the release profile's
+  `panic = "abort"`).
+- Core diagnostics (`log::warn!`/`debug!` in the transports and client) go
+  to the Log pane instead of stderr. The CLI prints the same records as
+  `sofleii: warning: …` on stderr.
 
 ## Transports
 
@@ -649,7 +689,7 @@ JSON:
   "return-type": "json",
   "interval": 30,
   "format": "{}",
-  // later: open the TUI
+  // the TUI (a skeleton for now)
   "on-click": "foot -e sofleii",
   "tooltip": true
 }
@@ -689,11 +729,17 @@ src/
   bluez.rs       system D-Bus (zbus + block_on; no tokio, no libdbus): the Gatt trait, the tree
   github.rs      GitHub REST API over ureq (blocking, rustls): the Http trait
   output.rs      human, JSON and waybar rendering
-  main.rs        clap CLI, exit codes, and the unpair confirmation
+  logger.rs      the CLI's stderr logger for core `log` records
+  tui/           the TUI: event loop, terminal restore, signals (mod.rs); snapshot.rs (plain data
+                 the view draws, Searching state, demo fixture); view.rs (rendering); log_pane.rs
+                 (the TUI's logger); tests.rs (TestBackend renders, keys). Nothing in transport/,
+                 client/ or commands/ depends on it
+  main.rs        clap CLI, exit codes, the unpair confirmation; no subcommand on a TTY opens the TUI
 proto/           vendored .proto files (see proto/README.md for sources and licenses)
 tests/golden.rs  request bytes captured from the v3.0.0 firmware, plus the zmk__device_info call and
-                 the cormoran_ble write payloads (worked out from the proto, not captured yet)
+                 the cormoran_ble write payloads (worked out from the proto; confirmed by the 2026-10-19 live test)
 tests/cli.rs     exit codes and error output with no keyboard (not found, usage; no network)
+tests/layering.rs  no eprintln! outside main.rs; transport/, client/, commands/ never name the TUI
 ```
 
 License: MIT (see the repository's `LICENSE`). The vendored protos keep

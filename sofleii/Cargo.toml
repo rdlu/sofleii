@@ -4,7 +4,7 @@ version = "0.1.0"
 edition = "2024"
 rust-version = "1.99"
 license = "MIT"
-description = "Sofle Interactive Interface: CLI (and later TUI) for the Eyelash Sofle over ZMK Studio RPC"
+description = "Sofle Interactive Interface: CLI and TUI for the Eyelash Sofle over ZMK Studio RPC"
 repository = "https://github.com/rdlu/sofleii"
 publish = false
 
@@ -14,12 +14,23 @@ path = "src/main.rs"
 
 [dependencies]
 clap = { version = "4", features = ["derive"] }
+# Local wall-clock time for the TUI log pane (`HH:MM:SS`): the system zone
+# (TZ, /etc/localtime, /usr/share/zoneinfo), no bundled tzdb.
+jiff = { version = "0.2.38", default-features = false, features = ["std", "tz-system", "tzdb-zoneinfo"] }
+# Core diagnostics; the CLI and the TUI each install a logger (no env_logger).
+log = "0.4"
 prost = "0.14"
+# The TUI. Only the crossterm backend (used through ratatui::crossterm, no
+# direct crossterm dependency), no extra widgets or macros.
+ratatui = { version = "0.30.2", default-features = false, features = ["crossterm"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 # No libudev: port enumeration falls back to sysfs, so the binary needs no
 # libudev headers to build and no extra shared library to run.
 serialport = { version = "4", default-features = false }
+# SIGTERM/SIGHUP/SIGINT set a flag the TUI event loop checks, so the terminal
+# is restored on the way out.
+signal-hook = "0.4.5"
 # HTTPS for `update check` (GitHub REST API): blocking, so no tokio; rustls
 # with ring and the bundled webpki roots, so no OpenSSL and no system CA
 # lookup. No gzip/json features (serde_json is already here). Costs about

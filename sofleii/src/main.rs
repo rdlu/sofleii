@@ -1,4 +1,5 @@
-//! sofleii CLI entry point: argument parsing, connection, exit codes.
+//! sofleii entry point: argument parsing, connection, exit codes; with no
+//! subcommand on a terminal, the TUI.
 
 use std::io::{BufRead, IsTerminal, Write};
 use std::process::ExitCode;
@@ -240,10 +241,23 @@ fn main() -> ExitCode {
     };
 
     let Some(command) = &cli.command else {
-        // No subcommand: usage for now (the TUI will open here on a TTY).
+        // No subcommand: the TUI on a terminal, usage when piped.
+        if cli.format != FormatArg::Human {
+            return usage_error("--format needs a subcommand");
+        }
+        if std::io::stdout().is_terminal() {
+            return match sofleii::tui::run() {
+                Ok(()) => ExitCode::from(exit::OK),
+                Err(e) => {
+                    eprintln!("sofleii: terminal: {e}");
+                    ExitCode::from(exit::TRANSPORT)
+                }
+            };
+        }
         let _ = Cli::command().print_help();
         return ExitCode::from(exit::OK);
     };
+    sofleii::logger::install_stderr();
 
     let json_flag = match *command {
         Command::Status { json }

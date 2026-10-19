@@ -97,8 +97,8 @@ impl SerialTransport {
                         )));
                     }
                     1 => {}
-                    _ => eprintln!(
-                        "sofleii: several keyboards found ({}); using {}",
+                    _ => log::warn!(
+                        "several keyboards found ({}); using {}",
                         found
                             .iter()
                             .map(|c| c.path.as_str())

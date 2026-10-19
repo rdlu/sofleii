@@ -263,7 +263,7 @@ impl BleTransport<DbusLink> {
         )?
         .clone();
         for w in warnings {
-            eprintln!("sofleii: warning: {w}");
+            log::warn!("{w}");
         }
         let cands = candidates(&tree, &device);
         if cands.is_empty() {
