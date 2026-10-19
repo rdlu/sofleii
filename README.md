@@ -1,6 +1,6 @@
 # sofleii
 
-ZMK firmware for the **Eyelash Sofle** split keyboard, plus a planned Rust/ratatui CLI/TUI.
+ZMK firmware for the **Eyelash Sofle** split keyboard, plus **sofleii**, a Rust CLI/TUI to manage it.
 
 **[Docs](https://sofleii.dlu.one)** · **[Keymap](https://sofleii.dlu.one/keymap/)** ([PDF](https://sofleii.dlu.one/sofleii-keymap.pdf)) · [Releases](https://github.com/rdlu/sofleii/releases) · [Roadmap (#44)](https://github.com/rdlu/sofleii/issues/44)
 
@@ -50,8 +50,18 @@ mise run docs                               # http://127.0.0.1:1313/
 
 ## sofleii CLI/TUI
 
-Planned, not released: a Rust/ratatui CLI and terminal UI for split and connection status, BLE profiles, battery, firmware update checks and the flash and build routines, over the Studio RPC protocol.
-Tracked in [#44](https://github.com/rdlu/sofleii/issues/44); see [sofleii](https://sofleii.dlu.one/docs/sofleii/).
+A Rust CLI and ratatui TUI for the keyboard, over the same Studio RPC the web app uses: a live dashboard, the split link, both batteries, BLE profiles, the output priority and firmware update checks. Every reading is also a subcommand with `--json`, stable exit codes and a waybar module.
+
+![The sofleii TUI dashboard (demo data)](site/static/img/sofleii/tui-dashboard.svg)
+
+```bash
+mise run sofleii                              # the TUI (built from the repo)
+mise run sofleii -- status                    # one-shot summary
+mise run sofleii -- battery --format waybar   # for a waybar module
+mise run sofleii -- update check || notify-send "Sofle firmware update"
+```
+
+Not released yet: build it from the repo (or `cargo install --path sofleii --locked`); prebuilt binaries come with v0.1.0 ([#83](https://github.com/rdlu/sofleii/issues/83)). Docs: **[sofleii.dlu.one/docs/sofleii](https://sofleii.dlu.one/docs/sofleii/)** · roadmap [#44](https://github.com/rdlu/sofleii/issues/44).
 
 ## More
 

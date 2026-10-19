@@ -1,6 +1,6 @@
 ---
 title: sofleii
-description: sofleii, the Sofle Interactive Interface - ZMK firmware for the Eyelash Sofle split keyboard (home-row mods, nine layers, gaming mode, per-layer underglow, Studio over USB and Bluetooth) and a planned CLI/TUI to manage it.
+description: sofleii, the Sofle Interactive Interface - ZMK firmware for the Eyelash Sofle split keyboard (home-row mods, nine layers, gaming mode, per-layer underglow, Studio over USB and Bluetooth) and the sofleii CLI/TUI to manage it.
 layout: hextra-home
 # The headline, typed round and round (layouts/_shortcodes/hero-typed.html):
 # each line held for `hold` ms. `tagline` is what screen readers, reduced
@@ -91,7 +91,7 @@ hero:
 
 <div class="hx:mt-6"></div>
 
-Planned, not released: follow the [roadmap epic (#44)](https://github.com/rdlu/sofleii/issues/44).
+A terminal dashboard plus a **scriptable CLI**: every reading is a subcommand with `--json`, stable exit codes and a waybar module. Build it from the repo today; the first release is [coming (#83)](https://github.com/rdlu/sofleii/issues/83), and the roadmap lives in [#44](https://github.com/rdlu/sofleii/issues/44).
 
 <div class="hx:mt-6"></div>
 
@@ -99,19 +99,19 @@ Planned, not released: follow the [roadmap epic (#44)](https://github.com/rdlu/s
   {{< hextra/feature-card
     title="Status at a glance"
     icon="status-online"
-    subtitle="Planned: whether the halves are linked, the host connection, battery levels, over the same Studio RPC the web app uses."
+    subtitle="A live TUI and sofleii status: the split link, the host connection, both batteries and the firmware version, over the same Studio RPC the web app uses."
     link="docs/sofleii/"
   >}}
   {{< hextra/feature-card
     title="BLE profiles"
     icon="wifi"
-    subtitle="Planned: list, switch, rename and unpair host profiles, and choose USB or BLE first, without a browser."
+    subtitle="List, switch, rename and unpair host profiles, and choose USB or BLE first, from the command line, without a browser."
     link="docs/sofleii/"
   >}}
   {{< hextra/feature-card
-    title="Flash and build routines"
+    title="Scripts and status bars"
     icon="terminal"
-    subtitle="Planned: check for new releases, and run flash-release, build-flash, doctor and friends as commands and TUI actions."
+    subtitle="JSON with a versioned schema, exit codes for checks, a waybar module and an update check against the releases. Coming later: flashing and the keymap from the tool."
     link="docs/sofleii/"
   >}}
 {{< /hextra/feature-grid >}}
