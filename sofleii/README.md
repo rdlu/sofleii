@@ -443,11 +443,20 @@ subsystems
 
 ### `update check`
 
-Reads `zmk_config_version` from the keyboard (as `info` does), then asks the
-GitHub REST API, without `gh`:
+Two parts (#83): the **firmware** (`--firmware` alone), and **sofleii
+itself** (`--cli` alone; no keyboard needed). With neither flag, both. The
+firmware part reads `zmk_config_version` from the keyboard (as `info`
+does) first, so "not found" exits 2 without a network call. Then the
+shared cache (below), else the GitHub REST API, without `gh`:
 
-1. `GET /repos/{repo}/releases/latest` for `tag_name` and `published_at`,
-   then `GET /repos/{repo}/commits/{tag}` for the tag's commit.
+1. `GET /repos/{repo}/releases?per_page=50`, **once, for both parts**
+   (never `releases/latest`: sofleii's own releases are published with
+   `--latest=false`, but a manual release could still steal "latest").
+   Drafts and prereleases are dropped, then the tags split into two
+   families, each sorted newest first by semver: **firmware** `vX.Y.Z`
+   and **sofleii** `sofleii-vX.Y.Z`. Anything else (`canary-zephyr-4.1`,
+   a non-semver tag) is ignored. The newest firmware release is
+   `latest`; `GET /repos/{repo}/commits/{tag}` gives its commit.
 2. The running commit comes from the version string: the SHA in
    `v3.0.0-68-gf9a665f`, a bare `5c53b30` (CI builds), or, exactly on a tag
    (`v3.1.0`), that tag resolved through the API. An empty version (CI
@@ -477,28 +486,51 @@ GitHub REST API, without `gh`:
    - A local `git describe` string already names the tag and the count
      (`v3.0.0-68-gf9a665f` = `v3.0.0+68`; `v3.1.0` = exact). No extra
      request; this also covers `unknown`.
-   - `behind` with a bare SHA: `GET
-     /repos/{repo}/releases?per_page=10` (drafts and prereleases skipped,
-     the latest one too, since it was already compared), then newest
-     first `compare/{tag}...{running}` until one fits. `identical` or no
+   - `behind` with a bare SHA: the firmware releases from step 1's list
+     (no extra request; the latest one skipped, since it was already
+     compared), newest first, `compare/{tag}...{running}` until one fits. `identical` or no
      changed files gives exact, and the build being ahead gives
      `commits_after` = `ahead_by`. At most 10 releases. If none fits, or
      that lookup fails (e.g. rate limiting), `release` is `null` (with a
      `note` for a failure) and the verdict stands.
+6. The **sofleii part** compares `CARGO_PKG_VERSION` with the newest
+   `sofleii-v*` release by semver (a pre-release such as `0.2.0-dev` sorts
+   before `0.2.0`): `up_to_date`, `behind`, `ahead` (a newer dev build), or
+   `unknown` with a `note` when there is no sofleii release yet. Unknown
+   **never** makes the exit code 1.
+
+**Cache.** `update check` and the TUI share `session::jobs::Checker` and
+its file, `$XDG_CACHE_HOME/sofleii/update.json` (else
+`~/.cache/sofleii/`), honoured for 6 h. Schema 2 (#83) has a firmware part
+(keyed by the running `zmk_config_version` + dirty flag) and a sofleii part
+(the newest `sofleii-v*` release as listed; the verdict is worked out
+against the running binary when read, so two installed versions can share
+it), each with its own timestamp. A check is a cache hit only when every
+part asked for is cached and fresh; otherwise one list request renews the
+sofleii part too. `--refresh` skips the cache (and still stores the
+answer). A failed request never replaces a good entry; a schema-1 file is
+ignored and rewritten. The text output then ends with `checked 2h ago,
+cached (--refresh asks GitHub again)`; the JSON has `from_cache` and
+`checked_at_ms` (for a cached answer, the older part's time).
 
 The text leads with versions; the commit counts are in the JSON. A
 `-dirty` build is compared by its commit, with `running.dirty: true` and a
-note in the text output. Real output (2026-10-19; the left half runs the
-`feat/device-info` CI build at `f9a665f`, which PR #70 merged unchanged as
-`5c53b30` = v3.1.0):
+note in the text output. Real output (2026-10-19; the left half runs a
+`main` CI build at `2474a13`, whose tree is v3.1.0's, and no sofleii
+release exists yet):
 
 ```
 $ sofleii update check
-up to date: v3.1.0 (f9a665f)
-running         v3.1.0 (f9a665f)
+up to date: v3.1.0 (2474a13)
+running         v3.1.0 (2474a13)
 latest          v3.1.0 5c53b30, published 2026-10-19T19:11:48Z
-note            same source as v3.1.0: the commits between f9a665f and 5c53b30 change no files
+note            same source as v3.1.0: the commits between 2474a13 and 5c53b30 change no files
+sofleii         no sofleii release yet (running v0.1.0)
 ```
+
+The `sofleii` row reads `up to date: v0.1.0`, `v0.2.0 available, running
+v0.1.0` or `ahead of v0.1.0: running v0.2.0` otherwise. `--cli` prints that
+row alone (plus the cache line).
 
 Other verdicts: `v3.1.0 available, running v3.0.0+68 (f9a665f)`, `ahead of
 v3.1.0: running v3.1.0+3 (abc1234)`, `can't compare with v3.1.0: running f9a665f (no
@@ -517,9 +549,20 @@ version when no release precedes the build.
   "status": "up_to_date",
   "commits_behind": 1,
   "commits_ahead": 0,
-  "note": "same source as v3.1.0: the commits between f9a665f and 5c53b30 change no files"
+  "note": "same source as v3.1.0: the commits between f9a665f and 5c53b30 change no files",
+  "cli": { "version": "0.1.0", "latest": null, "tag": null, "published_at": null,
+           "status": "unknown",
+           "note": "no sofleii release yet (no sofleii-v* tag published)" },
+  "checked_at_ms": 1792452213616,
+  "from_cache": true
 }
 ```
+
+- `cli` (additive, schema stays 1): `version` is this binary's,
+  `latest`/`tag`/`published_at` the newest `sofleii-v*` release's (`null`
+  without one), `status` as below, `note` set for `unknown`. It is `null`
+  under `--firmware`. Under `--cli`, `transport` and every firmware field
+  (`running` … `note`) are `null`.
 
 - `status`: `up_to_date`, `behind`, `ahead` or `unknown` (#47's schema).
   `commits_ahead` > 0 on `behind` means the build also has unreleased
@@ -532,9 +575,10 @@ version when no release precedes the build.
   is 0 when `exact`), or `null` when no release precedes the build.
 - `note` explains an `unknown` status, a same-source `up_to_date`, or a
   failed release lookup; otherwise `null`.
-- **Exit codes:** 0 `up_to_date` or `ahead`; **1** `behind` or
-  `unknown` (worth a look; usable as `sofleii update check || notify-send
-  "Sofle firmware update"`); 2 keyboard not found (checked before any
+- **Exit codes:** 0 `up_to_date` or `ahead`; **1** if the firmware is
+  `behind` or `unknown`, or sofleii is `behind` (the worse checked part
+  wins; sofleii `unknown` counts as 0; usable as `sofleii update check ||
+  notify-send "Sofle update"`); 2 keyboard not found (checked before any
   network call); 3 usage (e.g. a malformed `--repo`); **4** transport or
   protocol error, firmware **without** `zmk__device_info` (`kind:
   "unsupported"`; unlike `info`, which exits 0 there), or a GitHub failure
@@ -542,8 +586,9 @@ version when no release precedes the build.
   rate limiting).
 - **Token:** none needed for public releases. `GH_TOKEN`, else
   `GITHUB_TOKEN`, is sent as a bearer token if set, which lifts the
-  anonymous limit of 60 requests per hour (a check usually makes 2 to 4;
-a bare SHA that's behind adds up to 11 for the release lookup). A rate
+  anonymous limit of 60 requests per hour (a check usually makes 2 to 3,
+  `--cli` alone 1, a cache hit 0; a bare SHA that's behind adds up to 10
+  compares for the release lookup). A rate
   limit error says so. Requests send `User-Agent: sofleii/<version>` and
   time out after 10 s each.
 - HTTPS is `ureq` (blocking, rustls with bundled roots): no tokio, no
@@ -786,7 +831,27 @@ pins: bump them when `config/west.yml` moves `zmk` (its
 `zmk-studio-messages` import), `zmk-module-ble-management` or
 `zmk-feature-device-info`. `proto/README.md` lists the source commits and
 licenses. (The directory isn't `proto/zmk/` like upstream because the
-repo's unanchored `zmk/` ignore rule would swallow it.)
+repo's unanchored `zmk/` ignore rule would swallow it.) `build.rs` reads
+the Commit column of that table into `sofleii --version` (the "firmware
+line" it prints), and fails the build if a row is missing or malformed, so
+keep the table's shape when bumping.
+
+## CI and releases
+
+`.github/workflows/sofleii.yml` runs on PRs and pushes to main touching
+`sofleii/**`: fmt, clippy `-D warnings`, the tests (latest stable Rust,
+distro `protoc`), and a release build that must run `--version` and answer
+`battery` with "not found" on a runner with no system bus.
+
+`.github/workflows/sofleii-release.yml` runs on a `sofleii-vX.Y.Z` tag: it
+checks the tag against `Cargo.toml`'s `version` and that the commit is on
+main, builds `x86_64-unknown-linux-gnu` and `aarch64-unknown-linux-gnu`
+(native arm64 runner), packages
+`sofleii-<version>-<target>.tar.gz` (+ `.sha256`) with
+`.github/scripts/package-sofleii.sh`, attests them, and creates the
+release with `--latest=false` (the firmware stays "latest"). Its
+`workflow_dispatch` is a dry run: build and package only, as workflow
+artifacts. The procedure is in the root `CLAUDE.md`.
 
 License: MIT (see the repository's `LICENSE`). The vendored protos keep
 their own MIT licenses, listed in `proto/README.md`.
