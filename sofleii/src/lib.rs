@@ -1,9 +1,12 @@
 //! sofleii core: Studio RPC over a pluggable transport, plus the commands
-//! that the CLI (and later the TUI) front ends render.
+//! that the CLI and TUI front ends render.
 //!
 //! Layering (each layer only depends on the ones above it):
-//! `proto` → `framing` → `transport` → `client` → `commands` → `output`.
-//! `commands` returns plain data and never prints; front ends own rendering.
+//! `proto` → `framing` → `transport` → `client` → `commands` → `output`
+//! → `tui`. `commands` returns plain data and never prints; front ends own
+//! rendering. Core diagnostics go through the `log` facade, and each front
+//! end installs its logger (`logger` for the CLI's stderr, the TUI's log
+//! pane in `tui::log_pane`).
 //! `gatt` is BlueZ's object tree as plain data (plus the keyboard lookup);
 //! `bluez` (system D-Bus) fills it, implements [`commands::battery::Gatt`]
 //! so `commands` stays free of D-Bus details, and carries the BLE transport
@@ -17,8 +20,10 @@ pub mod error;
 pub mod framing;
 pub mod gatt;
 pub mod github;
+pub mod logger;
 pub mod output;
 pub mod proto;
 pub mod transport;
+pub mod tui;
 
 pub use error::{Error, Result};

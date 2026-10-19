@@ -1,6 +1,6 @@
 //! Commands: reads, and the writes `profile` and `output`. Each returns
-//! plain, serialisable data; rendering lives in [`crate::output`] and front
-//! ends (CLI now, TUI later), and so does confirming destructive writes.
+//! plain, serialisable data; rendering lives in [`crate::output`] and the
+//! front ends (CLI, TUI), and so does confirming destructive writes.
 //! Nothing here depends on UI code, prompts or prints to stdout.
 
 pub mod battery;

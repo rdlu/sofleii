@@ -12,6 +12,27 @@ fn sofleii(args: &[&str]) -> (u8, String) {
 }
 
 #[test]
+fn no_subcommand_when_piped_prints_usage_and_exits_0() {
+    // Piped stdout is not a TTY, so no TUI.
+    let (code, stdout) = sofleii(&[]);
+    assert_eq!(code, 0);
+    assert!(stdout.contains("Usage: sofleii"), "{stdout}");
+}
+
+#[test]
+fn output_flags_without_a_subcommand_are_usage_errors() {
+    for args in [
+        &["--json"][..],
+        &["--format", "json"],
+        &["--format", "waybar"],
+    ] {
+        let (code, stdout) = sofleii(args);
+        assert_eq!(code, 3, "{args:?}");
+        assert!(stdout.is_empty(), "{args:?}: {stdout}");
+    }
+}
+
+#[test]
 fn waybar_not_found_prints_valid_json_and_exits_2() {
     let (code, stdout) = sofleii(&[
         "--device",

@@ -121,7 +121,12 @@ impl Default for Thresholds {
 impl Thresholds {
     /// Classifies by the lower of the known halves.
     pub fn classify(&self, r: &Reading) -> Level {
-        match r.min_percent() {
+        self.level(r.min_percent())
+    }
+
+    /// Classifies one level (one half, in the TUI's battery bars).
+    pub fn level(&self, percent: Option<u8>) -> Level {
+        match percent {
             None => Level::Unknown,
             Some(p) if p < self.critical_below => Level::Critical,
             Some(p) if p < self.warn_below => Level::Warning,

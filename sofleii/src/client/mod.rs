@@ -94,7 +94,7 @@ impl<T: Transport> Client<T> {
                     }
                     // A late reply to an earlier (timed-out) request: drop it.
                     studio::response::Type::RequestResponse(r) => {
-                        eprintln!("sofleii: ignoring stale response id {}", r.request_id);
+                        log::debug!("ignoring stale response id {}", r.request_id);
                     }
                 }
             }
