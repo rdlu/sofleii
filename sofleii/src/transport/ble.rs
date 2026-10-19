@@ -1,5 +1,5 @@
 //! BLE transport: ZMK Studio RPC over GATT, through BlueZ on the system
-//! D-Bus (zbus blocking API, no tokio).
+//! D-Bus (zbus through [`crate::bluez::call`], no tokio).
 //!
 //! It reuses the connection the keyboard already has to this host (bonded,
 //! connected as HID) and never pairs, connects or disconnects. The host
@@ -29,16 +29,18 @@
 //! [`candidates`] for how the live one is picked.
 
 use std::collections::{HashMap, VecDeque};
+use std::num::NonZeroUsize;
 use std::os::unix::net::UnixDatagram;
+use std::pin::Pin;
 use std::sync::mpsc;
 use std::time::{Duration, Instant};
 
 use prost::Message;
-use zbus::blocking::{Connection, MessageIterator};
-use zbus::zvariant::{OwnedFd, OwnedValue, Value};
+use zbus::export::futures_core::Stream;
+use zbus::{Connection, MessageStream, OwnedFd, OwnedVariant, Variant};
 
 use super::{Transport, TransportInfo, TransportKind};
-use crate::bluez::{BLUEZ, Bluez, call_error};
+use crate::bluez::{Bluez, call, call_error};
 use crate::framing::{self, Decoder};
 use crate::gatt::{DeviceObj, Query, Tree, find_device};
 use crate::proto::{core, studio};
@@ -387,17 +389,16 @@ impl Link for DbusLink {
                 .map(drop)
                 .map_err(|e| Error::io("writing to the BLE RPC characteristic", e)),
             Tx::Value(kind) => {
-                let opts: HashMap<&str, Value> = HashMap::from([("type", Value::from(*kind))]);
-                self.conn
-                    .call_method(
-                        Some(BLUEZ),
-                        self.path.as_str(),
-                        Some(GATT_CHAR),
-                        "WriteValue",
-                        &(chunk, opts),
-                    )
-                    .map(drop)
-                    .map_err(|e| call_error("WriteValue", e))
+                let opts: HashMap<&str, Variant> = HashMap::from([("type", Variant::from(*kind))]);
+                call(
+                    &self.conn,
+                    &self.path,
+                    GATT_CHAR,
+                    "WriteValue",
+                    &(chunk, opts),
+                )
+                .map(drop)
+                .map_err(|e| call_error("WriteValue", e))
             }
         }
     }
@@ -450,23 +451,15 @@ impl Drop for DbusLink {
         // The fds unsubscribe when they close; a StartNotify session needs
         // StopNotify (BlueZ would also drop it when this process exits).
         if let Rx::Signals(_) = self.rx {
-            let _ = self.conn.call_method(
-                Some(BLUEZ),
-                self.path.as_str(),
-                Some(GATT_CHAR),
-                "StopNotify",
-                &(),
-            );
+            let _ = call(&self.conn, &self.path, GATT_CHAR, "StopNotify", &());
         }
     }
 }
 
 /// `AcquireNotify` / `AcquireWrite`: a blocking socket and the MTU.
 fn acquire(conn: &Connection, path: &str, method: &str) -> Result<(UnixDatagram, u16)> {
-    let opts: HashMap<&str, Value> = HashMap::new();
-    let reply = conn
-        .call_method(Some(BLUEZ), path, Some(GATT_CHAR), method, &(opts,))
-        .map_err(|e| call_error(method, e))?;
+    let opts: HashMap<&str, Variant> = HashMap::new();
+    let reply = call(conn, path, GATT_CHAR, method, &(opts,)).map_err(|e| call_error(method, e))?;
     let (fd, mtu): (OwnedFd, u16) = reply
         .body()
         .deserialize()
@@ -485,26 +478,37 @@ fn start_notify(conn: &Connection, path: &str) -> Result<mpsc::Receiver<Vec<u8>>
     let rule = zbus::MatchRule::builder()
         .msg_type(zbus::message::Type::Signal)
         .interface("org.freedesktop.DBus.Properties")
-        .and_then(|b| b.member("PropertiesChanged"))
-        .and_then(|b| b.path(path.to_string()))
-        .map_err(bad)?
-        .build();
-    let iter = MessageIterator::for_match_rule(rule, conn, Some(256)).map_err(bad)?;
+        .member("PropertiesChanged")
+        .path(path.to_string())
+        .build()
+        .map_err(bad)?;
+    let mut stream = zbus::block_on(MessageStream::for_match_rule(
+        rule,
+        conn,
+        NonZeroUsize::new(256),
+    ))
+    .map_err(bad)?;
     let (tx, rx) = mpsc::channel();
+    // The thread blocks in `block_on` per message; between calls, zbus's
+    // helper thread keeps the connection's I/O going.
     std::thread::spawn(move || {
-        for msg in iter.flatten() {
-            type Changed = (String, HashMap<String, OwnedValue>, Vec<String>);
+        let next = |s: &mut MessageStream| {
+            zbus::block_on(std::future::poll_fn(|cx| Pin::new(&mut *s).poll_next(cx)))
+        };
+        while let Some(msg) = next(&mut stream) {
+            let Ok(msg) = msg else { continue };
+            type Changed = (String, HashMap<String, OwnedVariant>, Vec<String>);
             let Ok((iface, changed, _)) = msg.body().deserialize::<Changed>() else {
                 continue;
             };
             if iface != GATT_CHAR {
                 continue;
             }
-            if let Some(Value::Array(a)) = changed.get("Value").map(|v| &**v) {
+            if let Some(Variant::Array(a)) = changed.get("Value").map(|v| &**v) {
                 let bytes = a
                     .iter()
                     .filter_map(|v| match v {
-                        Value::U8(b) => Some(*b),
+                        Variant::U8(b) => Some(*b),
                         _ => None,
                     })
                     .collect();
@@ -514,21 +518,20 @@ fn start_notify(conn: &Connection, path: &str) -> Result<mpsc::Receiver<Vec<u8>>
             }
         }
     });
-    conn.call_method(Some(BLUEZ), path, Some(GATT_CHAR), "StartNotify", &())
-        .map_err(|e| call_error("StartNotify", e))?;
+    call(conn, path, GATT_CHAR, "StartNotify", &()).map_err(|e| call_error("StartNotify", e))?;
     Ok(rx)
 }
 
 fn mtu_of(conn: &Connection, path: &str) -> u16 {
-    conn.call_method(
-        Some(BLUEZ),
+    call(
+        conn,
         path,
-        Some("org.freedesktop.DBus.Properties"),
+        "org.freedesktop.DBus.Properties",
         "Get",
         &(GATT_CHAR, "MTU"),
     )
     .ok()
-    .and_then(|r| r.body().deserialize::<OwnedValue>().ok())
+    .and_then(|r| r.body().deserialize::<OwnedVariant>().ok())
     .and_then(|v| u16::try_from(v).ok())
     .unwrap_or(DEFAULT_MTU)
 }

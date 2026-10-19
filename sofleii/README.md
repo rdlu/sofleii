@@ -12,8 +12,10 @@ against a keyboard, see [Writes](#writes)).
 
 ## Build and run
 
-Needs Rust (edition 2024, 1.85+) and `protoc`, both from pacman
-(`rust`, `protobuf`). From the repo root:
+Needs Rust (edition 2024, 1.99+) and `protoc`, both from pacman
+(`rust`, `protobuf`). Dependencies follow their latest stable releases and
+`rust-version` follows the current stable rustc: no MSRV holdbacks. From
+the repo root:
 
 ```bash
 mise run sofleii -- status          # build (release) and run
@@ -23,9 +25,9 @@ mise run sofleii-test               # cargo test + clippy -D warnings + fmt --ch
 
 Or directly: `cd sofleii && cargo run -- info`.
 
-`battery` and the BLE transport talk to BlueZ through `zbus` (pure Rust):
-no libdbus, no tokio, nothing extra to install beyond a running
-`bluetooth.service`.
+`battery` and the BLE transport talk to BlueZ through `zbus` 6 (pure Rust,
+each call run with `zbus::block_on` on zbus's own runtime): no libdbus, no
+tokio, nothing extra to install beyond a running `bluetooth.service`.
 
 Over USB the keyboard is found by its USB product string `Eyelash Sofle` (the
 VID/PID is shared by every ZMK board, and the `/dev/ttyACM*` number is not
@@ -684,7 +686,7 @@ src/
                  sharing handover (the expected silence, the read-back over the other transport):
                  plain data, never print or prompt, no UI code
   gatt.rs        BlueZ's object tree as plain data, and the keyboard lookup (battery + BLE)
-  bluez.rs       system D-Bus (zbus blocking API; no tokio, no libdbus): the Gatt trait, the tree
+  bluez.rs       system D-Bus (zbus + block_on; no tokio, no libdbus): the Gatt trait, the tree
   github.rs      GitHub REST API over ureq (blocking, rustls): the Http trait
   output.rs      human, JSON and waybar rendering
   main.rs        clap CLI, exit codes, and the unpair confirmation
