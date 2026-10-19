@@ -7,7 +7,8 @@ roadmap: [#44](https://github.com/rdlu/sofleii/issues/44).
 
 Status: **spike.** Studio RPC over USB serial (left half) or BLE GATT
 through BlueZ; batteries over BLE GATT; update checks over the GitHub REST
-API; read-only commands.
+API; reads, plus the profile and output-priority writes (not yet tested
+against a keyboard, see [Writes](#writes)).
 
 ## Build and run
 
@@ -40,6 +41,10 @@ to the port (the `uucp` group on Arch). Over BLE, see
 | `sofleii battery [--json] [--format waybar] [--warn-below <pct>] [--critical-below <pct>]` | Both halves' levels over BLE GATT (BlueZ, system D-Bus), not Studio RPC. See [Battery](#battery). |
 | `sofleii info [--json]` | `core.get_device_info` (name, serial number), Studio lock state, `custom.list_custom_subsystems`, and the firmware build from the `zmk__device_info` subsystem (#46, looked up by identifier): versions, config commit + dirty flag, build time, board, build hash, hardware id and reset cause. See [`info`](#info). |
 | `sofleii profiles [--json]` | `cormoran_ble.get_profiles` and `get_output_priority` (the subsystem index is looked up by identifier, never hardcoded). |
+| `sofleii profile switch <n> [--json]` | **Write.** `cormoran_ble.switch_profile`, then `get_profiles` to read the active profile back. See [Writes](#writes). |
+| `sofleii profile rename <n> <name> [--json]` | **Write.** `set_profile_name` on a bonded slot (at most 31 UTF-8 bytes; `""` clears the name), read back. |
+| `sofleii profile unpair <n> [--yes] [--json]` | **Write, destructive.** `unpair_profile`: removes the slot's bond. Asks first unless `--yes`. |
+| `sofleii output usb\|ble [--json]` | **Write.** `set_output_priority`, read back with `get_output_priority`, over the other transport if Studio moved there. |
 | `sofleii update check [--json] [--repo OWNER/NAME]` | The running build (`zmk_config_version` from `zmk__device_info`) against the latest GitHub release of `--repo` (default `rdlu/sofleii`), shown as release versions (`v3.1.0`, `v3.0.0+68`): up to date, behind (update available), ahead, or unknown. See [`update check`](#update-check). |
 
 Global options: `--transport auto|usb|ble` (default `auto`, see
@@ -405,6 +410,123 @@ On failure with `--json`, stdout carries an error object instead:
 `kind` is one of `not_found`, `usage`, `io`, `timeout`, `protocol`, `rpc`,
 `bluez`, `unsupported`, `github`.
 
+## Writes
+
+`profile switch|rename|unpair <n>` and `output usb|ble` go through the
+`cormoran_ble` custom subsystem (looked up by identifier). `<n>` is
+**0-based**, as `profiles` lists it and `&bt BT_SEL n` counts. Each one
+reads the state first (range check: `<n>` past the keyboard's slots is
+exit 3), sends the write, and reads the state back.
+
+- `rename`: the name is at most **31 UTF-8 bytes** (nanopb `max_size:32` in
+  the module's `ble_management.options` counts the NUL; a longer one fails
+  the firmware's decode), checked before connecting (exit 3). Control
+  characters are rejected too. `""` clears the name. The firmware keys
+  names by the bond's address, so renaming an empty slot is exit 3.
+- `unpair` is destructive: it asks `[y/N]` on stderr unless `--yes`. With
+  no terminal on stdin and no `--yes` it refuses before connecting (exit
+  3); answering anything but `y`/`yes` cancels (exit 3, nothing sent). An
+  empty slot is a no-op (`sent: false`, exit 0). The firmware selects the
+  slot, clears its bond and re-selects the active profile.
+- There is no `forget_split_bond` command on purpose: it clears every bond,
+  the split pairing included.
+- A `success: false` or `error` reply is exit 4 (`kind: "rpc"`); a read-back
+  that contradicts an acknowledged write is exit 4 (`kind: "protocol"`).
+
+### Endpoint handover
+
+**Studio RPC moves with the selected endpoint, and the reply moves with
+it.** The handler runs in the RPC thread and changes the endpoint
+(`zmk_endpoint_set_preferred_transport`, or `zmk_ble_prof_select` →
+`zmk_ble_active_profile_changed`). That raises `zmk_endpoint_changed`
+synchronously, and `studio_rpc_listener_cb` calls
+`refresh_selected_transport` before `send_response`
+(`zmk/app/src/studio/rpc.c`, `zmk/app/src/endpoints.c`). So the reply goes
+out on the **new** transport, and the one sofleii sent on goes silent. Over
+BLE, replies also only go to the active profile's connection
+(`gatt_rpc_transport.c`).
+
+| Write, over | Hands over when | Then |
+|---|---|---|
+| `output ble`, over USB | the active BLE profile is connected | Studio answers on BLE only |
+| `output usb`, over BLE | USB is enumerated by a host | Studio answers on USB only |
+| `profile switch <other>`, over BLE | always (the reply goes to the new profile's connection) | BLE RPC from this host stops |
+| `profile switch <other>`, over USB with priority `ble` | the new profile is connected | Studio answers on BLE only |
+| `profile unpair <active>`, over BLE | always (the bond, and this connection, go) | BLE RPC from this host stops |
+
+For these writes a reply timeout is **expected, not an error**. sofleii
+then opens the other transport (USB if the `Eyelash Sofle` port exists; BLE
+if BlueZ has the keyboard connected) and reads the state back there:
+
+- read back and matching: success, `verified: true`, `verified_over` the
+  other transport, exit 0;
+- no other transport, or the read fails: still **success** (`ok: true`,
+  exit 0) with `verified: false` and a `note` saying why;
+- read back and contradicting: exit 4.
+
+When the reply *does* arrive after `output <other>`, the firmware kept the
+current transport because the other isn't ready; `note` says so (the
+priority is set, and applies once it connects). In every other case a
+timeout is a real timeout (exit 4). After a handover, run the next command
+with `--transport <other>` or `auto`.
+
+```
+$ sofleii output ble          # over USB, BLE profile connected
+output priority: ble (was usb)
+studio rpc now answers on ble
+note: no reply over usb (expected: the firmware hands Studio over to ble before replying); further RPC needs --transport ble (or auto); read back over ble
+```
+
+`output --json`:
+
+```json
+{
+  "schema": 1,
+  "transport": { "kind": "usb", "device": "/dev/ttyACM1" },
+  "action": "output",
+  "output_priority": "ble",
+  "previous_output_priority": "usb",
+  "ok": true,
+  "reply": false,
+  "verified": true,
+  "verified_over": "ble",
+  "studio_transport": "ble",
+  "note": "no reply over usb (expected: …); read back over ble"
+}
+```
+
+`profile … --json` (`action` is `profile_switch`, `profile_rename` or
+`profile_unpair`; `slot` has the `profiles` entry shape):
+
+```json
+{
+  "schema": 1,
+  "transport": { "kind": "usb", "device": "/dev/ttyACM1" },
+  "action": "profile_switch",
+  "profile": 1,
+  "name": null,
+  "ok": true,
+  "sent": true,
+  "reply": true,
+  "verified": true,
+  "verified_over": "usb",
+  "previous_active_profile": 0,
+  "active_profile": 1,
+  "slot": { "index": 1, "active": true, "connected": false, "bonded": true,
+            "address": "AA:BB:CC:DD:EE:FF", "name": null },
+  "studio_transport": "usb",
+  "note": null
+}
+```
+
+- `ok` is always `true`: a failed write prints the error object instead.
+- `sent`: `false` only for `unpair` on an empty slot. `reply`: the reply
+  arrived on this transport. `studio_transport`: where Studio answers now,
+  when known (`null` after a silent switch that couldn't be read back).
+- `name` is the new name for `rename` (`null` when cleared, and for the
+  other actions). `active_profile` and `slot` are the read-back, `null`
+  when not verified.
+
 ## Battery
 
 Battery levels aren't part of Studio RPC. Since #45 the left (central) half
@@ -543,8 +665,8 @@ JSON:
 | 0 | OK |
 | 1 | Check failed / attention needed: `battery --warn-below` with a half below it; `update check` behind or unknown |
 | 2 | Keyboard not found / not connected (a `--device` path that does not exist; `auto` with neither USB nor BLE; over BLE or for `battery`, not connected or BlueZ/D-Bus unavailable) |
-| 3 | Usage error (bad flag; `--device`/`--bt-address`/`--transport` contradicting each other) |
-| 4 | Transport or protocol error: timeout (over BLE, usually USB being the selected output), bad frame, RPC error (including a failing `zmk__device_info` call), D-Bus/GATT error, GitHub API failure (`update check`). A firmware *without* `zmk__device_info` is not an error for `info` (exit 0, `build.available: false`), but is for `update check` |
+| 3 | Usage error (bad flag; `--device`/`--bt-address`/`--transport` contradicting each other; a profile out of range; a rename too long or on an empty slot; `unpair` without a terminal or `--yes`, or not confirmed) |
+| 4 | Transport or protocol error: timeout (over BLE, usually USB being the selected output; not after an [endpoint handover](#endpoint-handover)), bad frame, RPC error (including a failing `zmk__device_info` call, and a write's `error` or `success: false` reply), D-Bus/GATT error, GitHub API failure (`update check`). A firmware *without* `zmk__device_info` is not an error for `info` (exit 0, `build.available: false`), but is for `update check` |
 
 ## Layout
 
@@ -558,14 +680,17 @@ src/
   client/        request ids, response matching, notifications set aside; rpc.rs = pure request builders
   commands/      status, info, profiles (status reuses profiles::fetch), battery (Gatt trait,
                  half identification; tested with a fake BlueZ tree), update (Http trait, version
-                 parsing, compare; tested with canned GitHub JSON): plain data, never print, no UI code
+                 parsing, compare; tested with canned GitHub JSON); the writes profile and output,
+                 sharing handover (the expected silence, the read-back over the other transport):
+                 plain data, never print or prompt, no UI code
   gatt.rs        BlueZ's object tree as plain data, and the keyboard lookup (battery + BLE)
   bluez.rs       system D-Bus (zbus blocking API; no tokio, no libdbus): the Gatt trait, the tree
   github.rs      GitHub REST API over ureq (blocking, rustls): the Http trait
   output.rs      human, JSON and waybar rendering
-  main.rs        clap CLI and exit codes
+  main.rs        clap CLI, exit codes, and the unpair confirmation
 proto/           vendored .proto files (see proto/README.md for sources and licenses)
-tests/golden.rs  request bytes captured from the v3.0.0 firmware, plus the zmk__device_info call
+tests/golden.rs  request bytes captured from the v3.0.0 firmware, plus the zmk__device_info call and
+                 the cormoran_ble write payloads (worked out from the proto, not captured yet)
 tests/cli.rs     exit codes and error output with no keyboard (not found, usage; no network)
 ```
 

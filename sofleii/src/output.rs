@@ -14,6 +14,7 @@ use crate::commands::{
     status::{BatteryLevel, Status},
     update::{self, short},
 };
+use crate::commands::{output as output_cmd, profile};
 use crate::transport::{TransportInfo, TransportKind};
 
 /// Bumped on any breaking change to the JSON output.
@@ -563,6 +564,66 @@ pub fn profiles(style: Style, transport: &TransportInfo, p: &Profiles) -> String
     String::from_utf8(out).expect("utf-8")
 }
 
+/// The lines after a write's headline: the note, and where Studio answers
+/// now when that's not the transport the command used.
+fn write_tail(
+    style: Style,
+    transport: &TransportInfo,
+    studio: Option<TransportKind>,
+    note: Option<&str>,
+) -> String {
+    let mut out = String::new();
+    if let Some(k) = studio.filter(|k| *k != transport.kind) {
+        out.push_str(&format!(
+            "{}\n",
+            style.dim(&format!("studio rpc now answers on {k}"))
+        ));
+    }
+    if let Some(n) = note {
+        out.push_str(&format!("{}\n", style.dim(&format!("note: {n}"))));
+    }
+    out
+}
+
+/// `sofleii profile switch|rename|unpair`.
+pub fn profile_action(style: Style, transport: &TransportInfo, o: &profile::Outcome) -> String {
+    if style.format == Format::Json {
+        return json(transport, o);
+    }
+    let n = o.profile;
+    let was = o
+        .previous_active_profile
+        .map_or(String::new(), |p| format!(" (was {p})"));
+    let unverified = if o.verified { "" } else { ", not verified" };
+    let headline = match o.action {
+        "profile_switch" if o.verified => format!("profile {n} is now active{was}"),
+        "profile_switch" => format!("profile {n} selected{was}{unverified}"),
+        "profile_rename" => match &o.name {
+            Some(name) => format!("profile {n} renamed to \"{name}\"{unverified}"),
+            None => format!("profile {n} name cleared{unverified}"),
+        },
+        _ if !o.sent => format!("profile {n} is not bonded; nothing to do"),
+        _ => format!("profile {n} unpaired{unverified}"),
+    };
+    // The no-op unpair's note only repeats the headline.
+    let note = o.note.as_deref().filter(|_| o.sent);
+    format!("{}\n", style.bold(&headline)) + &write_tail(style, transport, o.studio_transport, note)
+}
+
+/// `sofleii output usb|ble`.
+pub fn output_action(style: Style, transport: &TransportInfo, o: &output_cmd::Outcome) -> String {
+    if style.format == Format::Json {
+        return json(transport, o);
+    }
+    let was = o
+        .previous_output_priority
+        .map_or(String::new(), |p| format!(" (was {p})"));
+    let unverified = if o.verified { "" } else { ", not verified" };
+    let headline = format!("output priority: {}{was}{unverified}", o.output_priority);
+    format!("{}\n", style.bold(&headline))
+        + &write_tail(style, transport, o.studio_transport, o.note.as_deref())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1071,5 +1132,75 @@ mod tests {
                 "note": null
             })
         );
+    }
+
+    #[test]
+    fn output_action_json_golden_and_human() {
+        let o = output_cmd::Outcome {
+            action: "output",
+            output_priority: "ble",
+            previous_output_priority: Some("usb"),
+            ok: true,
+            reply: false,
+            verified: true,
+            verified_over: Some(TransportKind::Ble),
+            studio_transport: Some(TransportKind::Ble),
+            note: Some("no reply over usb".into()),
+        };
+        let t = transport(TransportKind::Usb);
+        let v: Value =
+            serde_json::from_str(&output_action(Style::plain(Format::Json), &t, &o)).unwrap();
+        assert_eq!(
+            v,
+            serde_json::json!({
+                "schema": 1,
+                "transport": {"kind": "usb", "device": "/dev/ttyACM1"},
+                "action": "output",
+                "output_priority": "ble",
+                "previous_output_priority": "usb",
+                "ok": true,
+                "reply": false,
+                "verified": true,
+                "verified_over": "ble",
+                "studio_transport": "ble",
+                "note": "no reply over usb"
+            })
+        );
+        let text = output_action(Style::plain(Format::Human), &t, &o);
+        assert_eq!(
+            text,
+            "output priority: ble (was usb)\nstudio rpc now answers on ble\n\
+             note: no reply over usb\n"
+        );
+    }
+
+    #[test]
+    fn profile_action_json_has_explicit_nulls() {
+        let o = profile::Outcome {
+            action: "profile_switch",
+            profile: 2,
+            name: None,
+            ok: true,
+            sent: true,
+            reply: true,
+            verified: true,
+            verified_over: Some(TransportKind::Usb),
+            previous_active_profile: Some(0),
+            active_profile: Some(2),
+            slot: None,
+            studio_transport: Some(TransportKind::Usb),
+            note: None,
+        };
+        let t = transport(TransportKind::Usb);
+        let v: Value =
+            serde_json::from_str(&profile_action(Style::plain(Format::Json), &t, &o)).unwrap();
+        assert_eq!(v["schema"], 1);
+        assert_eq!(v["action"], "profile_switch");
+        assert_eq!(v["profile"], 2);
+        for k in ["name", "slot", "note"] {
+            assert!(v[k].is_null() && v.get(k).is_some(), "{k}");
+        }
+        let text = profile_action(Style::plain(Format::Human), &t, &o);
+        assert_eq!(text, "profile 2 is now active (was 0)\n");
     }
 }

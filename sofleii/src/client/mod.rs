@@ -46,6 +46,12 @@ impl<T: Transport> Client<T> {
         self.transport.info()
     }
 
+    /// The transport, for tests that check what was sent.
+    #[cfg(test)]
+    pub(crate) fn transport_ref(&self) -> &T {
+        &self.transport
+    }
+
     /// Notifications received while waiting for responses, oldest first.
     pub fn notifications(&self) -> &[studio::Notification] {
         &self.notifications
@@ -231,13 +237,7 @@ mod tests {
         wire.extend(framing::encode(&response(1, device_info("Eyelash Sofle"))));
         // Deliver it in awkward 3-byte chunks.
         let reads = wire.chunks(3).map(<[u8]>::to_vec).collect();
-        let mut c = Client::new(
-            Mock {
-                reads,
-                sent: vec![],
-            },
-            Duration::from_secs(1),
-        );
+        let mut c = Client::new(Mock::new(reads), Duration::from_secs(1));
         let info = c.get_device_info().unwrap();
         assert_eq!(info.name, "Eyelash Sofle");
         assert_eq!(info.serial_number, vec![0xAB, 0xAD]);
@@ -250,13 +250,7 @@ mod tests {
 
     #[test]
     fn silence_times_out_quickly() {
-        let mut c = Client::new(
-            Mock {
-                reads: VecDeque::new(),
-                sent: vec![],
-            },
-            Duration::from_millis(50),
-        );
+        let mut c = Client::new(Mock::new(VecDeque::new()), Duration::from_millis(50));
         let start = Instant::now();
         let err = c.get_device_info().unwrap_err();
         assert!(matches!(err, Error::Timeout { .. }), "{err}");
@@ -272,13 +266,7 @@ mod tests {
             )),
         });
         let reads = VecDeque::from([framing::encode(&response(1, meta))]);
-        let mut c = Client::new(
-            Mock {
-                reads,
-                sent: vec![],
-            },
-            Duration::from_secs(1),
-        );
+        let mut c = Client::new(Mock::new(reads), Duration::from_secs(1));
         let err = c.get_device_info().unwrap_err();
         assert!(
             matches!(&err, Error::Rpc(m) if m.contains("rpc_not_found")),
@@ -292,13 +280,7 @@ mod tests {
             framing::encode(&response(1, device_info("a"))),
             framing::encode(&response(2, device_info("b"))),
         ]);
-        let mut c = Client::new(
-            Mock {
-                reads,
-                sent: vec![],
-            },
-            Duration::from_secs(1),
-        );
+        let mut c = Client::new(Mock::new(reads), Duration::from_secs(1));
         assert_eq!(c.get_device_info().unwrap().name, "a");
         assert_eq!(c.get_device_info().unwrap().name, "b");
         assert_eq!(c.transport.sent[1][2], 2);
