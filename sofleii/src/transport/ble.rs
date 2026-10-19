@@ -143,8 +143,9 @@ pub fn candidates(tree: &Tree, device: &DeviceObj) -> Vec<RpcChar> {
     out
 }
 
-/// One open subscription to an RPC characteristic.
-pub trait Link {
+/// One open subscription to an RPC characteristic (`Send`, like
+/// [`Transport`]).
+pub trait Link: Send {
     /// Writes one chunk of at most [`Link::max_write`] bytes.
     fn write(&mut self, chunk: &[u8]) -> Result<()>;
     /// The next notification or indication payload; `None` if none arrived
@@ -614,9 +615,10 @@ mod tests {
     }
 
     fn client(l: FakeLink) -> Client<BleTransport<FakeLink>> {
-        Client::new(
+        Client::with_first_id(
             BleTransport::new(l, "DD:1F:23:76:6E:71"),
             Duration::from_millis(500),
+            1,
         )
     }
 

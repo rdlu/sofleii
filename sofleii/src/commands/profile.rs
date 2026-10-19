@@ -417,9 +417,10 @@ mod tests {
     }
 
     fn client(replies: Vec<ResponseSubsystem>, kind: TransportKind) -> Client<Mock> {
-        Client::new(
+        Client::with_first_id(
             Mock::replying(replies).over(kind),
             Duration::from_millis(100),
+            1,
         )
     }
 

@@ -791,7 +791,7 @@ pub(crate) mod tests {
     }
 
     fn keyboard(replies: Vec<ResponseSubsystem>) -> Client<Mock> {
-        Client::new(Mock::replying(replies), Duration::from_secs(1))
+        Client::with_first_id(Mock::replying(replies), Duration::from_secs(1), 1)
     }
 
     fn subsystems(list: Vec<custom::CustomSubsystemInfo>) -> ResponseSubsystem {

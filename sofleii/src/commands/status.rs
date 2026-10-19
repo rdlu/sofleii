@@ -11,7 +11,7 @@ use crate::commands::battery::{self, Reading};
 use crate::commands::info::{self, Device, Studio};
 use crate::commands::profiles::{self, Profile, Profiles};
 use crate::proto::core::LockState;
-use crate::transport::Transport;
+use crate::transport::{Transport, TransportInfo, TransportKind};
 
 /// Why `split` is `null`.
 pub const SPLIT_NOTE: &str = "unavailable: cormoran_ble get_split_info is broken upstream; \
@@ -94,6 +94,26 @@ pub fn run<T: Transport>(client: &mut Client<T>) -> Result<Status> {
         lock == LockState::ZmkStudioCoreLockStateLocked,
         profiles,
     ))
+}
+
+/// Best guess of where keystrokes go: the output priority, with ZMK's
+/// fallback to the other endpoint when the preferred one isn't connected.
+///
+/// - Over USB, USB counts as connected (we're talking over it).
+/// - Over BLE, whether USB is plugged in is unknown, so only the priority
+///   and the active profile's connection count: a connected profile means
+///   `ble`. That also matches the firmware, which only answers Studio on the
+///   selected endpoint, so a reply over BLE means BLE is selected (and, with
+///   priority `usb`, that USB isn't connected).
+pub fn effective_output(transport: &TransportInfo, s: &Status) -> Option<&'static str> {
+    let usb = transport.kind == TransportKind::Usb;
+    let ble = s.profile.as_ref().is_some_and(|p| p.connected);
+    match (s.output_priority, usb, ble) {
+        (Some("ble"), _, true) => Some("ble"),
+        (_, true, _) => Some("usb"),
+        (_, false, true) => Some("ble"),
+        _ => None,
+    }
 }
 
 /// Pure mapping from the decoded replies to [`Status`].
@@ -195,7 +215,7 @@ mod tests {
     }
 
     fn run_mock(replies: Vec<ResponseSubsystem>) -> Status {
-        let mut c = Client::new(Mock::replying(replies), Duration::from_secs(1));
+        let mut c = Client::with_first_id(Mock::replying(replies), Duration::from_secs(1), 1);
         run(&mut c).unwrap()
     }
 

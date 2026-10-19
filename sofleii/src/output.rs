@@ -6,15 +6,15 @@ use std::io::{IsTerminal, Write};
 
 use serde::Serialize;
 
-use crate::Error;
 use crate::commands::{
     battery::{Reading, Thresholds},
     info::Info,
     profiles::Profiles,
-    status::{BatteryLevel, Status},
+    status::{BatteryLevel, Status, effective_output},
     update::{self, short},
 };
 use crate::commands::{output as output_cmd, profile};
+use crate::error::{Error, ErrorView};
 use crate::transport::{TransportInfo, TransportKind};
 
 /// Bumped on any breaking change to the JSON output.
@@ -93,23 +93,13 @@ fn json<T: Serialize>(transport: &TransportInfo, data: &T) -> String {
 /// always get a parseable object.
 pub fn error_json(err: &Error) -> String {
     #[derive(Serialize)]
-    struct ErrorBody {
-        kind: &'static str,
-        message: String,
-        exit_code: u8,
-    }
-    #[derive(Serialize)]
     struct ErrorEnvelope {
         schema: u32,
-        error: ErrorBody,
+        error: ErrorView,
     }
     let env = ErrorEnvelope {
         schema: SCHEMA,
-        error: ErrorBody {
-            kind: err.kind(),
-            message: err.to_string(),
-            exit_code: err.exit_code(),
-        },
+        error: err.view(),
     };
     serde_json::to_string_pretty(&env).expect("serialising plain data cannot fail")
 }
@@ -141,26 +131,6 @@ impl Waybar {
 pub const GLYPH_USB: &str = "\u{f0553}";
 pub const GLYPH_BLE: &str = "\u{f00af}";
 pub const GLYPH_DISCONNECTED: &str = "\u{f00b2}";
-
-/// Best guess of where keystrokes go: the output priority, with ZMK's
-/// fallback to the other endpoint when the preferred one isn't connected.
-///
-/// - Over USB, USB counts as connected (we're talking over it).
-/// - Over BLE, whether USB is plugged in is unknown, so only the priority
-///   and the active profile's connection count: a connected profile means
-///   `ble`. That also matches the firmware, which only answers Studio on the
-///   selected endpoint, so a reply over BLE means BLE is selected (and, with
-///   priority `usb`, that USB isn't connected).
-pub fn effective_output(transport: &TransportInfo, s: &Status) -> Option<&'static str> {
-    let usb = transport.kind == TransportKind::Usb;
-    let ble = s.profile.as_ref().is_some_and(|p| p.connected);
-    match (s.output_priority, usb, ble) {
-        (Some("ble"), _, true) => Some("ble"),
-        (_, true, _) => Some("usb"),
-        (_, false, true) => Some("ble"),
-        _ => None,
-    }
-}
 
 pub fn waybar_status(transport: &TransportInfo, s: &Status) -> Waybar {
     let (class, glyph) = match effective_output(transport, s) {
