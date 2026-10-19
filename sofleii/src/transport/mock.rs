@@ -14,6 +14,8 @@ use crate::proto::{ble_management, custom, studio};
 pub struct Mock {
     pub reads: VecDeque<Vec<u8>>,
     pub sent: Vec<Vec<u8>>,
+    /// What [`Transport::info`] reports (USB unless [`Mock::over`] says).
+    pub kind: TransportKind,
 }
 
 impl Mock {
@@ -21,7 +23,14 @@ impl Mock {
         Self {
             reads,
             sent: vec![],
+            kind: TransportKind::Usb,
         }
+    }
+
+    /// The same mock, reporting `kind` as its transport.
+    pub fn over(mut self, kind: TransportKind) -> Self {
+        self.kind = kind;
+        self
     }
 
     /// One framed read per response, answering request ids 1, 2, 3… in order.
@@ -61,7 +70,7 @@ impl Transport for Mock {
     }
     fn info(&self) -> TransportInfo {
         TransportInfo {
-            kind: TransportKind::Usb,
+            kind: self.kind,
             device: "mock".into(),
         }
     }

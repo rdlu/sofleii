@@ -63,19 +63,56 @@ pub mod ble {
     pub const IDENTIFIER: &str = "cormoran_ble";
 
     pub fn get_profiles() -> Vec<u8> {
-        ble_management::Request {
-            request_type: Some(RequestType::GetProfiles(
-                ble_management::GetProfilesRequest {},
-            )),
-        }
-        .encode_to_vec()
+        request(RequestType::GetProfiles(
+            ble_management::GetProfilesRequest {},
+        ))
     }
 
     pub fn get_output_priority() -> Vec<u8> {
+        request(RequestType::GetOutputPriority(
+            ble_management::GetOutputPriorityRequest {},
+        ))
+    }
+
+    pub fn switch_profile(index: u32) -> Vec<u8> {
+        request(RequestType::SwitchProfile(
+            ble_management::SwitchProfileRequest { index },
+        ))
+    }
+
+    /// The caller checks the length first ([`NAME_MAX_BYTES`]): a longer
+    /// name fails nanopb's decode on the keyboard.
+    pub fn set_profile_name(index: u32, name: &str) -> Vec<u8> {
+        request(RequestType::SetProfileName(
+            ble_management::SetProfileNameRequest {
+                index,
+                name: name.into(),
+            },
+        ))
+    }
+
+    pub fn unpair_profile(index: u32) -> Vec<u8> {
+        request(RequestType::UnpairProfile(
+            ble_management::UnpairProfileRequest { index },
+        ))
+    }
+
+    pub fn set_output_priority(priority: ble_management::OutputPriority) -> Vec<u8> {
+        request(RequestType::SetOutputPriority(
+            ble_management::SetOutputPriorityRequest {
+                priority: priority as i32,
+            },
+        ))
+    }
+
+    /// Longest profile name in UTF-8 bytes: `SetProfileNameRequest.name` is
+    /// `max_size:32` in the module's `ble_management.options`, and nanopb's
+    /// `max_size` counts the terminating NUL.
+    pub const NAME_MAX_BYTES: usize = 31;
+
+    fn request(r: RequestType) -> Vec<u8> {
         ble_management::Request {
-            request_type: Some(RequestType::GetOutputPriority(
-                ble_management::GetOutputPriorityRequest {},
-            )),
+            request_type: Some(r),
         }
         .encode_to_vec()
     }

@@ -1,6 +1,6 @@
 //! sofleii CLI entry point: argument parsing, connection, exit codes.
 
-use std::io::Write;
+use std::io::{BufRead, IsTerminal, Write};
 use std::process::ExitCode;
 use std::time::Duration;
 
@@ -17,7 +17,8 @@ use sofleii::gatt::{Query, find_device};
 use sofleii::github::GitHub;
 use sofleii::output::{self, Format, Style};
 use sofleii::transport::{
-    Plan, Preference, Transport, ble::BleTransport, plan, serial, serial::SerialTransport,
+    Plan, Preference, Transport, TransportKind, ble::BleTransport, plan, serial,
+    serial::SerialTransport,
 };
 use sofleii::{Error, Result, commands};
 
@@ -120,6 +121,65 @@ enum Command {
         #[command(subcommand)]
         command: UpdateCommand,
     },
+    /// Switch, rename or unpair a BLE profile. <N> is 0-based, as
+    /// `sofleii profiles` lists it (and as `&bt BT_SEL n` counts).
+    Profile {
+        #[command(subcommand)]
+        command: ProfileCommand,
+    },
+    /// Set the output priority: where keystrokes (and Studio RPC) go when
+    /// both USB and BLE are connected. Switching away from the transport in
+    /// use moves Studio to the other one; sofleii reads it back there.
+    Output {
+        /// `usb` or `ble`.
+        #[arg(value_enum)]
+        target: OutputArg,
+        /// Print the versioned JSON contract instead of text.
+        #[arg(long)]
+        json: bool,
+    },
+}
+
+#[derive(Subcommand, Debug)]
+enum ProfileCommand {
+    /// Make profile <N> the active one.
+    Switch {
+        /// Profile index, 0-based (as `sofleii profiles` lists it).
+        #[arg(value_name = "N")]
+        profile: u32,
+        /// Print the versioned JSON contract instead of text.
+        #[arg(long)]
+        json: bool,
+    },
+    /// Name bonded profile <N> (at most 31 UTF-8 bytes; "" clears it).
+    Rename {
+        /// Profile index, 0-based (as `sofleii profiles` lists it).
+        #[arg(value_name = "N")]
+        profile: u32,
+        name: String,
+        /// Print the versioned JSON contract instead of text.
+        #[arg(long)]
+        json: bool,
+    },
+    /// Remove profile <N>'s bond (the host has to pair again). Asks first
+    /// unless --yes; with neither a terminal nor --yes it refuses (exit 3).
+    Unpair {
+        /// Profile index, 0-based (as `sofleii profiles` lists it).
+        #[arg(value_name = "N")]
+        profile: u32,
+        /// Don't ask for confirmation.
+        #[arg(long, short)]
+        yes: bool,
+        /// Print the versioned JSON contract instead of text.
+        #[arg(long)]
+        json: bool,
+    },
+}
+
+#[derive(Copy, Clone, Debug, PartialEq, Eq, ValueEnum)]
+enum OutputArg {
+    Usb,
+    Ble,
 }
 
 #[derive(Subcommand, Debug)]
@@ -192,6 +252,13 @@ fn main() -> ExitCode {
         | Command::Profiles { json }
         | Command::Update {
             command: UpdateCommand::Check { json, .. },
+        }
+        | Command::Output { json, .. }
+        | Command::Profile {
+            command:
+                ProfileCommand::Switch { json, .. }
+                | ProfileCommand::Rename { json, .. }
+                | ProfileCommand::Unpair { json, .. },
         } => json,
     };
     let is_battery = matches!(command, Command::Battery { .. });
@@ -313,6 +380,68 @@ fn connect(cli: &Cli, timeout: Duration) -> Result<Client<Box<dyn Transport>>> {
     }
 }
 
+/// Opens the transport that isn't `current`, to read back after a write
+/// handed Studio over to it. `--device`/`--bt-address` only pin the
+/// transport they name.
+fn open_other(
+    cli: &Cli,
+    current: TransportKind,
+    timeout: Duration,
+) -> Result<Client<Box<dyn Transport>>> {
+    let t: Box<dyn Transport> = match current {
+        TransportKind::Usb => {
+            let address = cli.bt_address.as_deref();
+            ble_connected(address, timeout.min(DEFAULT_TIMEOUT)).map_err(Error::NotFound)?;
+            Box::new(BleTransport::connect(address, timeout)?)
+        }
+        TransportKind::Ble => {
+            if serial::discover().is_empty() {
+                return Err(Error::NotFound("no \"Eyelash Sofle\" serial port".into()));
+            }
+            Box::new(SerialTransport::open(None)?)
+        }
+    };
+    Ok(Client::new(t, timeout))
+}
+
+/// Asks before `profile unpair` (the caller already checked for a TTY).
+/// Anything but `y`/`yes` cancels, as a usage error: nothing was sent.
+fn confirm_unpair(
+    t: &commands::profile::Target,
+    input: &mut impl BufRead,
+    prompt: &mut impl Write,
+) -> Result<()> {
+    let mut what = format!("profile {}", t.profile);
+    if let Some(s) = t.slot() {
+        if let Some(a) = &s.address {
+            what.push_str(&format!(" {a}"));
+        }
+        if let Some(n) = &s.name {
+            what.push_str(&format!(" \"{n}\""));
+        }
+        if s.active {
+            what.push_str(", the active profile");
+        }
+        if s.connected {
+            what.push_str(", connected");
+        }
+    }
+    let mut warning = String::from("The host has to pair again to use it.");
+    if t.kind == TransportKind::Ble && t.before.active_profile == Some(t.profile) {
+        warning.push_str(" sofleii is talking over this connection, so it will drop.");
+    }
+    let _ = write!(prompt, "Unpair {what}? {warning} [y/N] ");
+    let _ = prompt.flush();
+    let mut answer = String::new();
+    input
+        .read_line(&mut answer)
+        .map_err(|e| Error::io("reading the confirmation", e))?;
+    match answer.trim().to_ascii_lowercase().as_str() {
+        "y" | "yes" => Ok(()),
+        _ => Err(Error::Usage("unpair cancelled; nothing was sent".into())),
+    }
+}
+
 /// Reads both batteries over BlueZ, printing warnings to stderr.
 fn read_battery(bt_address: &Option<String>, timeout: Duration) -> Result<battery::Reading> {
     let mut bluez = Bluez::connect(timeout)?;
@@ -358,6 +487,21 @@ fn run(cli: &Cli, command: &Command, style: Style) -> Result<(String, u8)> {
         return Ok((output::battery(style, &r, t), code));
     }
 
+    // Usage errors that need no keyboard come before connecting.
+    match command {
+        Command::Profile {
+            command: ProfileCommand::Rename { name, .. },
+        } => commands::profile::validate_name(name)?,
+        Command::Profile {
+            command: ProfileCommand::Unpair { yes: false, .. },
+        } if !std::io::stdin().is_terminal() => {
+            return Err(Error::Usage(
+                "unpair asks for confirmation, and stdin is not a terminal; pass --yes".into(),
+            ));
+        }
+        _ => {}
+    }
+
     let mut client = connect(cli, timeout)?;
     let info = client.transport_info();
     let mut code = exit::OK;
@@ -383,6 +527,37 @@ fn run(cli: &Cli, command: &Command, style: Style) -> Result<(String, u8)> {
             code = c.status.exit_code();
             output::update_check(style, &info, &c)
         }
+        Command::Output { target, .. } => {
+            let target = match target {
+                OutputArg::Usb => TransportKind::Usb,
+                OutputArg::Ble => TransportKind::Ble,
+            };
+            let o =
+                commands::output::set(&mut client, target, || open_other(cli, info.kind, timeout))?;
+            output::output_action(style, &info, &o)
+        }
+        Command::Profile { command } => {
+            let profile = match *command {
+                ProfileCommand::Switch { profile, .. }
+                | ProfileCommand::Rename { profile, .. }
+                | ProfileCommand::Unpair { profile, .. } => profile,
+            };
+            let t = commands::profile::prepare(&mut client, profile)?;
+            let other = || open_other(cli, info.kind, timeout);
+            let o = match command {
+                ProfileCommand::Switch { .. } => commands::profile::switch(&mut client, &t, other)?,
+                ProfileCommand::Rename { name, .. } => {
+                    commands::profile::rename(&mut client, &t, name)?
+                }
+                ProfileCommand::Unpair { yes, .. } => {
+                    if t.slot().is_some_and(|s| s.bonded) && !yes {
+                        confirm_unpair(&t, &mut std::io::stdin().lock(), &mut std::io::stderr())?;
+                    }
+                    commands::profile::unpair(&mut client, &t, other)?
+                }
+            };
+            output::profile_action(style, &info, &o)
+        }
         Command::Battery { .. } => unreachable!("handled above"),
     };
     let n = client.notifications().len();
@@ -390,4 +565,66 @@ fn run(cli: &Cli, command: &Command, style: Style) -> Result<(String, u8)> {
         eprintln!("sofleii: {n} notification(s) received and set aside");
     }
     Ok((text, code))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use sofleii::commands::profile::Target;
+    use sofleii::commands::profiles::{Profile, Profiles};
+
+    fn target(kind: TransportKind, profile: u32) -> Target {
+        let slot = |index: u32| Profile {
+            index,
+            active: index == 0,
+            connected: index == 0,
+            bonded: true,
+            address: Some("84:9E:56:52:6A:D2".into()),
+            name: (index == 1).then(|| "Mac".into()),
+        };
+        Target {
+            subsystem: 0,
+            before: Profiles {
+                max_profiles: 2,
+                active_profile: Some(0),
+                output_priority: Some("usb"),
+                profiles: vec![slot(0), slot(1)],
+            },
+            profile,
+            kind,
+        }
+    }
+
+    fn ask(t: &Target, answer: &str) -> (Result<()>, String) {
+        let mut prompt = Vec::new();
+        let r = confirm_unpair(t, &mut answer.as_bytes(), &mut prompt);
+        (r, String::from_utf8(prompt).unwrap())
+    }
+
+    #[test]
+    fn unpair_confirms_only_on_yes() {
+        let t = target(TransportKind::Usb, 1);
+        for yes in ["y\n", "YES\n", " yes "] {
+            assert!(ask(&t, yes).0.is_ok(), "{yes:?}");
+        }
+        for no in ["\n", "n\n", "", "yep\n"] {
+            let err = ask(&t, no).0.unwrap_err();
+            assert_eq!(err.exit_code(), exit::USAGE, "{no:?}");
+        }
+        let (_, prompt) = ask(&t, "n\n");
+        assert!(
+            prompt.contains("profile 1 84:9E:56:52:6A:D2 \"Mac\""),
+            "{prompt}"
+        );
+        assert!(prompt.ends_with("[y/N] "), "{prompt}");
+    }
+
+    #[test]
+    fn unpair_prompt_warns_about_the_active_ble_link() {
+        let (_, prompt) = ask(&target(TransportKind::Ble, 0), "n\n");
+        assert!(prompt.contains("the active profile, connected"), "{prompt}");
+        assert!(prompt.contains("it will drop"), "{prompt}");
+        let (_, prompt) = ask(&target(TransportKind::Usb, 0), "n\n");
+        assert!(!prompt.contains("it will drop"), "{prompt}");
+    }
 }

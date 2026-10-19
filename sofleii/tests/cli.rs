@@ -135,3 +135,68 @@ fn update_check_rejects_a_malformed_repo() {
         assert!(stdout.is_empty());
     }
 }
+
+#[test]
+fn unpair_without_tty_or_yes_is_usage_before_connecting() {
+    let out = Command::new(env!("CARGO_BIN_EXE_sofleii"))
+        .args(["profile", "unpair", "1", "--json"])
+        .args(["--device", "/dev/nonexistent"])
+        .stdin(std::process::Stdio::null())
+        .output()
+        .expect("run sofleii");
+    assert_eq!(out.status.code(), Some(3));
+    let v: serde_json::Value = serde_json::from_slice(&out.stdout).unwrap();
+    assert_eq!(v["error"]["kind"], "usage");
+    assert!(v["error"]["message"].as_str().unwrap().contains("--yes"));
+}
+
+#[test]
+fn unpair_with_yes_gets_as_far_as_connecting() {
+    let (code, _) = sofleii(&[
+        "profile",
+        "unpair",
+        "1",
+        "--yes",
+        "--device",
+        "/dev/nonexistent",
+    ]);
+    assert_eq!(code, 2);
+}
+
+#[test]
+fn rename_too_long_is_usage_before_connecting() {
+    let long = "x".repeat(32);
+    let (code, stdout) = sofleii(&[
+        "profile",
+        "rename",
+        "1",
+        &long,
+        "--json",
+        "--device",
+        "/dev/nonexistent",
+    ]);
+    assert_eq!(code, 3);
+    let v: serde_json::Value = serde_json::from_str(&stdout).unwrap();
+    assert!(v["error"]["message"].as_str().unwrap().contains("31"));
+    // 31 bytes is fine: it gets as far as the (missing) keyboard.
+    let ok = "x".repeat(31);
+    let args = [
+        "profile",
+        "rename",
+        "1",
+        &ok,
+        "--device",
+        "/dev/nonexistent",
+    ];
+    assert_eq!(sofleii(&args).0, 2);
+}
+
+#[test]
+fn bad_write_arguments_are_usage_errors() {
+    assert_eq!(sofleii(&["profile", "switch", "-1"]).0, 3);
+    assert_eq!(sofleii(&["profile", "switch", "x"]).0, 3);
+    assert_eq!(sofleii(&["output", "wifi"]).0, 3);
+    assert_eq!(sofleii(&["output", "ble", "--format", "waybar"]).0, 3);
+    // forget_split_bond is deliberately not exposed.
+    assert_eq!(sofleii(&["profile", "forget-split-bond"]).0, 3);
+}

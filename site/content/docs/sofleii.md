@@ -28,9 +28,14 @@ reports which build is running (see [Firmware](../reference/firmware/#modules)).
 
 - **Status**: whether the halves are connected to each other, and the
   connection to the host.
-- **BLE profiles**: list, switch, rename and unpair.
+- **BLE profiles**: list, switch, rename and unpair (`sofleii profile
+  switch|rename|unpair <n>`, 0-based like `sofleii profiles`; unpair asks
+  first unless `--yes`).
 - **Battery** levels.
-- **Output priority**: USB or BLE first.
+- **Output priority**: USB or BLE first (`sofleii output usb|ble`).
+  Studio follows the selected output, so switching away from the
+  connection the tool is using moves it to the other one; the tool reads
+  the result back there.
 - **Firmware updates**: check the running firmware against the
   [GitHub releases](https://github.com/rdlu/sofleii/releases) (the first
   piece, `sofleii update check`, already does this), and flash from the

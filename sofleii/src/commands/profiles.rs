@@ -48,20 +48,32 @@ pub fn fetch<T: Transport>(client: &mut Client<T>, index: u32) -> Result<Profile
 
     // Output priority is optional extra context: a failure here shouldn't
     // hide the profiles.
-    let output_priority = client
-        .custom_call("get_output_priority", index, ble::get_output_priority())
-        .and_then(|p| ble::decode(&p))
-        .ok()
-        .and_then(|r| match r {
-            ResponseType::GetOutputPriority(o) => match OutputPriority::try_from(o.priority) {
-                Ok(OutputPriority::Usb) => Some("usb"),
-                Ok(OutputPriority::Ble) => Some("ble"),
-                Err(_) => None,
-            },
-            _ => None,
-        });
+    let output_priority = output_priority(client, index).ok().flatten();
 
     Ok(from_response(resp, output_priority))
+}
+
+/// `get_output_priority` as `"usb"`/`"ble"`, `None` for an unknown value.
+pub fn output_priority<T: Transport>(
+    client: &mut Client<T>,
+    index: u32,
+) -> Result<Option<&'static str>> {
+    let payload = client.custom_call("get_output_priority", index, ble::get_output_priority())?;
+    match ble::decode(&payload)? {
+        ResponseType::GetOutputPriority(o) => Ok(priority_name(o.priority)),
+        _ => Err(Error::Protocol(
+            "get_output_priority: unexpected response type".into(),
+        )),
+    }
+}
+
+/// The wire enum as its JSON string, `None` for an unknown value.
+pub fn priority_name(p: i32) -> Option<&'static str> {
+    match OutputPriority::try_from(p) {
+        Ok(OutputPriority::Usb) => Some("usb"),
+        Ok(OutputPriority::Ble) => Some("ble"),
+        Err(_) => None,
+    }
 }
 
 impl Profiles {
