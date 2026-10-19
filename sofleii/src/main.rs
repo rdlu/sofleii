@@ -235,7 +235,12 @@ fn main() -> ExitCode {
             return usage_error("--format needs a subcommand");
         }
         if std::io::stdout().is_terminal() {
-            return match sofleii::tui::run() {
+            let link = connect_config(&cli);
+            if let Err(e) = link.check() {
+                eprintln!("sofleii: {e}");
+                return ExitCode::from(e.exit_code());
+            }
+            return match sofleii::tui::run(link) {
                 Ok(()) => ExitCode::from(exit::OK),
                 Err(e) => {
                     eprintln!("sofleii: terminal: {e}");

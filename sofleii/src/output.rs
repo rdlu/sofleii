@@ -255,11 +255,17 @@ pub fn battery(style: Style, r: &Reading, t: Thresholds) -> String {
     }
 }
 
+/// Why output priority usb over a BLE link means no USB: only the central
+/// (left) half does USB (ZMK's `ZMK_USB` depends on `!ZMK_SPLIT ||
+/// ZMK_SPLIT_ROLE_CENTRAL`), so a cable in the right half only charges it.
+pub const USB_LEFT_ONLY: &str =
+    "USB not connected to the left half (the right half's USB only charges)";
+
 /// Label/value rows shared by the human output and the waybar tooltip.
 fn status_rows(transport: &TransportInfo, s: &Status) -> Vec<(&'static str, String)> {
     let over_ble = transport.kind == TransportKind::Ble;
     let output = match (effective_output(transport, s), s.output_priority) {
-        (Some("ble"), Some("usb")) if over_ble => "ble (priority usb; USB not connected)".into(),
+        (Some("ble"), Some("usb")) if over_ble => format!("ble (priority usb); {USB_LEFT_ONLY}"),
         (Some(o), Some(p)) => format!("{o} (priority {p})"),
         (Some(o), None) => o.to_string(),
         (None, Some(p)) => format!("none (priority {p})"),
@@ -706,7 +712,10 @@ mod tests {
         let tip = v["tooltip"].as_str().unwrap();
         assert!(tip.contains("transport: ble DD:1F:23:76:6E:71"), "{tip}");
         assert!(
-            tip.contains("output: ble (priority usb; USB not connected)"),
+            tip.contains(
+                "output: ble (priority usb); USB not connected to the left half \
+                 (the right half's USB only charges)"
+            ),
             "{tip}"
         );
         let v: Value = serde_json::from_str(&status(
@@ -719,6 +728,25 @@ mod tests {
             v["transport"],
             serde_json::json!({"kind": "ble", "address": "DD:1F:23:76:6E:71"})
         );
+    }
+
+    #[test]
+    fn human_says_usb_is_left_half_only() {
+        // Text only: the JSON keeps `output_priority` and nothing else.
+        let t = TransportInfo {
+            kind: TransportKind::Ble,
+            device: "DD:1F:23:76:6E:71".into(),
+        };
+        let out = status(Style::plain(Format::Human), &t, &sample("usb", true));
+        assert!(
+            out.contains(
+                "output          ble (priority usb); USB not connected to the left half \
+                 (the right half's USB only charges)\n"
+            ),
+            "{out}"
+        );
+        let json = status(Style::plain(Format::Json), &t, &sample("usb", true));
+        assert!(!json.contains("left half"), "{json}");
     }
 
     #[test]

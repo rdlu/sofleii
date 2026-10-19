@@ -56,6 +56,22 @@ impl Default for Config {
     }
 }
 
+impl Config {
+    /// The flags' contradictions (exit 3), without touching the system: a
+    /// long-running front end checks once up front instead of retrying a
+    /// usage error forever.
+    pub fn check(&self) -> Result<()> {
+        transport::plan(
+            self.transport,
+            self.device.as_deref(),
+            self.bt_address.as_deref(),
+            || true,
+            || Ok(()),
+        )
+        .map(drop)
+    }
+}
+
 /// An open link.
 pub struct Connected {
     pub client: DynClient,
@@ -477,9 +493,13 @@ mod tests {
             bt_address: Some("DD:1F:23:76:6E:71".into()),
             ..config(Preference::Auto)
         };
+        assert_eq!(cfg.check().unwrap_err().exit_code(), exit::USAGE);
         let e = Connector::with_opener(cfg, &fake).connect().err().unwrap();
         assert_eq!(e.exit_code(), exit::USAGE);
         assert!(fake.take().is_empty());
+        for p in [Preference::Auto, Preference::Usb, Preference::Ble] {
+            config(p).check().unwrap();
+        }
     }
 
     #[test]
