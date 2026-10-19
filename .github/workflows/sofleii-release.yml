@@ -1,0 +1,182 @@
+name: sofleii release
+
+# Builds and publishes a sofleii release when a `sofleii-vX.Y.Z` tag is
+# pushed (firmware releases are plain `vX.Y.Z` and are made by hand; see
+# CLAUDE.md). The release is created with --latest=false, so GitHub's
+# "latest release" stays the firmware.
+#
+# workflow_dispatch is a dry run on the chosen branch: it builds and
+# packages both targets and uploads them as workflow artifacts, but makes
+# no attestation and no release.
+on:
+  push:
+    tags: ['sofleii-v*']
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: sofleii-release-${{ github.ref }}
+  cancel-in-progress: false
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  version:
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.v.outputs.version }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+
+      # The tag must name Cargo.toml's version (the binary reports that
+      # one) and point at a commit on main.
+      - name: version
+        id: v
+        env:
+          EVENT: ${{ github.event_name }}
+          REF_NAME: ${{ github.ref_name }}
+        run: |
+          version=$(sed -n 's/^version = "\(.*\)"$/\1/p' sofleii/Cargo.toml | head -n1)
+          if [ -z "$version" ]; then
+            echo "::error::no version in sofleii/Cargo.toml"
+            exit 1
+          fi
+          echo "Cargo.toml version: $version"
+          if [ "$EVENT" = push ]; then
+            tag_version=${REF_NAME#sofleii-v}
+            if [ "$tag_version" != "$version" ]; then
+              echo "::error::tag $REF_NAME doesn't match sofleii/Cargo.toml version $version"
+              exit 1
+            fi
+            if ! git merge-base --is-ancestor "$GITHUB_SHA" origin/main; then
+              echo "::error::tag $REF_NAME ($GITHUB_SHA) is not on main"
+              exit 1
+            fi
+          else
+            echo "Dry run (workflow_dispatch): no tag check, no release."
+          fi
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+
+  build:
+    needs: version
+    strategy:
+      fail-fast: true
+      matrix:
+        include:
+          - target: x86_64-unknown-linux-gnu
+            runner: ubuntu-24.04
+          # Native arm64 runner: no cross toolchain, and the binary can be
+          # run as a smoke test.
+          - target: aarch64-unknown-linux-gnu
+            runner: ubuntu-24.04-arm
+    runs-on: ${{ matrix.runner }}
+    permissions:
+      contents: read
+      id-token: write
+      attestations: write
+    env:
+      VERSION: ${{ needs.version.outputs.version }}
+      TARGET: ${{ matrix.target }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Rust (latest stable)
+        run: |
+          rustup toolchain install stable --profile minimal --target "$TARGET"
+          rustup default stable
+          rustc --version
+
+      - name: protoc
+        run: |
+          sudo apt-get update -q
+          sudo apt-get install -y -q --no-install-recommends protobuf-compiler
+          protoc --version
+
+      # A release is built from scratch: no cache to restore anything from.
+      - name: build
+        working-directory: sofleii
+        run: cargo build --release --locked --target "$TARGET"
+
+      - name: smoke test
+        env:
+          DBUS_SYSTEM_BUS_ADDRESS: unix:path=/nonexistent/sofleii-ci
+        run: |
+          bin="sofleii/target/$TARGET/release/sofleii"
+          "$bin" --version
+          test "$("$bin" -V)" = "sofleii $VERSION"
+          file "$bin"
+
+      - name: package
+        run: |
+          SOURCE_DATE_EPOCH=$(git log -1 --format=%ct)
+          export SOURCE_DATE_EPOCH
+          .github/scripts/package-sofleii.sh "$VERSION" "$TARGET" \
+            "sofleii/target/$TARGET/release/sofleii" dist
+          cat dist/*.sha256
+
+      - name: attest
+        if: github.event_name == 'push'
+        uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
+        with:
+          subject-path: dist/sofleii-*.tar.gz
+
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: sofleii-${{ needs.version.outputs.version }}-${{ matrix.target }}
+          path: dist/
+          if-no-files-found: error
+
+  release:
+    needs: [version, build]
+    if: github.event_name == 'push'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          pattern: sofleii-*
+          path: dist
+          merge-multiple: true
+
+      # Notes: the annotated tag's message (write it with
+      # `git tag -a sofleii-vX.Y.Z -F notes.md`); a lightweight tag gets a
+      # short placeholder to edit on GitHub.
+      - name: create the release (not latest)
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ github.ref_name }}
+          VERSION: ${{ needs.version.outputs.version }}
+        run: |
+          git fetch --no-tags origin "+refs/tags/$TAG:refs/tags/$TAG"
+          ls -l dist
+          if [ "$(git cat-file -t "$TAG")" = tag ]; then
+            notes=(--notes-from-tag)
+          else
+            notes=(--notes "sofleii $VERSION. Install and verify: https://sofleii.dlu.one/docs/sofleii/")
+          fi
+          gh release create "$TAG" dist/*.tar.gz dist/*.sha256 \
+            --verify-tag \
+            --title "sofleii v$VERSION" \
+            --latest=false \
+            "${notes[@]}"
+          gh release view "$TAG" --json tagName,isPrerelease,assets \
+            --jq '{tag: .tagName, isPrerelease, assets: [.assets[].name]}'
+          latest=$(gh api "repos/$GITHUB_REPOSITORY/releases/latest" --jq .tag_name)
+          echo "GitHub's latest release: $latest"
+          if [ "$latest" = "$TAG" ]; then
+            echo "::error::$TAG became the latest release; mark the firmware release as latest again"
+            exit 1
+          fi

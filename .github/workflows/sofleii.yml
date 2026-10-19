@@ -1,0 +1,84 @@
+name: sofleii
+
+# The sofleii crate (sofleii/): rustfmt, clippy -D warnings and the tests,
+# on the latest stable Rust (the crate's rust-version is the floor; cargo
+# refuses an older toolchain). No hardware, D-Bus or network needed: the
+# tests run on mocks, and the one live test is #[ignore]d.
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'sofleii/**'
+      - '.github/workflows/sofleii.yml'
+  pull_request:
+    paths:
+      - 'sofleii/**'
+      - '.github/workflows/sofleii.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: sofleii-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: sofleii
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Rust (latest stable)
+        run: |
+          rustup toolchain install stable --profile minimal --component clippy,rustfmt
+          rustup default stable
+          rustc --version
+          cargo --version
+
+      # prost-build runs protoc at build time; the distro's is enough for
+      # the vendored proto3 files.
+      - name: protoc
+        run: |
+          sudo apt-get update -q
+          sudo apt-get install -y -q --no-install-recommends protobuf-compiler
+          protoc --version
+
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+        with:
+          workspaces: sofleii -> target
+
+      - name: rustfmt
+        run: cargo fmt --check
+
+      - name: clippy
+        run: cargo clippy --locked --all-targets -- -D warnings
+
+      - name: tests
+        run: cargo test --locked
+
+      # The release profile (LTO, panic = abort) is what ships. Without
+      # BlueZ (no system bus at all here, so the result doesn't depend on
+      # the runner image) --version must run, and battery must answer "not
+      # found" (exit 2) rather than crash.
+      - name: release build runs without BlueZ
+        env:
+          DBUS_SYSTEM_BUS_ADDRESS: unix:path=/nonexistent/sofleii-ci
+        run: |
+          cargo build --release --locked
+          ./target/release/sofleii --version
+          set +e
+          ./target/release/sofleii battery --json
+          code=$?
+          set -e
+          echo "battery exit code: $code"
+          test "$code" -eq 2
+          ls -l target/release/sofleii
