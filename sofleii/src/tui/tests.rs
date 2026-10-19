@@ -105,7 +105,7 @@ fn status(at: SystemTime, priority: &'static str, connected: bool) -> Event {
                 active: true,
                 connected,
                 bonded: true,
-                address: Some("DD:1F:23:76:6E:71".into()),
+                address: Some("00:11:22:33:44:55".into()),
                 name: None,
             }],
         }),
@@ -132,8 +132,8 @@ fn dashboard_80x24() {
         "│ Firmware   v3.1.0 (f9a665f) · up to date with v3.1.0          checked 2m ago │",
         "│ Split      connected                                                         │",
         "├─ Profiles ───────────────────────────────────────────────────────────────────┤",
-        "│ ▶ 0  desk     DD:1F:23:76:6E:71   active · connected · bonded                │",
-        "│   1  laptop   C8:3A:35:10:22:9E   bonded                                     │",
+        "│ ▶ 0  desk     00:11:22:33:44:55   active · connected · bonded                │",
+        "│   1  laptop   00:11:22:33:44:66   bonded                                     │",
         "│   2  —                            empty                                      │",
         "│   3  —                            empty                                      │",
         "│   4  —                            empty                                      │",
@@ -485,13 +485,13 @@ fn update_states() {
 fn usb_on_the_right_half_only_charges() {
     let mut app = empty();
     app.apply(
-        &Event::Link(via(TransportKind::Ble, "DD:1F:23:76:6E:71")),
+        &Event::Link(via(TransportKind::Ble, "00:11:22:33:44:55")),
         t0(),
     );
     app.apply(&status(t0(), "usb", true), t0());
     let s = screen(&app, 80, 24);
     assert!(
-        s[0].ends_with(" ● ble DD:1F:23:76:6E:71 (auto) ─┐"),
+        s[0].ends_with(" ● ble 00:11:22:33:44:55 (auto) ─┐"),
         "{}",
         s[0]
     );

@@ -1,16 +1,26 @@
 # sofleii
 
-**Sofle Interactive Interface**: a command-line tool and a ratatui TUI (a
-live, read-only dashboard so far) that talk to the Eyelash Sofle over the **ZMK Studio RPC**
-protocol, the same protocol the Studio web app uses, without a browser.
-Design and roadmap: [#44](https://github.com/rdlu/sofleii/issues/44).
+**Sofle Interactive Interface**: a command-line tool and a ratatui TUI that
+talk to the Eyelash Sofle over the **ZMK Studio RPC** protocol, the same
+protocol the Studio web app uses, without a browser. Design and roadmap:
+[#44](https://github.com/rdlu/sofleii/issues/44).
 
-Status: **spike.** Studio RPC over USB serial (left half) or BLE GATT
-through BlueZ; batteries over BLE GATT; update checks over the GitHub REST
-API; reads, plus the profile and output-priority writes (not yet tested
-against a keyboard, see [Writes](#writes)).
+**User docs live on the site: [sofleii.dlu.one/docs/sofleii](https://sofleii.dlu.one/docs/sofleii/)**
+(source: `site/content/docs/sofleii.md`): installing and running, the TUI
+and its keys, every command with an example, the `--json` contract, the
+exit codes, the waybar modules, the transport gotchas and the write safety
+rules. This README is for working on the crate: the layout, how each piece
+works, the full JSON field reference, testing and the vendored protos.
 
-## Build and run
+Status: **pre-release** (`0.1.0`, not tagged yet; release work in
+[#83](https://github.com/rdlu/sofleii/issues/83)). Studio RPC over USB
+serial (left half) or BLE GATT through BlueZ; batteries over BLE GATT;
+update checks over the GitHub REST API; the reads and the profile and
+output-priority writes (confirmed against the keyboard on 2026-10-19); a
+live, read-only TUI dashboard. TUI actions (switch profile, output) are in
+progress.
+
+## Build, run and test
 
 Needs Rust (edition 2024, 1.99+) and `protoc`, both from pacman
 (`rust`, `protobuf`). Dependencies follow their latest stable releases and
@@ -18,62 +28,85 @@ Needs Rust (edition 2024, 1.99+) and `protoc`, both from pacman
 the repo root:
 
 ```bash
-mise run sofleii -- status          # build (release) and run
+mise run sofleii                    # build (release) and open the TUI
+mise run sofleii -- status          # any subcommand after --
 mise run sofleii -- profiles --json
 mise run sofleii-test               # cargo test + clippy -D warnings + fmt --check
+mise run tui-screenshots            # regenerate the docs' TUI screenshots
 ```
 
 Or directly: `cd sofleii && cargo run -- info`.
 
-`battery` and the BLE transport talk to BlueZ through `zbus` 6 (pure Rust,
-each call run with `zbus::block_on` on zbus's own runtime): no libdbus, no
-tokio, nothing extra to install beyond a running `bluetooth.service`.
+- **No hardware needed for the tests.** The transports, BlueZ and GitHub
+  sit behind traits with fakes (`transport/mock.rs`, a fake BlueZ tree,
+  canned GitHub JSON, `session/fake.rs`); the TUI renders to ratatui's
+  `TestBackend`. `tests/session_live.rs` is `#[ignore]`d and runs a
+  read-only session against the real keyboard
+  (`cargo test --test session_live -- --ignored --nocapture`). Only send
+  read requests to the owner's keyboard unless asked.
+- **Screenshots** for the site and the root README come from the demo
+  fixture, never the live keyboard: `SOFLEII_TUI_DEMO=1 sofleii` shows
+  `tui::snapshot::demo` (fake addresses, no session).
+  `scripts/tui-screenshot.py` (stdlib Python + tmux) runs it at 80x24,
+  captures the pane with its ANSI colours, opens the help, and writes
+  `site/static/img/sofleii/tui-{dashboard,help}.svg`. Rerun
+  `mise run tui-screenshots` after any visible TUI change.
+- `battery` and the BLE transport talk to BlueZ through `zbus` 6 (pure
+  Rust, each call run with `zbus::block_on` on zbus's own runtime): no
+  libdbus, no tokio, nothing extra to install beyond a running
+  `bluetooth.service`.
+- Over USB the keyboard is found by its USB product string `Eyelash Sofle`
+  (the VID/PID is shared by every ZMK board, and the `/dev/ttyACM*` number
+  is not stable).
 
-Over USB the keyboard is found by its USB product string `Eyelash Sofle` (the
-VID/PID is shared by every ZMK board, and the `/dev/ttyACM*` number is not
-stable). `--device /dev/ttyACMn` overrides the lookup. Your user needs access
-to the port (the `uucp` group on Arch). Over BLE, see
-[Transports](#transports).
-
-## Commands
-
-| Command | What it reads |
-|---|---|
-| `sofleii status [--json] [--format waybar]` | One-shot summary: transport, device, Studio lock, active BLE profile (connected, bonded, address, name), output priority, the split link, both batteries. Built from `get_device_info`, `get_lock_state` and `cormoran_ble` `get_profiles` + `get_output_priority` (`get_profiles` doesn't carry the priority) + `get_split_info`, plus the `battery` reader with a 1 s timeout. See [JSON](#json) for `split`. |
-| `sofleii battery [--json] [--format waybar] [--warn-below <pct>] [--critical-below <pct>]` | Both halves' levels over BLE GATT (BlueZ, system D-Bus), not Studio RPC. See [Battery](#battery). |
-| `sofleii info [--json]` | `core.get_device_info` (name, serial number), Studio lock state, `custom.list_custom_subsystems`, and the firmware build from the `zmk__device_info` subsystem (#46, looked up by identifier): versions, config commit + dirty flag, build time, board, build hash, hardware id and reset cause. See [`info`](#info). |
-| `sofleii profiles [--json]` | `cormoran_ble.get_profiles` and `get_output_priority` (the subsystem index is looked up by identifier, never hardcoded). |
-| `sofleii profile switch <n> [--json]` | **Write.** `cormoran_ble.switch_profile`, then `get_profiles` to read the active profile back. See [Writes](#writes). |
-| `sofleii profile rename <n> <name> [--json]` | **Write.** `set_profile_name` on a bonded slot (at most 31 UTF-8 bytes; `""` clears the name), read back. |
-| `sofleii profile unpair <n> [--yes] [--json]` | **Write, destructive.** `unpair_profile`: removes the slot's bond. Asks first unless `--yes`. |
-| `sofleii output usb\|ble [--json]` | **Write.** `set_output_priority`, read back with `get_output_priority`, over the other transport if Studio moved there. |
-| `sofleii update check [--json] [--repo OWNER/NAME]` | The running build (`zmk_config_version` from `zmk__device_info`) against the latest GitHub release of `--repo` (default `rdlu/sofleii`), shown as release versions (`v3.1.0`, `v3.0.0+68`): up to date, behind (update available), ahead, or unknown. See [`update check`](#update-check). |
-
-Global options: `--transport auto|usb|ble` (default `auto`, see
-[Transports](#transports)), `--device <path>` (serial port for Studio RPC;
-implies USB), `--bt-address <MAC>` (BLE device instead of the BlueZ device
-named `Eyelash Sofle`, for the batteries and Studio RPC; implies BLE),
-`--timeout <ms>` per response (default 3000), `--format
-human|json|waybar` (default `human`; `--json` is the same as `--format json`;
-`waybar` is `status` and `battery` only, a usage error elsewhere). With no
-subcommand, sofleii opens the [TUI](#tui) when stdout is a terminal
-and prints usage (exit 0) when it isn't; `--json`/`--format` without a
-subcommand is a usage error (exit 3).
+## Layout
 
 ```
-$ sofleii status
-Eyelash Sofle
-transport       usb /dev/ttyACM1
-output          usb (priority usb)
-ble profile     0 connected 84:9E:56:52:6A:D2
-bonded slots    1 of 5
-studio          unlocked
-split link      connected
-battery         left 100%, right 71%
+src/
+  proto.rs       prost-generated messages (build.rs, from proto/)
+  framing.rs     SOF 0xAB / ESC 0xAC / EOF 0xAD, streaming decoder
+  transport/     Transport trait (Send) and `auto` selection (mod.rs); serial.rs (USB, discovery,
+                 busy-port retry); ble.rs (BlueZ GATT: Studio service choice, AcquireNotify/StartNotify,
+                 WriteValue); mock.rs (tests)
+  client/        request ids (random first id per process), response matching, notifications set
+                 aside, is_dead (link lost vs deaf); rpc.rs = pure request builders
+  commands/      status, info, profiles (status reuses profiles::fetch and split::fetch), split
+                 (get_split_info; empty reply = unknown), battery (Gatt trait,
+                 half identification; tested with a fake BlueZ tree), update (Http trait, version
+                 parsing, compare; tested with canned GitHub JSON); the writes profile and output,
+                 sharing handover (the expected silence, the read-back over the other transport):
+                 plain data, never print or prompt, no UI code
+  connect.rs     opening the link without clap types: Config, the `auto` plan with the 1 s USB probe
+                 and BLE fallback, Connector (remembers the plan between connects; invalidate),
+                 open_other (handover read-back), ble_connected, read_battery
+  error.rs       Error, the exit codes, ErrorView (Clone + Serialize: kind, message, exit_code)
+  gatt.rs        BlueZ's object tree as plain data, and the keyboard lookup (battery + BLE)
+  bluez.rs       system D-Bus (zbus + block_on; no tokio, no libdbus): the Gatt trait, the tree
+  github.rs      GitHub REST API over ureq (blocking, rustls): the Http trait
+  output.rs      human, JSON and waybar rendering
+  logger.rs      the CLI's stderr logger for core `log` records
+  session/       the long-running core the TUI (and a later GUI) runs on, no UI code: mod.rs
+                 (Request/Event/Risk, SessionHandle); link.rs (the RPC thread: lease, polling,
+                 deaf/lost handling, the write actions through commands/); watch.rs (batteries and
+                 presence over BlueZ and sysfs); jobs.rs (update check + its cache); state.rs
+                 (Snapshot, the pure reducer); fake.rs + tests.rs (a fake keyboard, no hardware)
+  tui/           the TUI: the session, input thread and event loop, terminal restore, signals
+                 (mod.rs); snapshot.rs (the view derived from session::Snapshot, demo fixture);
+                 view.rs (rendering); log_pane.rs (the TUI's logger); tests.rs (TestBackend renders
+                 from scripted events, keys, the loop against a fake session). Nothing in
+                 transport/, client/, commands/ or session/ depends on it
+  main.rs        clap CLI, exit codes, the unpair confirmation; no subcommand on a TTY opens the TUI
+proto/           vendored .proto files (see proto/README.md for sources and licenses)
+tests/golden.rs  request bytes captured from the v3.0.0 firmware, plus the zmk__device_info call and
+                 the cormoran_ble write payloads (worked out from the proto; confirmed by the 2026-10-19 live test)
+tests/cli.rs     exit codes and error output with no keyboard (not found, usage; no network)
+tests/layering.rs  no eprintln! outside main.rs; transport/, client/, commands/, session/ never name the TUI
+tests/session_live.rs  #[ignore]d: a read-only session against the keyboard, printing its events for 10 s
 ```
 
-When BLE isn't available, the battery row reads `left -, right -
-(unavailable: …)` with the reason, and `status` still exits 0.
+## `status` details
+
+How the human `status` rows (and the TUI summary) are derived:
 
 `split link` comes from `cormoran_ble`'s `get_split_info`: `connected`,
 `disconnected (right half off or out of range)`, or `unknown (firmware
@@ -100,26 +133,10 @@ USB (ZMK's `ZMK_USB` needs `!ZMK_SPLIT || ZMK_SPLIT_ROLE_CENTRAL`), so a cable
 in the right half looks like no USB at all. The JSON keeps the plain
 `output_priority`.
 
-## TUI
+## TUI internals
 
-`sofleii` with no subcommand, on a terminal (`mise run sofleii`), live over
-USB:
-
-```
-┌─ sofleii · Eyelash Sofle ──────────────────────── ● usb /dev/ttyACM0 (auto) ─┐
-│ Transport  USB /dev/ttyACM0 (auto)           Output     USB  (priority usb)  │
-│ Profile    0  connected                      Studio     unlocked             │
-│ Battery    L ██████████ 100%   R ███████░░░  71%                 read 5s ago │
-│ Firmware   v3.1.0 (2474a13) · up to date with v3.1.0          checked 5s ago │
-│ Split      connected                                                         │
-├─ Profiles ───────────────────────────────────────────────────────────────────┤
-│ ▶ 0  —        84:9E:56:52:6A:D2   active · connected · bonded                │
-│   1  —                            empty                                      │
-│   2  —                            empty                                      │
-├─ Log (info) ─────────────────────────────────────────────────────────────────┤
-│ 19:07:50 connected over usb /dev/ttyACM0 (auto)                              │
-└ q quit · r refresh · u update check · ↑↓/jk select · d debug · ? help ───────┘
-```
+What the user sees (the screenshot, the keys, the link states) is on the
+[site](https://sofleii.dlu.one/docs/sofleii/#the-tui). How it works:
 
 - **Live, read-only.** The TUI runs the core's session (`src/session/`)
   with the global `--transport`, `--device`, `--bt-address` and `--timeout`
@@ -146,12 +163,9 @@ USB:
   once with `(×N)`. It shows info and up by default (`Log (info)`); `d`
   toggles the debug lines (`Log (debug)`). The CLI prints the same core records as
   `sofleii: warning: …` on stderr.
-- **Keys:** `r` refreshes everything now, `u` checks for a firmware update
-  now (past the cache), `↑↓`/`jk` select a profile, `d` debug lines in the
-  log on/off, `?` help, `q`, `Esc` or
-  `Ctrl-C` quit (`Esc` closes the help first). Switching profile (`⏎`) and
-  output (`o`) are in the help as coming soon. Quitting is instant: no
-  thread is joined.
+- **Keys** are listed on the site and in `?`. `⏎` (switch profile) and `o`
+  (output) show there as coming soon. Quitting is instant: no thread is
+  joined.
 - **Split** is polled with the profiles: `connected`, `disconnected (right
   half off or out of range)` or `unknown (firmware without the split-info
   fix)` (shorter below 70 columns). While it's disconnected the battery row
@@ -195,7 +209,7 @@ so two sofleii processes on the same BLE link don't take each other's
 replies.
 
 JSON `transport` is `{"kind": "usb", "device": "/dev/ttyACM1"}` or
-`{"kind": "ble", "address": "DD:1F:23:76:6E:71"}` (the BLE shape is new,
+`{"kind": "ble", "address": "00:11:22:33:44:99"}` (the BLE shape is new,
 so no schema bump).
 
 ### BLE requirements (Linux/BlueZ)
@@ -262,7 +276,7 @@ terminal, and never with `--json` or `NO_COLOR`.
   "output_priority": "usb",
   "profiles": [
     { "index": 0, "active": true, "connected": true, "bonded": true,
-      "address": "84:9E:56:52:6A:D2", "name": null },
+      "address": "00:11:22:33:44:55", "name": null },
     { "index": 1, "active": false, "connected": false, "bonded": false,
       "address": null, "name": null }
   ]
@@ -275,14 +289,14 @@ terminal, and never with `--json` or `NO_COLOR`.
 {
   "schema": 1,
   "transport": { "kind": "usb", "device": "/dev/ttyACM1" },
-  "device": { "name": "Eyelash Sofle", "serial_number": "94708422E5F2FD3E" },
+  "device": { "name": "Eyelash Sofle", "serial_number": "0011223344556677" },
   "studio": { "locked": false },
   "output_priority": "usb",
   "max_profiles": 5,
   "bonded_profiles": 1,
   "active_profile": 0,
   "profile": { "index": 0, "active": true, "connected": true, "bonded": true,
-               "address": "84:9E:56:52:6A:D2", "name": null },
+               "address": "00:11:22:33:44:55", "name": null },
   "split": { "known": true, "connected": true, "is_split": true,
              "is_central": true },
   "split_note": null,
@@ -324,7 +338,7 @@ lists):
 $ sofleii info
 Eyelash Sofle
 transport       usb /dev/ttyACM1
-serial number   94708422E5F2FD3E
+serial number   0011223344556677
 studio          unlocked
 firmware        v3.0.0-65-g1e468b7
 zmk             v0.3-198-ge5c9b691
@@ -332,7 +346,7 @@ zephyr          4.1.0
 board           nice_nano
 built           2026-10-17T20:50:06Z
 build hash      1e37f75107aeb7993596e9d27b668701ed790839
-device id       94708422e5f2fd3e
+device id       0011223344556677
 reset cause     pin (0x1)
 subsystems
    0  cormoran_ble
@@ -344,7 +358,7 @@ subsystems
 {
   "schema": 1,
   "transport": { "kind": "usb", "device": "/dev/ttyACM1" },
-  "device": { "name": "Eyelash Sofle", "serial_number": "94708422E5F2FD3E" },
+  "device": { "name": "Eyelash Sofle", "serial_number": "0011223344556677" },
   "build": {
     "available": true, "note": null,
     "zmk_version": "v0.3-198-ge5c9b691", "zmk_dirty": false,
@@ -354,7 +368,7 @@ subsystems
     "board": "nice_nano",
     "build_hash": "1e37f75107aeb7993596e9d27b668701ed790839"
   },
-  "hardware": { "device_id": "94708422e5f2fd3e", "reset_cause": 1,
+  "hardware": { "device_id": "0011223344556677", "reset_cause": 1,
                 "reset_causes": ["pin"], "flash_size_kb": 1024,
                 "sram_size_kb": 256 },
   "studio": { "locked": false },
@@ -392,7 +406,7 @@ Real output from a v3.0.0 left half (2026-10-17):
 $ sofleii info
 Eyelash Sofle
 transport       usb /dev/ttyACM1
-serial number   94708422E5F2FD3E
+serial number   0011223344556677
 studio          unlocked
 build           unavailable: this firmware has no zmk__device_info subsystem (built before #46); flash a newer build
 subsystems
@@ -621,7 +635,7 @@ note: no reply over usb (expected: the firmware hands Studio over to ble before 
   "previous_active_profile": 0,
   "active_profile": 1,
   "slot": { "index": 1, "active": true, "connected": false, "bonded": true,
-            "address": "AA:BB:CC:DD:EE:FF", "name": null },
+            "address": "00:11:22:33:44:66", "name": null },
   "studio_transport": "usb",
   "note": null
 }
@@ -670,7 +684,7 @@ right 76%
 {
   "schema": 1,
   "source": "bluez",
-  "device": { "name": "Eyelash Sofle", "address": "DD:1F:23:76:6E:71" },
+  "device": { "name": "Eyelash Sofle", "address": "00:11:22:33:44:99" },
   "left": { "percent": 100, "state": null },
   "right": { "percent": 76, "state": null },
   "note": null
@@ -702,81 +716,31 @@ right 76%
   neither level could be read.
 - `--timeout` bounds each D-Bus call (default 3000 ms).
 
-### waybar
-
-`sofleii battery --format waybar`:
-
-```json
-{"text":"󰌌 L 100 R 76","tooltip":"Eyelash Sofle\nleft: 100%\nright: 76%\nsource: BlueZ GATT DD:1F:23:76:6E:71","class":"ok","alt":"ok","percentage":76}
-```
-
-- `text`: `󰌌` (nf-md-keyboard, U+F030C), then `L <left> R <right>`, `-` for an
-  unknown half. Not found: `󰌐` (nf-md-keyboard_off, U+F0310).
-- `class` / `alt`, by the **lower** known half: `critical` below
-  `--critical-below` (default 10), `warning` below `--warn-below` (default
-  20), else `ok`; `unknown` if neither half could be read; `disconnected`
-  when the keyboard isn't found or the read failed.
-- `percentage`: the lower half, for `format-icons`.
-- Not found **still prints valid JSON** and exits 2, as `status` does. In
-  waybar mode `--warn-below` only moves the `warning` threshold and never
-  exits 1, so a low battery doesn't look like a failed script to the bar.
-
-```jsonc
-"custom/sofleii-battery": {
-  "exec": "sofleii battery --format waybar",
-  "return-type": "json",
-  "interval": 300,
-  "format": "{}",
-  "tooltip": true
-}
-```
-
-```css
-#custom-sofleii-battery.warning { color: #ebcb8b; }
-#custom-sofleii-battery.critical { color: #bf616a; }
-#custom-sofleii-battery.disconnected { opacity: 0.5; }
-```
-
-For a check in a script: `sofleii battery --warn-below 20 || notify-send
-"Sofle battery low"` (exit 1 low, 2 not connected).
 
 ## waybar
 
-`sofleii status --format waybar` prints one line of waybar custom-module
-JSON:
+The module config and the classes are on the
+[site](https://sofleii.dlu.one/docs/sofleii/#waybar). The output, for tests
+and parsers:
 
 ```json
 {"text":"󰕓 0","tooltip":"Eyelash Sofle\ntransport: usb /dev/ttyACM1\noutput: usb (priority usb)\n…","class":"usb","alt":"usb"}
+{"text":"󰌌 L 100 R 76","tooltip":"Eyelash Sofle\nleft: 100%\nright: 76%\nsource: BlueZ GATT 00:11:22:33:44:99","class":"ok","alt":"ok","percentage":76}
 ```
 
-- `text`: an output glyph plus the active profile index (0-based, as in
-  `profiles` and `&bt BT_SEL n`). The glyphs are Nerd Font Material Design
-  icons: `󰕓` nf-md-usb (U+F0553), `󰂯` nf-md-bluetooth (U+F00AF), `󰂲`
-  nf-md-bluetooth_off (U+F00B2). To use other icons, format with `{alt}` and
-  `format-icons` instead of `{}`.
-- `tooltip`: the `status` summary as `label: value` lines.
-- `class` and `alt`: `usb`, `ble` or `disconnected`, from the `output` rule
-  above (over BLE, a connected active profile is `ble`).
-- **Errors still print valid JSON** with class `disconnected` (and the error
-  in the tooltip), and the exit code still says what happened: 2 when the
-  keyboard isn't found, 4 on a transport error. The bar keeps rendering.
-
-```jsonc
-"custom/sofleii": {
-  "exec": "sofleii status --format waybar",
-  "return-type": "json",
-  "interval": 30,
-  "format": "{}",
-  // the TUI (a live, read-only dashboard for now)
-  "on-click": "foot -e sofleii",
-  "tooltip": true
-}
-```
-
-```css
-#custom-sofleii.disconnected { opacity: 0.5; }
-#custom-sofleii.ble { color: #5e81ac; }
-```
+- `status`: an output glyph plus the active profile index. Nerd Font
+  Material Design icons: `󰕓` nf-md-usb (U+F0553), `󰂯` nf-md-bluetooth
+  (U+F00AF), `󰂲` nf-md-bluetooth_off (U+F00B2). `class`/`alt` follow the
+  `output` rule in [`status` details](#status-details).
+- `battery`: `󰌌` nf-md-keyboard (U+F030C), `-` for an unknown half; not
+  found is `󰌐` nf-md-keyboard_off (U+F0310). `class` by the **lower** known
+  half: `critical` below `--critical-below` (10), `warning` below
+  `--warn-below` (20), else `ok`; `unknown` if neither half was read;
+  `disconnected` when not found or the read failed. `percentage` is the
+  lower half.
+- Errors still print valid JSON (class `disconnected`, the error in the
+  tooltip) with the real exit code; in waybar mode `--warn-below` never
+  exits 1.
 
 ## Exit codes
 
@@ -788,50 +752,14 @@ JSON:
 | 3 | Usage error (bad flag; `--device`/`--bt-address`/`--transport` contradicting each other; a profile out of range; a rename too long or on an empty slot; `unpair` without a terminal or `--yes`, or not confirmed) |
 | 4 | Transport or protocol error: a busy serial port (another sofleii has it), timeout (over BLE, usually USB being the selected output; not after an [endpoint handover](#endpoint-handover)), bad frame, RPC error (including a failing `zmk__device_info` call, and a write's `error` or `success: false` reply), D-Bus/GATT error, GitHub API failure (`update check`). A firmware *without* `zmk__device_info` is not an error for `info` (exit 0, `build.available: false`), but is for `update check` |
 
-## Layout
+## Protos
 
-```
-src/
-  proto.rs       prost-generated messages (build.rs, from proto/)
-  framing.rs     SOF 0xAB / ESC 0xAC / EOF 0xAD, streaming decoder
-  transport/     Transport trait (Send) and `auto` selection (mod.rs); serial.rs (USB, discovery,
-                 busy-port retry); ble.rs (BlueZ GATT: Studio service choice, AcquireNotify/StartNotify,
-                 WriteValue); mock.rs (tests)
-  client/        request ids (random first id per process), response matching, notifications set
-                 aside, is_dead (link lost vs deaf); rpc.rs = pure request builders
-  commands/      status, info, profiles (status reuses profiles::fetch and split::fetch), split
-                 (get_split_info; empty reply = unknown), battery (Gatt trait,
-                 half identification; tested with a fake BlueZ tree), update (Http trait, version
-                 parsing, compare; tested with canned GitHub JSON); the writes profile and output,
-                 sharing handover (the expected silence, the read-back over the other transport):
-                 plain data, never print or prompt, no UI code
-  connect.rs     opening the link without clap types: Config, the `auto` plan with the 1 s USB probe
-                 and BLE fallback, Connector (remembers the plan between connects; invalidate),
-                 open_other (handover read-back), ble_connected, read_battery
-  error.rs       Error, the exit codes, ErrorView (Clone + Serialize: kind, message, exit_code)
-  gatt.rs        BlueZ's object tree as plain data, and the keyboard lookup (battery + BLE)
-  bluez.rs       system D-Bus (zbus + block_on; no tokio, no libdbus): the Gatt trait, the tree
-  github.rs      GitHub REST API over ureq (blocking, rustls): the Http trait
-  output.rs      human, JSON and waybar rendering
-  logger.rs      the CLI's stderr logger for core `log` records
-  session/       the long-running core the TUI (and a later GUI) runs on, no UI code: mod.rs
-                 (Request/Event/Risk, SessionHandle); link.rs (the RPC thread: lease, polling,
-                 deaf/lost handling, the write actions through commands/); watch.rs (batteries and
-                 presence over BlueZ and sysfs); jobs.rs (update check + its cache); state.rs
-                 (Snapshot, the pure reducer); fake.rs + tests.rs (a fake keyboard, no hardware)
-  tui/           the TUI: the session, input thread and event loop, terminal restore, signals
-                 (mod.rs); snapshot.rs (the view derived from session::Snapshot, demo fixture);
-                 view.rs (rendering); log_pane.rs (the TUI's logger); tests.rs (TestBackend renders
-                 from scripted events, keys, the loop against a fake session). Nothing in
-                 transport/, client/, commands/ or session/ depends on it
-  main.rs        clap CLI, exit codes, the unpair confirmation; no subcommand on a TTY opens the TUI
-proto/           vendored .proto files (see proto/README.md for sources and licenses)
-tests/golden.rs  request bytes captured from the v3.0.0 firmware, plus the zmk__device_info call and
-                 the cormoran_ble write payloads (worked out from the proto; confirmed by the 2026-10-19 live test)
-tests/cli.rs     exit codes and error output with no keyboard (not found, usage; no network)
-tests/layering.rs  no eprintln! outside main.rs; transport/, client/, commands/, session/ never name the TUI
-tests/session_live.rs  #[ignore]d: a read-only session against the keyboard, printing its events for 10 s
-```
+The `.proto` files in `proto/` are vendored and must match the firmware's
+pins: bump them when `config/west.yml` moves `zmk` (its
+`zmk-studio-messages` import), `zmk-module-ble-management` or
+`zmk-feature-device-info`. `proto/README.md` lists the source commits and
+licenses. (The directory isn't `proto/zmk/` like upstream because the
+repo's unanchored `zmk/` ignore rule would swallow it.)
 
 License: MIT (see the repository's `LICENSE`). The vendored protos keep
 their own MIT licenses, listed in `proto/README.md`.

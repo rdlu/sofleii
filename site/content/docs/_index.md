@@ -1,6 +1,6 @@
 ---
 title: Docs
-description: sofleii (Sofle Interactive Interface) - the Eyelash Sofle ZMK firmware docs (flashing, pairing, Studio, gaming mode, underglow, building, the keymap reference) and the planned sofleii CLI/TUI.
+description: sofleii (Sofle Interactive Interface) - the Eyelash Sofle ZMK firmware docs (flashing, pairing, Studio, gaming mode, underglow, building, the keymap reference) and the sofleii CLI/TUI.
 ---
 
 sofleii, the Sofle Interactive Interface, is everything in
@@ -26,5 +26,5 @@ live, what every layer does, and what the [sofleii tool](sofleii/) will do.
   {{< card link="/docs/building/" title="Building locally" subtitle="The west workspace, doctor, and the build tasks." icon="terminal" >}}
   {{< card link="/docs/reference/firmware/" title="Firmware" subtitle="Pins, modules, Kconfig and the memory budget." icon="chip" >}}
   {{< card link="/docs/reference/troubleshooting/" title="Troubleshooting" subtitle="When a flash or a build doesn't do what it should." icon="support" >}}
-  {{< card link="/docs/sofleii/" title="sofleii CLI/TUI (planned)" subtitle="Status, profiles, battery and the flash routines, from a terminal." icon="terminal" >}}
+  {{< card link="/docs/sofleii/" title="sofleii CLI/TUI" subtitle="A live dashboard, profiles, batteries and update checks, from a terminal or a script." icon="terminal" >}}
 {{< /cards >}}

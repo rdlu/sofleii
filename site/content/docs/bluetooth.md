@@ -32,7 +32,7 @@ Passkey entry is off, so pairing doesn't ask you to type a code.
 
 The `ble-management` module also exposes the profile list over Studio RPC:
 list, switch, rename and unpair profiles, and set the output priority. That is
-the interface the planned [sofleii CLI/TUI](../sofleii/) will use.
+the interface the [sofleii CLI/TUI](../sofleii/) uses.
 
 ## Re-pairing the halves
 
