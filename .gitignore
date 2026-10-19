@@ -13,6 +13,7 @@ tools/
 # cormoran custom-RPC modules (west-cloned into repo root)
 zmk-behavior-runtime-sensor-rotate/
 zmk-module-ble-management/
+zmk-feature-device-info/
 
 # Claude Code local machine settings (skills in .claude/commands/ remain tracked)
 .claude/settings.local.json

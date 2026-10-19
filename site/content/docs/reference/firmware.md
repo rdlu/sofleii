@@ -1,7 +1,7 @@
 ---
 title: Firmware
 description: What the Eyelash Sofle firmware is built from - ZMK main via cormoran's main+dya fork, Zephyr 4.1, the pinned west dependencies, the modules, the build matrix, notable Kconfig, and the flash and RAM budget.
-keywords: [ZMK, Zephyr 4.1, west.yml, pins, cormoran, main+dya, ble-management, runtime-sensor-rotate, zmk-rgb-layer, Kconfig, memory budget, nice_nano//zmk]
+keywords: [ZMK, Zephyr 4.1, west.yml, pins, cormoran, main+dya, ble-management, runtime-sensor-rotate, device-info, zmk-rgb-layer, Kconfig, memory budget, nice_nano//zmk]
 weight: 14
 ---
 
@@ -40,10 +40,21 @@ changes the Zephyr entry in ZMK's manifest, mirror it in `config/west.yml`.
 | --- | --- | --- |
 | `zmk-module-ble-management` | west, left half | BLE profile list, switch, rename and unpair, and output priority, over Studio RPC |
 | `zmk-behavior-runtime-sensor-rotate` | west, left half | the encoder behavior (`rsr_vol`), editable live in Studio |
+| `zmk-feature-device-info` | west, left half | build and version info over Studio RPC (subsystem `zmk__device_info`), read by `sofleii info` |
 | `zmk-rgb-layer` | in-repo (`zmk-rgb-layer/`) | per-layer underglow, moods, brightness; see [Underglow](../../underglow/) |
 
 The Studio and RPC settings are central-only and live in the left shield's
 `eyelash_sofle_left.conf`, not in the shared `config/eyelash_sofle.conf`.
+
+`zmk-feature-device-info` reports which build the keyboard runs. Its
+`zmk_config_version` is `git describe --dirty --always --tags` of this repo,
+taken when the build is configured: a local build gives something like
+`v3.0.0-65-g1e468b7` (with `-dirty` if the tree had uncommitted changes), and a
+CI build gives the bare short hash of the pushed commit, because the CI
+checkout is shallow and has no tags. For CI to read the repo at all, the left
+build loads `config/ci-git-safe-directory.cmake`, which marks the workspace as a
+git safe directory (the build runs as root on a checkout the runner owns).
+Reads don't need a Studio unlock.
 
 ## Build matrix
 
@@ -77,21 +88,26 @@ From `config/eyelash_sofle.conf`:
 ## Memory budget
 
 Left half: a **local build** (2026-10-17) with the peripheral battery proxy
-([#45](https://github.com/rdlu/sofleii/issues/45)), 468892 B of flash and
-126522 B of RAM, +928 B and +168 B over v3.0.0. Right half and settings
-reset: unchanged from v3.0.0, measured from CI run
+([#45](https://github.com/rdlu/sofleii/issues/45)) and device info
+([#46](https://github.com/rdlu/sofleii/issues/46)), 471288 B of flash and
+127122 B of RAM. Device info cost +2396 B and +600 B over the #45 build
+(468892 B / 126522 B), which was +928 B and +168 B over v3.0.0. Right half and
+settings reset: unchanged from v3.0.0, measured from CI run
 [39026110927](https://github.com/rdlu/sofleii/actions/runs/39026110927)
-(2026-10-17).
+(2026-10-17). Device info is off on the right (`CONFIG_ZMK_DEVICE_INFO` unset),
+so it adds nothing there: a local right build with the module in the workspace
+is 330840 B / 78952 B, the same RAM as CI and 96 B less flash (CI's longer
+source paths).
 
 | Build | Flash used | Flash free | RAM used | RAM free |
 | --- | ---: | ---: | ---: | ---: |
-| Left (Studio, nice!view; local build) | 458 KB / 792 KB (57.82%) | **334 KB** | 124 KB / 256 KB (48.26%) | **132 KB** |
+| Left (Studio, nice!view; local build) | 460 KB / 792 KB (58.11%) | **332 KB** | 124 KB / 256 KB (48.49%) | **132 KB** |
 | Right (nice!view) | 323 KB / 792 KB (40.8%) | **469 KB** | 77 KB / 256 KB (30.1%) | **179 KB** |
 | Settings reset | 51 KB / 792 KB (6.5%) | | 13 KB / 256 KB (4.9%) | |
 
 The left half is the tightest: Studio, both Studio transports (USB CDC-ACM
-and BLE GATT), the custom RPC modules, `zmk-rgb-layer` and the peripheral
-battery proxy (#45) are all on it. The
+and BLE GATT), the custom RPC modules, `zmk-rgb-layer`, the peripheral
+battery proxy (#45) and device info (#46) are all on it. The
 move from Zephyr 3.5 to 4.1 cost about 47 KB of flash and 14 KB of RAM on the
 left half, and 53 KB and 15 KB on the right, even after dropping three
 modules: that is the newer Zephyr and BLE stack. `zmk-rgb-layer` takes well

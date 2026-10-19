@@ -99,7 +99,7 @@ enum Command {
               value_parser = clap::value_parser!(u8).range(0..=100))]
         critical_below: u8,
     },
-    /// Device name, serial number, Studio lock state and custom RPC subsystems.
+    /// Device name, firmware build (versions, config commit, board, build time), Studio lock state and custom RPC subsystems.
     Info {
         /// Print the versioned JSON contract instead of text.
         #[arg(long)]

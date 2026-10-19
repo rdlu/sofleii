@@ -94,3 +94,33 @@ pub mod ble {
         }
     }
 }
+
+/// `zmk__device_info` (zmk-feature-device-info, #46) payloads.
+pub mod device_info {
+    use super::*;
+    use crate::proto::device_info as di;
+    use di::{request::RequestType, response::ResponseType};
+
+    /// The identifier is the C token passed to `ZMK_RPC_CUSTOM_SUBSYSTEM`,
+    /// stringified (note the double underscore).
+    pub const IDENTIFIER: &str = "zmk__device_info";
+
+    pub fn get_device_info() -> Vec<u8> {
+        di::Request {
+            request_type: Some(RequestType::GetDeviceInfo(di::GetDeviceInfoRequest {})),
+        }
+        .encode_to_vec()
+    }
+
+    /// Decodes a `zmk__device_info` response payload, turning its `error`
+    /// variant into [`Error::Rpc`].
+    pub fn decode(payload: &[u8]) -> Result<di::DeviceInfoResponse> {
+        let resp = di::Response::decode(payload)
+            .map_err(|e| Error::Protocol(format!("undecodable {IDENTIFIER} payload: {e}")))?;
+        match resp.response_type {
+            Some(ResponseType::DeviceInfo(d)) => Ok(d),
+            Some(ResponseType::Error(e)) => Err(Error::Rpc(format!("{IDENTIFIER}: {}", e.message))),
+            None => Err(Error::Protocol(format!("empty {IDENTIFIER} response"))),
+        }
+    }
+}

@@ -23,6 +23,9 @@ pub mod zmk {
     pub mod ble_management {
         include!(concat!(env!("OUT_DIR"), "/zmk.ble_management.rs"));
     }
+    pub mod device_info {
+        include!(concat!(env!("OUT_DIR"), "/zmk.device_info.rs"));
+    }
 }
 
 pub use zmk::*;

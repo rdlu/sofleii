@@ -40,3 +40,20 @@ fn framed_get_device_info() {
     let wire = framing::encode(&rpc::encode_request(1, rpc::get_device_info()));
     assert_eq!(wire, hex("ab 08 01 1a 02 08 01 ad"));
 }
+
+#[test]
+fn device_info_get_device_info_payload() {
+    // zmk.device_info.Request { get_device_info (1): {} }
+    assert_eq!(rpc::device_info::get_device_info(), hex("0a 00"));
+}
+
+#[test]
+fn device_info_call_on_subsystem_2() {
+    // On the #46 firmware the subsystems sort as cormoran_ble = 0,
+    // cormoran_rsr = 1, zmk__device_info = 2 (but resolve by identifier).
+    let req = rpc::custom_call(2, rpc::device_info::get_device_info());
+    assert_eq!(
+        rpc::encode_request(4, req),
+        hex("08 04 a2 06 08 12 06 08 02 12 02 0a 00")
+    );
+}

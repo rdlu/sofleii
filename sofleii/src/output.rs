@@ -394,16 +394,44 @@ pub fn info(style: Style, transport: &TransportInfo, i: &Info) -> String {
             "unlocked"
         }
     );
-    let _ = writeln!(
-        w,
-        "{}{}",
-        label("build"),
-        if i.build.available {
-            "available"
-        } else {
-            "unavailable (firmware lacks build info, #46)"
+    let b = &i.build;
+    if b.available {
+        let dirty = |v: Option<&str>, d: Option<bool>| match (v, d) {
+            // `git describe --dirty` already appends "-dirty"; show it once.
+            (Some(v), Some(true)) => format!(
+                "{} {}",
+                v.strip_suffix("-dirty").unwrap_or(v),
+                style.paint("33", "(dirty)")
+            ),
+            (v, _) => or_dash(v).to_string(),
+        };
+        let h = &i.hardware;
+        let reset = match (h.reset_cause, &h.reset_causes) {
+            (Some(m), Some(names)) if !names.is_empty() => {
+                format!("{} (0x{m:x})", names.join(", "))
+            }
+            (Some(m), _) => format!("0x{m:x}"),
+            _ => "-".into(),
+        };
+        let rows = [
+            (
+                "firmware",
+                dirty(b.zmk_config_version.as_deref(), b.zmk_config_dirty),
+            ),
+            ("zmk", dirty(b.zmk_version.as_deref(), b.zmk_dirty)),
+            ("zephyr", or_dash(b.zephyr_version.as_deref()).to_string()),
+            ("board", or_dash(b.board.as_deref()).to_string()),
+            ("built", or_dash(b.build_timestamp.as_deref()).to_string()),
+            ("build hash", or_dash(b.build_hash.as_deref()).to_string()),
+            ("device id", or_dash(h.device_id.as_deref()).to_string()),
+            ("reset cause", reset),
+        ];
+        for (l, v) in rows {
+            let _ = writeln!(w, "{}{v}", label(l));
         }
-    );
+    } else {
+        let _ = writeln!(w, "{}{}", label("build"), or_dash(b.note.as_deref()));
+    }
     let _ = writeln!(w, "{}", label("subsystems"));
     if i.custom_subsystems.is_empty() {
         let _ = writeln!(w, "  (none)");
@@ -457,7 +485,7 @@ pub fn profiles(style: Style, transport: &TransportInfo, p: &Profiles) -> String
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::commands::info::Device;
+    use crate::commands::info::{self, Device};
     use crate::commands::profiles::{Profile, Profiles};
     use crate::commands::status;
     use serde_json::Value;
@@ -711,5 +739,125 @@ mod tests {
                 .unwrap()
                 .contains("battery: left 100%, right 77%")
         );
+    }
+
+    fn info_sample(build: info::Build, hardware: info::Hardware) -> Info {
+        Info {
+            device: Device {
+                name: "Eyelash Sofle".into(),
+                serial_number: Some("9470".into()),
+            },
+            build,
+            hardware,
+            studio: info::Studio { locked: false },
+            custom_subsystems: vec![info::CustomSubsystem {
+                index: 2,
+                identifier: "zmk__device_info".into(),
+                ui_urls: vec![],
+            }],
+        }
+    }
+
+    #[test]
+    fn info_json_golden_with_build_info() {
+        let (b, h) = info::from_response(info::tests::sample_response());
+        let got: Value = serde_json::from_str(&super::info(
+            Style::plain(Format::Json),
+            &transport(TransportKind::Usb),
+            &info_sample(b, h),
+        ))
+        .unwrap();
+        let want = serde_json::json!({
+            "schema": 1,
+            "transport": {"kind": "usb", "device": "/dev/ttyACM1"},
+            "device": {"name": "Eyelash Sofle", "serial_number": "9470"},
+            "build": {
+                "available": true,
+                "note": null,
+                "zmk_version": "v0.3-198-ge5c9b691",
+                "zmk_dirty": false,
+                "zmk_config_version": "v3.0.0-65-g1e468b7-dirty",
+                "zmk_config_dirty": true,
+                "module_version": "8cedd2d",
+                "module_dirty": false,
+                "zephyr_version": "4.1.0",
+                "build_timestamp": "2026-10-17T20:50:06Z",
+                "board": "nice_nano",
+                "build_hash": "1e37f75107aeb7993596e9d27b668701ed790839"
+            },
+            "hardware": {
+                "device_id": "a1b2c3d4e5f60718",
+                "reset_cause": 9,
+                "reset_causes": ["pin", "por"],
+                "flash_size_kb": 1024,
+                "sram_size_kb": 256
+            },
+            "studio": {"locked": false},
+            "custom_subsystems": [
+                {"index": 2, "identifier": "zmk__device_info", "ui_urls": []}
+            ]
+        });
+        assert_eq!(got, want);
+    }
+
+    #[test]
+    fn info_json_golden_without_subsystem() {
+        let got: Value = serde_json::from_str(&super::info(
+            Style::plain(Format::Json),
+            &transport(TransportKind::Usb),
+            &info_sample(
+                info::Build::unavailable(info::BUILD_MISSING_NOTE),
+                info::Hardware::default(),
+            ),
+        ))
+        .unwrap();
+        let want_build = serde_json::json!({
+            "available": false,
+            "note": info::BUILD_MISSING_NOTE,
+            "zmk_version": null, "zmk_dirty": null,
+            "zmk_config_version": null, "zmk_config_dirty": null,
+            "module_version": null, "module_dirty": null,
+            "zephyr_version": null, "build_timestamp": null,
+            "board": null, "build_hash": null
+        });
+        assert_eq!(got["build"], want_build);
+        assert_eq!(
+            got["hardware"],
+            serde_json::json!({
+                "device_id": null, "reset_cause": null, "reset_causes": null,
+                "flash_size_kb": null, "sram_size_kb": null
+            })
+        );
+    }
+
+    #[test]
+    fn info_human_shows_versions_and_dirty_flag() {
+        let (b, h) = info::from_response(info::tests::sample_response());
+        let out = super::info(
+            Style::plain(Format::Human),
+            &transport(TransportKind::Usb),
+            &info_sample(b, h),
+        );
+        for want in [
+            "firmware        v3.0.0-65-g1e468b7 (dirty)\n",
+            "zmk             v0.3-198-ge5c9b691\n",
+            "zephyr          4.1.0",
+            "board           nice_nano",
+            "built           2026-10-17T20:50:06Z",
+            "reset cause     pin, por (0x9)",
+        ] {
+            assert!(out.contains(want), "missing {want:?} in:\n{out}");
+        }
+
+        let out = super::info(
+            Style::plain(Format::Human),
+            &transport(TransportKind::Usb),
+            &info_sample(
+                info::Build::unavailable(info::BUILD_MISSING_NOTE),
+                info::Hardware::default(),
+            ),
+        );
+        assert!(out.contains("build           unavailable: this firmware has no zmk__device_info"));
+        assert!(!out.contains("\nfirmware "));
     }
 }

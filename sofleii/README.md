@@ -37,7 +37,7 @@ to the port (the `uucp` group on Arch). Over BLE, see
 |---|---|
 | `sofleii status [--json] [--format waybar]` | One-shot summary: transport, device, Studio lock, active BLE profile (connected, bonded, address, name), output priority, both batteries. Built from `get_device_info`, `get_lock_state` and `cormoran_ble` `get_profiles` + `get_output_priority` (`get_profiles` doesn't carry the priority), plus the `battery` reader with a 1 s timeout. `split` is `null` for now, see below. |
 | `sofleii battery [--json] [--format waybar] [--warn-below <pct>] [--critical-below <pct>]` | Both halves' levels over BLE GATT (BlueZ, system D-Bus), not Studio RPC. See [Battery](#battery). |
-| `sofleii info [--json]` | `core.get_device_info` (name, serial number), Studio lock state, `custom.list_custom_subsystems`. Build info is `null` until the firmware exposes it (#46). |
+| `sofleii info [--json]` | `core.get_device_info` (name, serial number), Studio lock state, `custom.list_custom_subsystems`, and the firmware build from the `zmk__device_info` subsystem (#46, looked up by identifier): versions, config commit + dirty flag, build time, board, build hash, hardware id and reset cause. See [`info`](#info). |
 | `sofleii profiles [--json]` | `cormoran_ble.get_profiles` and `get_output_priority` (the subsystem index is looked up by identifier, never hardcoded). |
 
 Global options: `--transport auto|usb|ble` (default `auto`, see
@@ -197,6 +197,94 @@ terminal, and never with `--json` or `NO_COLOR`.
 - Without a `cormoran_ble` subsystem, the profile fields and
   `output_priority` are `null` rather than an error.
 
+### `info`
+
+The firmware build comes from zmk-feature-device-info's `zmk__device_info`
+custom subsystem (left half, since #46). `build` mirrors its `BuildInfo` and
+`hardware` its `HardwareInfo`, with empty strings as `null`. On a #46 build
+(values from a local build; the subsystem index is whatever the firmware
+lists):
+
+```
+$ sofleii info
+Eyelash Sofle
+transport       usb /dev/ttyACM1
+serial number   94708422E5F2FD3E
+studio          unlocked
+firmware        v3.0.0-65-g1e468b7
+zmk             v0.3-198-ge5c9b691
+zephyr          4.1.0
+board           nice_nano
+built           2026-10-17T20:50:06Z
+build hash      1e37f75107aeb7993596e9d27b668701ed790839
+device id       94708422e5f2fd3e
+reset cause     pin (0x1)
+subsystems
+   0  cormoran_ble
+   1  cormoran_rsr
+   2  zmk__device_info
+```
+
+```json
+{
+  "schema": 1,
+  "transport": { "kind": "usb", "device": "/dev/ttyACM1" },
+  "device": { "name": "Eyelash Sofle", "serial_number": "94708422E5F2FD3E" },
+  "build": {
+    "available": true, "note": null,
+    "zmk_version": "v0.3-198-ge5c9b691", "zmk_dirty": false,
+    "zmk_config_version": "v3.0.0-65-g1e468b7", "zmk_config_dirty": false,
+    "module_version": "8cedd2d", "module_dirty": false,
+    "zephyr_version": "4.1.0", "build_timestamp": "2026-10-17T20:50:06Z",
+    "board": "nice_nano",
+    "build_hash": "1e37f75107aeb7993596e9d27b668701ed790839"
+  },
+  "hardware": { "device_id": "94708422e5f2fd3e", "reset_cause": 1,
+                "reset_causes": ["pin"], "flash_size_kb": 1024,
+                "sram_size_kb": 256 },
+  "studio": { "locked": false },
+  "custom_subsystems": [
+    { "index": 0, "identifier": "cormoran_ble", "ui_urls": ["…"] },
+    { "index": 1, "identifier": "cormoran_rsr", "ui_urls": ["…"] },
+    { "index": 2, "identifier": "zmk__device_info", "ui_urls": ["…"] }
+  ]
+}
+```
+
+- `firmware` (`zmk_config_version`) is `git describe --dirty --always --tags`
+  of **this repo** when the build was configured: `v3.0.0-65-g1e468b7` from a
+  local build, the bare short hash (e.g. `1e468b7`) from CI, whose checkout is
+  shallow and has no tags. Exactly on a tag, a local build gives just the
+  tag. A `-dirty` build had uncommitted changes; the human output shows it as
+  `(dirty)`. The other `*_version` fields are the same `git describe` of ZMK
+  and of the module; each `*_dirty` is `null` when its version is.
+- `build_timestamp` is UTC, taken at configure time, not link time.
+- `build_hash` is the GNU build-id (SHA-1 of the linked image): it names the
+  exact binary, which the git versions alone don't.
+- `reset_cause` is the raw `hwinfo` bitmask and `reset_causes` its Zephyr
+  `RESET_*` names. On the nRF52840 the register accumulates until cleared, so
+  more than one cause can show.
+- **Older firmware** (no `zmk__device_info`, like v3.0.0): `build` and
+  `hardware` are all `null`, `build.available` is `false` and `build.note`
+  says why. `info` still **exits 0**, because the rest of it (name, lock
+  state, subsystems) was read fine; scripts that need the build check
+  `build.available`. When the subsystem is there but its call fails (an
+  `error` reply, an `unlock_required`, a bad payload), `info` exits 4.
+
+Real output from a v3.0.0 left half (2026-10-17):
+
+```
+$ sofleii info
+Eyelash Sofle
+transport       usb /dev/ttyACM1
+serial number   94708422E5F2FD3E
+studio          unlocked
+build           unavailable: this firmware has no zmk__device_info subsystem (built before #46); flash a newer build
+subsystems
+   0  cormoran_ble
+   1  cormoran_rsr
+```
+
 On failure with `--json`, stdout carries an error object instead:
 
 ```json
@@ -345,7 +433,7 @@ JSON:
 | 1 | Check failed / attention needed: `battery --warn-below` with a half below it |
 | 2 | Keyboard not found / not connected (a `--device` path that does not exist; `auto` with neither USB nor BLE; over BLE or for `battery`, not connected or BlueZ/D-Bus unavailable) |
 | 3 | Usage error (bad flag; `--device`/`--bt-address`/`--transport` contradicting each other) |
-| 4 | Transport or protocol error: timeout (over BLE, usually USB being the selected output), bad frame, RPC error, D-Bus/GATT error |
+| 4 | Transport or protocol error: timeout (over BLE, usually USB being the selected output), bad frame, RPC error (including a failing `zmk__device_info` call), D-Bus/GATT error. A firmware *without* `zmk__device_info` is not an error for `info` (exit 0, `build.available: false`) |
 
 ## Layout
 
@@ -364,7 +452,7 @@ src/
   output.rs      human, JSON and waybar rendering
   main.rs        clap CLI and exit codes
 proto/           vendored .proto files (see proto/README.md for sources and licenses)
-tests/golden.rs  request bytes captured from the v3.0.0 firmware
+tests/golden.rs  request bytes captured from the v3.0.0 firmware, plus the zmk__device_info call
 tests/cli.rs     exit codes and error output with no keyboard (not found, usage)
 ```
 
