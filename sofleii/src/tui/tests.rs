@@ -596,7 +596,7 @@ fn help_overlay() {
         "debug lines in the log",
         "switch to the selected profile",
         "toggle the output priority usb / ble",
-        "risky switches ask first (y / n)",
+        "risky switches ask first; only y confirms",
         "? or Esc closes",
     ] {
         assert!(s.contains(k), "{k}:\n{s}");
@@ -878,7 +878,7 @@ fn enter_on_the_active_profile_does_nothing() {
 
 #[test]
 fn a_risky_target_opens_the_modal_and_y_sends() {
-    for yes in [KeyCode::Char('y'), KeyCode::Enter] {
+    for yes in [KeyCode::Char('y'), KeyCode::Char('Y')] {
         let rec = Rec::default();
         let mut a = actions_app();
         press(&mut a, &rec, KeyCode::Down);
@@ -896,10 +896,25 @@ fn a_risky_target_opens_the_modal_and_y_sends() {
 }
 
 #[test]
+fn a_double_enter_on_a_risky_profile_sends_nothing() {
+    let rec = Rec::default();
+    let mut a = actions_app();
+    press(&mut a, &rec, KeyCode::Down);
+    press(&mut a, &rec, KeyCode::Down);
+    press(&mut a, &rec, KeyCode::Enter);
+    assert!(a.confirm.is_some());
+    press(&mut a, &rec, KeyCode::Enter);
+    assert!(sent(&rec).is_empty());
+    assert!(a.confirm.is_none() && a.action.is_none());
+}
+
+#[test]
 fn n_esc_or_any_other_key_cancels_the_modal() {
+    // `⏎` too: a double Enter on a profile must never confirm.
     for no in [
         KeyCode::Char('n'),
         KeyCode::Esc,
+        KeyCode::Enter,
         KeyCode::Char('j'),
         KeyCode::Char('q'),
     ] {
@@ -1059,7 +1074,7 @@ fn an_output_success_logs_its_note() {
     let rec = Rec::default();
     let mut a = actions_app();
     press(&mut a, &rec, KeyCode::Char('o'));
-    press(&mut a, &rec, KeyCode::Enter);
+    press(&mut a, &rec, KeyCode::Char('y'));
     a.apply(
         &Event::Done {
             ticket: Ticket(1),
@@ -1117,7 +1132,7 @@ fn modal_renders_for_a_link_drop() {
             "│ sofleii continues over BLE (verified by read-back).      │",
             "│                                                          │",
             "│ Continue?                                                │",
-            "└ y / ⏎ confirm · n / Esc cancel ──────────────────────────┘",
+            "└ y confirm · n / Esc cancel ──────────────────────────────┘",
         ]
     );
 }
@@ -1138,7 +1153,7 @@ fn modal_renders_for_an_empty_slot() {
             "│ disconnects this host's BLE link; sofleii stays on USB.  │",
             "│                                                          │",
             "│ Continue?                                                │",
-            "└ y / ⏎ confirm · n / Esc cancel ──────────────────────────┘",
+            "└ y confirm · n / Esc cancel ──────────────────────────────┘",
         ]
     );
 }
@@ -1162,7 +1177,7 @@ fn modal_renders_for_a_switch_over_ble() {
             "│ sofleii continues over USB (verified by read-back).      │",
             "│                                                          │",
             "│ Continue?                                                │",
-            "└ y / ⏎ confirm · n / Esc cancel ──────────────────────────┘",
+            "└ y confirm · n / Esc cancel ──────────────────────────────┘",
         ]
     );
 }
@@ -1181,7 +1196,7 @@ fn modal_renders_destructive() {
             "│ pair again. This can't be undone.                        │",
             "│                                                          │",
             "│ Continue?                                                │",
-            "└ y / ⏎ confirm · n / Esc cancel ──────────────────────────┘",
+            "└ y confirm · n / Esc cancel ──────────────────────────────┘",
         ]
     );
 }

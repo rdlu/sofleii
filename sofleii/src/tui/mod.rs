@@ -11,7 +11,8 @@
 //!
 //! **Writes:** `⏎`/`s` switches to the selected profile and `o` toggles the
 //! output priority. A request [`Request::risk`] calls risky (it drops the
-//! current link) opens a confirm modal first; the core never prompts. One
+//! current link) opens a confirm modal first, which only `y` confirms; the
+//! core never prompts. One
 //! write at a time: its spinner sits on the bottom edge until its
 //! [`Event::Done`], and action keys are ignored meanwhile. The result
 //! stays there briefly (an error until the next key) and goes to the log.
@@ -310,11 +311,12 @@ impl App {
         }
     }
 
-    /// A key while the modal is up: `y`/`⏎` sends, anything else cancels.
+    /// A key while the modal is up: only `y` sends; anything else cancels,
+    /// `⏎` included, so a double Enter on a profile never confirms.
     fn on_confirm_key(&mut self, code: KeyCode) -> Option<Request> {
         let c = self.confirm.take()?;
         match code {
-            KeyCode::Char('y' | 'Y') | KeyCode::Enter => Some(c.req),
+            KeyCode::Char('y' | 'Y') => Some(c.req),
             _ => {
                 let text = format!("cancelled: {}", actions::what(&c.req));
                 self.tell(LogLevel::Info, text, false);

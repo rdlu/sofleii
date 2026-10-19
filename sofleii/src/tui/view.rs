@@ -757,7 +757,7 @@ const HELP: &[(&str, &str)] = &[
     ("u", "check for a firmware update now"),
     ("d", "debug lines in the log on / off"),
     ("?", "this help"),
-    ("", "risky switches ask first (y / n)"),
+    ("", "risky switches ask first; only y confirms"),
 ];
 
 /// A pane's `─ Title ` for the top edge.
@@ -782,7 +782,7 @@ fn centred(area: Rect, w: u16, h: u16) -> Rect {
 }
 
 /// The confirm modal: what will happen, wrapped, then `Continue?`; the
-/// keys on its bottom edge. Anything but `y`/`⏎` cancels.
+/// keys on its bottom edge. Anything but `y` cancels, `⏎` included.
 fn confirm(f: &mut Frame, area: Rect, c: &Confirm, t: Theme) {
     let w = 60.min(area.width.saturating_sub(4));
     let text_w = usize::from(w.saturating_sub(4)).max(10);
@@ -810,8 +810,6 @@ fn confirm(f: &mut Frame, area: Rect, c: &Confirm, t: Theme) {
         .title_bottom(Line::from(vec![
             Span::raw(" "),
             Span::styled("y", Style::new().add_modifier(Modifier::BOLD)),
-            Span::raw(" / "),
-            Span::styled("⏎", Style::new().add_modifier(Modifier::BOLD)),
             Span::raw(" confirm · "),
             Span::styled("n", Style::new().add_modifier(Modifier::BOLD)),
             Span::raw(" / "),
