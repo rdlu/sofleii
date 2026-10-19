@@ -278,8 +278,8 @@ terminal, and never with `--json` or `NO_COLOR`.
   "split": { "known": true, "connected": true, "is_split": true,
              "is_central": true },
   "split_note": null,
-  "battery": { "left": { "percent": 100 }, "right": { "percent": 71 },
-               "note": null }
+  "battery": { "left": { "percent": 100, "state": null },
+               "right": { "percent": 71, "state": null }, "note": null }
 }
 ```
 
@@ -292,9 +292,9 @@ terminal, and never with `--json` or `NO_COLOR`.
   `cormoran_ble`, an RPC error), with `split_note` saying why; a failed split
   read never fails `status`.
 - With `split.connected` `false`, `battery.right` is `{"percent": null,
-  "state": "disconnected"}` rather than the central proxy's stale 0%. `state`
-  appears only then; with the link up or unknown the levels are as read, and
-  `sofleii battery`'s JSON never has it (see [Battery](#battery)).
+  "state": "disconnected"}` rather than the central proxy's stale 0%. With
+  the link up or unknown the levels are as read and `state` is `null` (it is
+  always present, never omitted; see [Battery](#battery)).
 - `battery` comes from the same reader as `sofleii battery`, with a timeout
   of at most 1 s. When BLE isn't available (keyboard not connected over BLE
   to this host, BlueZ not running, a GATT error), `left`/`right` stay `null`
@@ -663,19 +663,23 @@ right 76%
   "schema": 1,
   "source": "bluez",
   "device": { "name": "Eyelash Sofle", "address": "DD:1F:23:76:6E:71" },
-  "left": { "percent": 100 },
-  "right": { "percent": 76 },
+  "left": { "percent": 100, "state": null },
+  "right": { "percent": 76, "state": null },
   "note": null
 }
 ```
 
-- A half is `{"percent": null}` when it's unknown, e.g. only one Battery
+- `state` is always present and always `null` here (`battery` reads GATT
+  only and never knows the split link; added in schema 1 alongside the
+  split link, see the next bullets). `status` sets it to `"disconnected"`.
+- A half is `{"percent": null, "state": null}` when it's unknown, e.g. only one Battery
   Service is exposed (firmware before #45, or the right half isn't
   forwarded); `note` then says why. `note` is `null` when there's nothing to
   add. Notes and warnings also go to stderr in human mode.
 - **Right half off:** the central's proxy keeps reporting `right 0%` for a
   disconnected right half, and GATT can't tell that 0 from a flat battery.
-  `battery` stays GATT-only on purpose and shows it as read: knowing the
+  `battery` stays GATT-only on purpose and shows it as read (`state`
+  stays `null`): knowing the
   split link takes a Studio RPC call, which means opening the exclusive USB
   port (it would fight a running TUI or `status`) or BLE RPC (deaf while USB
   is the selected output), and the waybar battery module must keep working

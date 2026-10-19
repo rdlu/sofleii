@@ -862,7 +862,7 @@ mod tests {
             serde_json::json!({
                 "schema": 1, "source": "bluez",
                 "device": {"name": "Eyelash Sofle", "address": "DD:1F:23:76:6E:71"},
-                "left": {"percent": 100}, "right": {"percent": 77}, "note": null
+                "left": {"percent": 100, "state": null}, "right": {"percent": 77, "state": null}, "note": null
             })
         );
         let human = battery(

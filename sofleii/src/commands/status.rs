@@ -341,13 +341,13 @@ mod tests {
         assert_eq!(v["profile"]["address"], serde_json::Value::Null);
         assert_eq!(v["profile"]["bonded"], false);
         assert_eq!(v["output_priority"], "usb");
-        // A filled battery serialises as {"percent": n}.
+        // A filled battery serialises as {"percent": n, "state": null}.
         let lvl = serde_json::to_value(BatteryLevel {
             percent: Some(80),
             state: None,
         })
         .unwrap();
-        assert_eq!(lvl, serde_json::json!({"percent": 80}));
+        assert_eq!(lvl, serde_json::json!({"percent": 80, "state": null}));
     }
 
     #[test]
@@ -359,7 +359,7 @@ mod tests {
         let v = serde_json::to_value(&s).unwrap();
         assert_eq!(
             v["battery"],
-            serde_json::json!({"left": {"percent": 100}, "right": {"percent": 77}, "note": null})
+            serde_json::json!({"left": {"percent": 100, "state": null}, "right": {"percent": 77, "state": null}, "note": null})
         );
     }
 
@@ -454,7 +454,7 @@ mod tests {
         assert_eq!(
             v["battery"],
             serde_json::json!({
-                "left": {"percent": 100},
+                "left": {"percent": 100, "state": null},
                 "right": {"percent": null, "state": "disconnected"},
                 "note": null
             })
