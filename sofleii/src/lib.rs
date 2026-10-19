@@ -14,6 +14,9 @@
 //! so `commands` stays free of D-Bus details, and carries the BLE transport
 //! (`transport::ble`). `github` (blocking HTTPS via `ureq`) implements
 //! [`commands::update::Http`] the same way for `update check`.
+//! `session` is the long-running core over `commands` (the link, watch and
+//! jobs threads, the `Event` stream and the `Snapshot` reducer) that the
+//! TUI and a later GUI share; like the rest of the core, it has no UI code.
 
 pub mod bluez;
 pub mod client;
@@ -26,6 +29,7 @@ pub mod github;
 pub mod logger;
 pub mod output;
 pub mod proto;
+pub mod session;
 pub mod transport;
 pub mod tui;
 
