@@ -82,8 +82,11 @@ fix (`rdlu/zmk-module-ble-management` `5ea5b4f`), which answers with no
 `info` at all; sofleii never reads that as disconnected. With the right half
 off, the central's battery proxy keeps reporting 0% for it, so when the link
 is known to be down the battery row reads `right disconnected` instead of
-`right 0%` (an unknown link keeps the level as read). The waybar tooltip has
-the same `split link:` and `battery:` lines.
+`right 0%` (an unknown link keeps the level as read). With the link up, a
+right half at exactly 0% keeps its level but gets a `battery.note`: `right
+0% right after a reconnect may be stale; re-run in a few seconds` (a half
+that's really flat isn't on the link). The waybar tooltip has the same
+`split link:` and `battery:` lines.
 
 `output` is the endpoint keystrokes most likely go to: the output priority,
 with ZMK's fallback to the other endpoint when the preferred one isn't
@@ -152,7 +155,12 @@ USB:
 - **Split** is polled with the profiles: `connected`, `disconnected (right
   half off or out of range)` or `unknown (firmware without the split-info
   fix)` (shorter below 70 columns). While it's disconnected the battery row
-  shows `R disconnected` instead of the proxy's stale 0%.
+  shows `R disconnected` instead of the proxy's stale 0%. A change of the
+  link (either way) re-reads the batteries at once and again 5 s later: a
+  rejoined right half's level takes the central a moment to fetch, and until
+  then the proxy says 0%. For 10 s after the right half rejoins, a right 0%
+  shows as `R reading…`; a non-zero read ends that early, and a 0% that
+  lasts past it is shown as 0% (a flat battery is real).
 - Square panes as on the docs site; below 70 columns the summary is one
   column. Battery bars use `battery`'s defaults (warning below 20%,
   critical below 10%). `NO_COLOR` turns colour off (bold and dim remain).

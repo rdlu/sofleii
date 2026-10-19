@@ -63,6 +63,8 @@ pub struct Kb {
     pub plans: usize,
     /// Every RPC request answered or swallowed.
     pub requests: usize,
+    /// Battery reads through [`FakeProbe`].
+    pub battery_reads: usize,
 }
 
 impl Default for Kb {
@@ -79,6 +81,7 @@ impl Default for Kb {
             dropped: 0,
             plans: 0,
             requests: 0,
+            battery_reads: 0,
         }
     }
 }
@@ -310,7 +313,8 @@ pub fn connector(kb: &Shared) -> connect::Connector<FakeOpener> {
     )
 }
 
-/// Presence from `kb.usb` and a flag; the batteries are never readable.
+/// Presence from `kb.usb` and a flag; the batteries are never readable
+/// (each try counts in `kb.battery_reads`).
 #[derive(Clone)]
 pub struct FakeProbe {
     pub kb: Shared,
@@ -334,6 +338,7 @@ impl Probe for FakeProbe {
         self.ble.load(Ordering::SeqCst)
     }
     fn battery(&mut self) -> Result<Reading> {
+        self.kb.lock().battery_reads += 1;
         Err(Error::NotFound("fake: no BLE".into()))
     }
 }

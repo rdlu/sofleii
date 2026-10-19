@@ -166,6 +166,57 @@ fn the_split_link_follows_each_status() {
 }
 
 #[test]
+fn a_split_edge_rereads_the_batteries_now_and_later() {
+    let s = start(
+        |c| Config {
+            battery_after_split: Duration::from_millis(50),
+            ..c
+        },
+        Kb::default(),
+    );
+    s.until("split", |e| split_read(e).is_some());
+    // The start-up read only (battery_every is an hour away).
+    s.wait_kb("first battery read", |kb| kb.battery_reads == 1);
+    // No edge: a poll with the link still up reads nothing more.
+    let t = s.h.send(Request::Refresh(Scope::Status));
+    assert!(s.done(t).1.is_ok());
+    assert_eq!(s.kb.lock().battery_reads, 1);
+
+    // The right half goes off: a read at once, and the follow-up.
+    s.kb.lock().split = Some(false);
+    let t = s.h.send(Request::Refresh(Scope::Status));
+    assert!(s.done(t).1.is_ok());
+    s.wait_kb("read on the edge + follow-up", |kb| kb.battery_reads == 3);
+    // And back on: the same again.
+    s.kb.lock().split = Some(true);
+    let t = s.h.send(Request::Refresh(Scope::Status));
+    assert!(s.done(t).1.is_ok());
+    s.wait_kb("read on the edge + follow-up", |kb| kb.battery_reads == 5);
+    std::thread::sleep(Duration::from_millis(120));
+    assert_eq!(s.kb.lock().battery_reads, 5, "one follow-up per edge");
+}
+
+#[test]
+fn an_unknown_split_never_rereads_the_batteries() {
+    let s = start(
+        |c| Config {
+            battery_after_split: Duration::from_millis(10),
+            ..c
+        },
+        Kb {
+            split: None,
+            ..Kb::default()
+        },
+    );
+    s.until("split", |e| split_read(e).is_some());
+    s.wait_kb("first battery read", |kb| kb.battery_reads == 1);
+    let t = s.h.send(Request::Refresh(Scope::Status));
+    assert!(s.done(t).1.is_ok());
+    std::thread::sleep(Duration::from_millis(50));
+    assert_eq!(s.kb.lock().battery_reads, 1);
+}
+
+#[test]
 fn the_lease_drops_the_client_after_idle() {
     let s = start(
         |c| Config {

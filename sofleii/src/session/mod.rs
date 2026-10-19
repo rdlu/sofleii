@@ -70,6 +70,13 @@ pub struct Config {
     pub backoff_base: Duration,
     pub backoff_cap: Duration,
     pub battery_every: Duration,
+    /// After the split link changes, the batteries are read at once and
+    /// again this much later: a reconnected right half's level takes the
+    /// central a moment to fetch (until then its proxy says 0%).
+    pub battery_after_split: Duration,
+    /// How long after the right half rejoins a right-half 0% shows as
+    /// "reading…" ([`Snapshot::right_settling`]) instead of 0%.
+    pub split_settle: Duration,
     pub usb_every: Duration,
     pub ble_every: Duration,
     /// How often the update check runs while the session is up.
@@ -97,6 +104,8 @@ impl Default for Config {
             backoff_base: Duration::from_millis(500),
             backoff_cap: Duration::from_secs(5),
             battery_every: Duration::from_secs(60),
+            battery_after_split: Duration::from_secs(5),
+            split_settle: Duration::from_secs(10),
             usb_every: Duration::from_secs(2),
             ble_every: Duration::from_secs(5),
             update_every: Duration::from_secs(6 * 3600),
@@ -361,8 +370,17 @@ impl Session {
     pub fn spawn_with(config: Config, b: Backends) -> (SessionHandle, Receiver<Event>) {
         let (events, rx) = mpsc::channel();
         let jobs = jobs::spawn(config.clone(), b.http, events.clone());
-        let link = link::spawn(config.clone(), b.connector, events.clone(), jobs.clone());
-        let watch = watch::spawn(config, b.probe, events.clone(), link.clone());
+        // Made first: the link tells watch about split edges, and watch
+        // tells the link about presence edges.
+        let (watch, watch_rx) = mpsc::channel();
+        let link = link::spawn(
+            config.clone(),
+            b.connector,
+            events.clone(),
+            jobs.clone(),
+            watch.clone(),
+        );
+        watch::spawn(config, b.probe, events.clone(), link.clone(), watch_rx);
         let handle = SessionHandle {
             link,
             watch,

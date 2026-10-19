@@ -2,8 +2,10 @@
 //! Studio RPC, so it never competes with the link for the USB port):
 //!
 //! - both batteries every [`Config::battery_every`], through
-//!   [`commands::battery`](crate::commands::battery) over GATT, and at once
-//!   when the BLE connection comes up;
+//!   [`commands::battery`](crate::commands::battery) over GATT, at once
+//!   when the BLE connection comes up, and at once plus
+//!   [`Config::battery_after_split`] later when the split link changes
+//!   ([`Msg::SplitEdge`], from the link);
 //! - USB presence every [`Config::usb_every`]: the serial discover (sysfs,
 //!   no radio);
 //! - BLE `Device1.Connected` every [`Config::ble_every`].
@@ -11,7 +13,7 @@
 //! Presence changes go to the front end ([`Event::Presence`]) and to the
 //! link, which retries (or replans) at once.
 
-use std::sync::mpsc::{self, Receiver, RecvTimeoutError, Sender};
+use std::sync::mpsc::{Receiver, RecvTimeoutError, Sender};
 use std::time::{Duration, Instant};
 
 use super::{Config, ErrorView, Event, LogLevel, Outcome, Presence, Stamped, Ticket, link};
@@ -84,6 +86,10 @@ impl Probe for SystemProbe {
 pub(crate) enum Msg {
     /// Read the batteries now; answer the ticket if there is one.
     Refresh(Option<Ticket>),
+    /// The split link changed: read now, and once more after
+    /// [`Config::battery_after_split`], when the central has fetched a
+    /// rejoined right half's level.
+    SplitEdge,
     Quit,
 }
 
@@ -92,13 +98,12 @@ pub(crate) fn spawn(
     probe: Box<dyn Probe>,
     events: Sender<Event>,
     link: Sender<link::Msg>,
-) -> Sender<Msg> {
-    let (tx, rx) = mpsc::channel();
+    rx: Receiver<Msg>,
+) {
     std::thread::Builder::new()
         .name("sofleii-watch".into())
         .spawn(move || run(cfg, probe, events, link, rx))
         .expect("spawning the watch thread");
-    tx
 }
 
 fn run(
@@ -112,6 +117,8 @@ fn run(
     let (mut usb_due, mut ble_due, mut battery_due) = (now, now, now);
     let mut presence: Option<Presence> = None;
     let mut seen = Presence::default();
+    // The follow-up read after a split edge.
+    let mut follow_up: Option<Instant> = None;
     loop {
         let now = Instant::now();
         let mut changed = false;
@@ -138,13 +145,20 @@ fn run(
                 return;
             }
         }
+        if follow_up.is_some_and(|t| now >= t) {
+            follow_up = None;
+            battery_due = now;
+        }
         if now >= battery_due {
             battery_due = now + cfg.battery_every;
             if read_battery(&mut *probe, &events).is_none() {
                 return;
             }
         }
-        let wake = usb_due.min(ble_due).min(battery_due);
+        let mut wake = usb_due.min(ble_due).min(battery_due);
+        if let Some(t) = follow_up {
+            wake = wake.min(t);
+        }
         match rx.recv_timeout(wake.saturating_duration_since(Instant::now())) {
             Ok(Msg::Refresh(ticket)) => {
                 battery_due = Instant::now() + cfg.battery_every;
@@ -157,6 +171,10 @@ fn run(
                         result: r.map(|()| Outcome::Ok),
                     });
                 }
+            }
+            Ok(Msg::SplitEdge) => {
+                battery_due = Instant::now();
+                follow_up = Some(Instant::now() + cfg.battery_after_split);
             }
             Ok(Msg::Quit) | Err(RecvTimeoutError::Disconnected) => return,
             Err(RecvTimeoutError::Timeout) => {}

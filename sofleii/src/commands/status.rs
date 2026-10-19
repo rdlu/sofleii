@@ -19,6 +19,9 @@ pub use split::Split;
 
 /// Why both batteries are `null` when nothing tried to read them.
 pub const BATTERY_NOTE: &str = "unavailable: not read";
+/// `battery.note` for a right half at 0% while the split link is up.
+pub const RIGHT_ZERO_NOTE: &str =
+    "right 0% right after a reconnect may be stale; re-run in a few seconds";
 /// Why `split` is `null` when nothing tried to read it.
 pub const SPLIT_NOT_READ: &str = "unavailable: not read";
 /// Why `split` is `null` on firmware without `cormoran_ble`.
@@ -76,9 +79,21 @@ impl Battery {
     /// Drops the right half's level when the split link is known to be
     /// down: the central's battery proxy keeps a stale 0% for it. An unknown
     /// link (older firmware) keeps the level as read.
+    ///
+    /// With the link up, a right half at exactly 0% gets [`RIGHT_ZERO_NOTE`]:
+    /// a half that's really flat isn't on the link, so a 0 there is most
+    /// likely the proxy before it fetched a just-rejoined half's level. The
+    /// level itself stays as read.
     pub fn with_split(mut self, split: Option<&Split>) -> Self {
         if split.is_some_and(Split::disconnected) {
             self.right = Some(BatteryLevel::disconnected());
+        } else if split.is_some_and(|s| s.connected == Some(true))
+            && self.right.is_some_and(|r| r.percent == Some(0))
+        {
+            self.note = Some(match self.note.take() {
+                Some(n) => format!("{n}; {RIGHT_ZERO_NOTE}"),
+                None => RIGHT_ZERO_NOTE.into(),
+            });
         }
         self
     }
@@ -478,6 +493,13 @@ mod tests {
                 "split {connected:?}"
             );
             assert_eq!(s.battery.right.unwrap().state, None);
+            // Link up: the 0 is flagged as maybe stale; unknown: as read.
+            let want = connected.map(|_| RIGHT_ZERO_NOTE.to_string());
+            assert_eq!(s.battery.note, want, "split {connected:?}");
         }
+        // A real level, link up: no note.
+        let mut s = run_mock(with_split(Some(true)));
+        s.set_battery(measured());
+        assert_eq!(s.battery.note, None);
     }
 }

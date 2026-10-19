@@ -29,7 +29,7 @@ use serde::Serialize;
 
 use super::{
     Config, ErrorView, Event, LinkState, LogLevel, Outcome, Presence, Request, Scope, Stamped,
-    Ticket, jobs,
+    Ticket, jobs, watch,
 };
 use crate::client::rpc::ble;
 use crate::commands::{info, output, profile, profiles, split};
@@ -139,13 +139,14 @@ pub(crate) fn spawn(
     connector: Box<dyn Connect>,
     events: Sender<Event>,
     jobs: Sender<jobs::Msg>,
+    watch: Sender<watch::Msg>,
 ) -> Sender<Msg> {
     let (tx, rx) = mpsc::channel();
     // Built on the thread: the client (and its transport) never crosses
     // threads, so `Transport` needn't be `Send`; only the connector moves.
     std::thread::Builder::new()
         .name("sofleii-link".into())
-        .spawn(move || Link::new(cfg, connector, events, jobs).run(rx))
+        .spawn(move || Link::new(cfg, connector, events, jobs, watch).run(rx))
         .expect("spawning the link thread");
     tx
 }
@@ -155,6 +156,10 @@ struct Link {
     connector: Box<dyn Connect>,
     events: Sender<Event>,
     jobs: Sender<jobs::Msg>,
+    /// Told about split edges, to re-read the batteries.
+    watch: Sender<watch::Msg>,
+    /// The last known split link (`connected`), for its edges.
+    split: Option<bool>,
     /// The leased client; `None` between batches and while down.
     client: Option<RpcClient>,
     /// The last link, kept across lease releases.
@@ -185,6 +190,7 @@ impl Link {
         connector: Box<dyn Connect>,
         events: Sender<Event>,
         jobs: Sender<jobs::Msg>,
+        watch: Sender<watch::Msg>,
     ) -> Self {
         let now = Instant::now();
         Self {
@@ -192,6 +198,8 @@ impl Link {
             connector,
             events,
             jobs,
+            watch,
+            split: None,
             client: None,
             via: None,
             pending: None,
@@ -464,6 +472,9 @@ impl Link {
         // own read's error; the batch stands on the profiles.
         if let (Ok(()), Some(i)) = (&out, self.ble_index) {
             let r = self.with_client(|c, _| split::fetch(c, i));
+            if let Ok(sp) = &r {
+                self.on_split(sp.connected);
+            }
             self.emit(Event::Split(Stamped::now(r)));
         }
         out
@@ -554,6 +565,20 @@ impl Link {
         // A failed connect already scheduled its retry.
         if self.up() {
             let _ = self.poll();
+        }
+    }
+
+    /// A change of the split link (either way) re-reads the batteries: the
+    /// right half's level is gone, or back (after a moment, see
+    /// [`Config::battery_after_split`]). The first reading is no edge, and
+    /// an unknown link (older firmware) never makes one.
+    fn on_split(&mut self, connected: Option<bool>) {
+        let Some(now) = connected else {
+            return;
+        };
+        if self.split.replace(now).is_some_and(|before| before != now) {
+            log::debug!("split link {}", if now { "up" } else { "down" });
+            let _ = self.watch.send(watch::Msg::SplitEdge);
         }
     }
 

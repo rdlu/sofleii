@@ -240,6 +240,49 @@ fn split_states_render() {
 }
 
 #[test]
+fn right_zero_after_rejoining_reads_as_reading() {
+    // Off, then on again, then the proxy's 0% before the real level.
+    let mut a = with_split(Some(false));
+    let split = |c| crate::commands::split::Split {
+        known: true,
+        connected: Some(c),
+        is_split: Some(true),
+        is_central: Some(true),
+    };
+    a.apply(
+        &Event::Split(Stamped {
+            at: t0(),
+            value: Ok(split(true)),
+        }),
+        t0(),
+    );
+    let battery = |a: &mut App, now| {
+        a.tick(now);
+        rows_of(&screen(a, 80, 24), "Battery")
+    };
+    let row = battery(&mut a, t0());
+    assert!(
+        row.starts_with("│ Battery    L ████████░░  82%   R reading… "),
+        "{row}"
+    );
+    // Past the 10 s window a persisting 0 is real.
+    let row = battery(&mut a, at(11));
+    assert!(row.contains("R ░░░░░░░░░░   0%"), "{row}");
+    // A real level ends the window early.
+    let mut b = a.session.battery.value.clone().unwrap();
+    b.right.percent = Some(66);
+    a.apply(
+        &Event::Battery(Stamped {
+            at: at(3),
+            value: Ok(b),
+        }),
+        at(3),
+    );
+    let row = battery(&mut a, at(3));
+    assert!(row.contains("R ███████░░░  66%"), "{row}");
+}
+
+#[test]
 fn split_read_error_is_a_note() {
     let mut a = demo();
     a.apply(

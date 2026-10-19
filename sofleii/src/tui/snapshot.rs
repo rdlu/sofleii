@@ -87,6 +87,9 @@ pub struct Battery {
     pub right: Option<u8>,
     /// The split link is known to be down.
     pub right_disconnected: bool,
+    /// A 0% right after the right half rejoined: shown as "reading…"
+    /// ([`session::Snapshot::right_settling`]).
+    pub right_settling: bool,
     pub health: Health,
 }
 
@@ -204,6 +207,7 @@ impl Snapshot {
                     left: level(s.battery.value.as_ref(), true),
                     right: level(s.battery.value.as_ref(), false).filter(|_| !right_gone),
                     right_disconnected: right_gone,
+                    right_settling: !right_gone && s.right_settling(now),
                     health: Health::of(&s.battery, now),
                 },
                 firmware: Firmware {

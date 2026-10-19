@@ -524,6 +524,8 @@ fn battery(k: &Keyboard, cells: usize, t: Theme) -> Vec<Span<'static>> {
     s.push(Span::raw("   "));
     if k.battery.right_disconnected {
         s.extend([Span::raw("R "), Span::styled("disconnected", t.bad())]);
+    } else if k.battery.right_settling {
+        s.extend([Span::raw("R "), Span::styled("reading…", t.label())]);
     } else {
         s.extend(half("R", k.battery.right));
     }
