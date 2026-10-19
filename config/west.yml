@@ -4,6 +4,8 @@ manifest:
       url-base: https://github.com/zmkfirmware
     - name: cormoran
       url-base: https://github.com/cormoran
+    - name: rdlu
+      url-base: https://github.com/rdlu
   projects:
     # The eyelash_sofle shield is vendored in-repo at config/boards/shields/
     # (the vendor module a741725193/zmk-sofle only targets ZMK v0.3 and
@@ -50,9 +52,13 @@ manifest:
     # kept: battery-history and settings-rpc are still v0.3-only upstream, and
     # runtime-input-processor was only pulled in by the vendor overlay (the
     # keymap uses stock zip_* processors).
+    # ble-management comes from our fork (rdlu/zmk-module-ble-management):
+    # cormoran's main at 57738cc + the get_split_info fix (has_info was never
+    # set, so the reply was empty; the central never read the split transport
+    # status). Pending upstream; drop back to cormoran once it lands there.
     - name: zmk-module-ble-management
-      remote: cormoran
-      revision: 57738cc4fc6ba80e82a7ac57741a0339cb186cd4  # track: main
+      remote: rdlu
+      revision: 5ea5b4f5c2807b0ab7327fed92a62853ab3160a3  # track: main
     - name: zmk-behavior-runtime-sensor-rotate
       remote: cormoran
       revision: 8b1125ed676c1f5e14145d217984f33d0ebdcef4  # track: main
