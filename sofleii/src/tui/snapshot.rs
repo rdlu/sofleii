@@ -278,7 +278,7 @@ pub fn demo(now: SystemTime) -> session::Snapshot {
             value: Ok(Info {
                 device: Device {
                     name: "Eyelash Sofle".into(),
-                    serial_number: Some("94700a2c".into()),
+                    serial_number: Some("0011223344556677".into()),
                 },
                 build: Build {
                     available: true,
@@ -298,8 +298,8 @@ pub fn demo(now: SystemTime) -> session::Snapshot {
                 active_profile: Some(0),
                 output_priority: Some("usb"),
                 profiles: vec![
-                    slot(0, Some("desk"), Some("DD:1F:23:76:6E:71")),
-                    slot(1, Some("laptop"), Some("C8:3A:35:10:22:9E")),
+                    slot(0, Some("desk"), Some("00:11:22:33:44:55")),
+                    slot(1, Some("laptop"), Some("00:11:22:33:44:66")),
                     slot(2, None, None),
                     slot(3, None, None),
                     slot(4, None, None),
@@ -321,7 +321,7 @@ pub fn demo(now: SystemTime) -> session::Snapshot {
                 source: "bluez",
                 device: BtDevice {
                     name: "Eyelash Sofle".into(),
-                    address: "DD:1F:23:76:6E:71".into(),
+                    address: "00:11:22:33:44:55".into(),
                 },
                 left: BatteryLevel {
                     percent: Some(82),
