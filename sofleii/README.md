@@ -40,7 +40,7 @@ to the port (the `uucp` group on Arch). Over BLE, see
 | `sofleii battery [--json] [--format waybar] [--warn-below <pct>] [--critical-below <pct>]` | Both halves' levels over BLE GATT (BlueZ, system D-Bus), not Studio RPC. See [Battery](#battery). |
 | `sofleii info [--json]` | `core.get_device_info` (name, serial number), Studio lock state, `custom.list_custom_subsystems`, and the firmware build from the `zmk__device_info` subsystem (#46, looked up by identifier): versions, config commit + dirty flag, build time, board, build hash, hardware id and reset cause. See [`info`](#info). |
 | `sofleii profiles [--json]` | `cormoran_ble.get_profiles` and `get_output_priority` (the subsystem index is looked up by identifier, never hardcoded). |
-| `sofleii update check [--json] [--repo OWNER/NAME]` | The running build (`zmk_config_version` from `zmk__device_info`) against the latest GitHub release of `--repo` (default `rdlu/sofleii`): up to date, N commits behind or ahead, diverged, or unknown. See [`update check`](#update-check). |
+| `sofleii update check [--json] [--repo OWNER/NAME]` | The running build (`zmk_config_version` from `zmk__device_info`) against the latest GitHub release of `--repo` (default `rdlu/sofleii`), shown as release versions (`v3.1.0`, `v3.0.0+68`): up to date, behind (update available), ahead, diverged, or unknown. See [`update check`](#update-check). |
 
 Global options: `--transport auto|usb|ble` (default `auto`, see
 [Transports](#transports)), `--device <path>` (serial port for Studio RPC;
@@ -307,29 +307,54 @@ GitHub REST API, without `gh`:
    though the counts aren't 0. That's a PR-branch build whose branch was
    merged as is: the release only adds the merge commit, and the firmware
    is the same. `note` says so.
+5. Then it names the **release the build is, or follows**
+   (`running.release`). **The firmware can't report its own tag:** CI
+   builds the merge commit before the release is tagged, from a shallow
+   checkout with no tags, so every CI build reports a bare SHA. sofleii
+   maps it back, cheapest way first (anonymous GitHub allows 60 requests an
+   hour):
+   - `up_to_date`, same-tree rule included: the latest release, exact. No
+     extra request.
+   - `ahead`: the latest release, `commits_after` = `commits_ahead`. No
+     extra request.
+   - A local `git describe` string already names the tag and the count
+     (`v3.0.0-68-gf9a665f` = `v3.0.0+68`; `v3.1.0` = exact). No extra
+     request; this also covers `unknown`.
+   - `behind` or `diverged` with a bare SHA: `GET
+     /repos/{repo}/releases?per_page=10` (drafts and prereleases skipped,
+     the latest one too, since it was already compared), then newest
+     first `compare/{tag}...{running}` until one fits. `identical` or no
+     changed files gives exact, and the build being ahead gives
+     `commits_after` = `ahead_by`. At most 10 releases. If none fits, or
+     that lookup fails (e.g. rate limiting), `release` is `null` (with a
+     `note` for a failure) and the verdict stands.
 
-A `-dirty` build is compared by its commit, with `running.dirty: true` and a
+The text leads with versions; the commit counts are in the JSON. A
+`-dirty` build is compared by its commit, with `running.dirty: true` and a
 note in the text output. Real output (2026-10-19; the left half runs the
 `feat/device-info` CI build at `f9a665f`, which PR #70 merged unchanged as
 `5c53b30` = v3.1.0):
 
 ```
 $ sofleii update check
-up to date (v3.1.0, 5c53b30)
-running         f9a665f
+up to date: v3.1.0 (f9a665f)
+running         v3.1.0 (f9a665f)
 latest          v3.1.0 5c53b30, published 2026-10-19T19:11:48Z
 note            same source as v3.1.0: the commits between f9a665f and 5c53b30 change no files
 ```
 
-Other verdicts: `3 commits behind v3.1.0`, `2 commits ahead of v3.1.0`,
-`diverged from v3.1.0: 4 commits behind, 2 commits ahead`, `unknown build,
-can't compare with v3.1.0` (with the reason as a `note`).
+Other verdicts: `v3.1.0 available, running v3.0.0+68 (f9a665f)`, `ahead of
+v3.1.0: running v3.1.0+3 (abc1234)`, `diverged from v3.1.0: running
+v3.0.0+9 (abc1234)`, `can't compare with v3.1.0: running f9a665f (no
+release)` (with the reason as a `note`). `(no release)` replaces the
+version when no release precedes the build.
 
 ```json
 {
   "schema": 1,
   "transport": { "kind": "usb", "device": "/dev/ttyACM0" },
-  "running": { "version": "f9a665f", "commit": "f9a665f", "dirty": false },
+  "running": { "version": "f9a665f", "commit": "f9a665f", "dirty": false,
+               "release": { "tag": "v3.1.0", "exact": true, "commits_after": 0 } },
   "latest": { "tag": "v3.1.0",
               "commit": "5c53b30fce99031611442b1a3ccbbe7052327020",
               "published_at": "2026-10-19T19:11:48Z" },
@@ -345,8 +370,10 @@ can't compare with v3.1.0` (with the reason as a `note`).
 - `running.version` is the raw string, `-dirty` included. `running.commit`
   is the abbreviated SHA from it, or the full SHA an exact tag resolved to.
   `latest.commit` is always the full SHA.
-- `note` explains an `unknown` status or a same-source `up_to_date`;
-  otherwise `null`.
+- `running.release`: `{"tag", "exact", "commits_after"}` (`commits_after`
+  is 0 when `exact`), or `null` when no release precedes the build.
+- `note` explains an `unknown` status, a same-source `up_to_date`, or a
+  failed release lookup; otherwise `null`.
 - **Exit codes:** 0 `up_to_date` or `ahead`; **1** `behind`, `diverged` or
   `unknown` (worth a look; usable as `sofleii update check || notify-send
   "Sofle firmware update"`); 2 keyboard not found (checked before any
@@ -357,7 +384,8 @@ can't compare with v3.1.0` (with the reason as a `note`).
   rate limiting).
 - **Token:** none needed for public releases. `GH_TOKEN`, else
   `GITHUB_TOKEN`, is sent as a bearer token if set, which lifts the
-  anonymous limit of 60 requests per hour (a check makes 2 to 4). A rate
+  anonymous limit of 60 requests per hour (a check usually makes 2 to 4;
+a bare SHA that's behind adds up to 11 for the release lookup). A rate
   limit error says so. Requests send `User-Agent: sofleii/<version>` and
   time out after 10 s each.
 - HTTPS is `ureq` (blocking, rustls with bundled roots): no tokio, no

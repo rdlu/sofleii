@@ -48,7 +48,51 @@ pub struct Running {
     pub commit: Option<String>,
     /// Built with uncommitted changes on top of `commit`.
     pub dirty: bool,
+    /// The release this build is, or comes after; `null` when no release
+    /// precedes it (or it couldn't be mapped). The firmware can't know its
+    /// own tag: CI builds the merge commit before it's tagged, from a
+    /// shallow checkout, so it only ever reports a bare SHA.
+    pub release: Option<Release>,
 }
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct Release {
+    pub tag: String,
+    /// The build is that release (same commit, or the same source tree).
+    pub exact: bool,
+    /// Commits on top of `tag`; 0 when `exact`. Shown as `tag+N`.
+    pub commits_after: u32,
+}
+
+impl Release {
+    fn exact(tag: &str) -> Self {
+        Release {
+            tag: tag.into(),
+            exact: true,
+            commits_after: 0,
+        }
+    }
+
+    fn after(tag: &str, n: u32) -> Self {
+        Release {
+            tag: tag.into(),
+            exact: n == 0,
+            commits_after: n,
+        }
+    }
+
+    /// `v3.1.0`, or `v3.0.0+68`.
+    pub fn label(&self) -> String {
+        if self.exact {
+            self.tag.clone()
+        } else {
+            format!("{}+{}", self.tag, self.commits_after)
+        }
+    }
+}
+
+/// How many older releases `behind`/`diverged` may compare against.
+pub const RELEASE_SCAN: u32 = 10;
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub struct Latest {
@@ -94,7 +138,8 @@ pub struct Check {
     pub commits_behind: Option<u32>,
     /// Commits on the keyboard that the release lacks; `null` when unknown.
     pub commits_ahead: Option<u32>,
-    /// Why the status is `unknown`; `null` otherwise.
+    /// Why the status is `unknown`, why a same-tree build counts as up to
+    /// date, or why `running.release` couldn't be looked up; else `null`.
     pub note: Option<String>,
 }
 
@@ -135,6 +180,21 @@ pub fn parse_describe(raw: &str) -> (Describe, bool) {
     (Describe::Tag(s.to_string()), dirty)
 }
 
+/// The release a local `git describe` names: `v3.0.0-68-gf9a665f` is
+/// 68 commits after v3.0.0, `v3.1.0` is v3.1.0. `None` for a bare SHA (CI).
+pub fn describe_release(raw: &str) -> Option<Release> {
+    let s = raw.strip_suffix("-dirty").unwrap_or(raw);
+    match parse_describe(raw).0 {
+        Describe::Unknown => None,
+        Describe::Tag(t) => Some(Release::exact(&t)),
+        Describe::Commit(_) => {
+            let mut parts = s.rsplitn(3, '-');
+            let (_g, n, tag) = (parts.next()?, parts.next()?, parts.next()?);
+            Some(Release::after(tag, n.parse().ok()?))
+        }
+    }
+}
+
 /// `Running` from `info`'s build; the tag form's commit is filled in later.
 pub fn running_from(build: &Build) -> Running {
     let version = build.zmk_config_version.clone();
@@ -145,6 +205,7 @@ pub fn running_from(build: &Build) -> Running {
             Describe::Unknown | Describe::Tag(_) => None,
         },
         dirty: dirty || build.zmk_config_dirty == Some(true),
+        release: None,
         version,
     }
 }
@@ -172,6 +233,13 @@ struct ReleaseJson {
 }
 
 #[derive(Deserialize)]
+struct ReleaseListJson {
+    tag_name: String,
+    draft: bool,
+    prerelease: bool,
+}
+
+#[derive(Deserialize)]
 struct CompareJson {
     status: String,
     ahead_by: u32,
@@ -180,8 +248,76 @@ struct CompareJson {
     files: Option<Vec<serde::de::IgnoredAny>>,
 }
 
-/// Compares `running` with the latest release of `repo` (`OWNER/NAME`).
-pub fn check<H: Http>(http: &mut H, repo: &str, mut running: Running) -> Result<Check> {
+/// Compares `running` with the latest release of `repo` (`OWNER/NAME`),
+/// then names the release it is or follows (`running.release`), cheapest
+/// way first: the verdict itself, then the describe string, and only for
+/// a bare SHA that's behind, a scan of older releases.
+pub fn check<H: Http>(http: &mut H, repo: &str, running: Running) -> Result<Check> {
+    let mut c = compare_latest(http, repo, running)?;
+    let described = c.running.version.as_deref().and_then(describe_release);
+    let tag = &c.latest.tag;
+    c.running.release = match c.status {
+        Status::UpToDate => Some(Release::exact(tag)),
+        Status::Ahead => Some(Release::after(tag, c.commits_ahead.unwrap_or(0))),
+        Status::Unknown => described,
+        Status::Behind | Status::Diverged => match (described, c.running.commit.clone()) {
+            (Some(r), _) => Some(r),
+            (None, Some(commit)) => match scan_releases(http, repo, tag, &commit) {
+                Ok(r) => r,
+                Err(e) => {
+                    c.note = Some(format!("couldn't map {} to a release: {e}", short(&commit)));
+                    None
+                }
+            },
+            (None, None) => None,
+        },
+    };
+    Ok(c)
+}
+
+/// The newest older release that `commit` is (same commit or tree) or
+/// comes after: lists up to [`RELEASE_SCAN`] releases (no drafts or
+/// prereleases), skips `latest_tag` (already compared), and compares each
+/// `{tag}...{commit}` newest-first until one fits.
+fn scan_releases<H: Http>(
+    http: &mut H,
+    repo: &str,
+    latest_tag: &str,
+    commit: &str,
+) -> Result<Option<Release>> {
+    let r = http.get(
+        &format!("/repos/{repo}/releases?per_page={RELEASE_SCAN}"),
+        ACCEPT_JSON,
+    )?;
+    let list: Vec<ReleaseListJson> = parse(&ok(r, "release list")?, "release list")?;
+    for rel in list.iter().take(RELEASE_SCAN as usize) {
+        if rel.draft || rel.prerelease || rel.tag_name == latest_tag {
+            continue;
+        }
+        let r = http.get(
+            &format!(
+                "/repos/{repo}/compare/{}...{commit}?per_page=1",
+                encode_ref(&rel.tag_name)
+            ),
+            ACCEPT_JSON,
+        )?;
+        if matches!(r.status, 404 | 422) && !r.rate_limited {
+            continue;
+        }
+        let cmp: CompareJson = parse(&ok(r, "compare")?, "compare")?;
+        // Here the build is the head: GitHub's `ahead` = commits after the tag.
+        let same_tree = cmp.files.is_some_and(|f| f.is_empty());
+        match cmp.status.as_str() {
+            "identical" => return Ok(Some(Release::exact(&rel.tag_name))),
+            _ if same_tree => return Ok(Some(Release::exact(&rel.tag_name))),
+            "ahead" => return Ok(Some(Release::after(&rel.tag_name, cmp.ahead_by))),
+            _ => {}
+        }
+    }
+    Ok(None)
+}
+
+fn compare_latest<H: Http>(http: &mut H, repo: &str, mut running: Running) -> Result<Check> {
     let r = http.get(&format!("/repos/{repo}/releases/latest"), ACCEPT_JSON)?;
     if r.status == 404 && !r.rate_limited {
         return Err(Error::GitHub(format!(
@@ -457,7 +593,8 @@ pub(crate) mod tests {
             Running {
                 version: Some("v3.0.0-68-gf9a665f-dirty".into()),
                 commit: Some("f9a665f".into()),
-                dirty: true
+                dirty: true,
+                release: None,
             }
         );
         assert_eq!(
@@ -465,7 +602,8 @@ pub(crate) mod tests {
             Running {
                 version: None,
                 commit: None,
-                dirty: false
+                dirty: false,
+                release: None,
             }
         );
     }
@@ -622,7 +760,7 @@ pub(crate) mod tests {
         assert_eq!(
             v,
             serde_json::json!({
-                "running": {"version": null, "commit": null, "dirty": false},
+                "running": {"version": null, "commit": null, "dirty": false, "release": null},
                 "latest": {"tag": "v3.1.0", "commit": RELEASE_SHA,
                            "published_at": "2026-10-19T19:20:31Z"},
                 "status": "unknown",
@@ -676,5 +814,194 @@ pub(crate) mod tests {
     fn refs_are_path_encoded() {
         assert_eq!(encode_ref("v3.1.0"), "v3.1.0");
         assert_eq!(encode_ref("release/v1 #2"), "release/v1%20%232");
+    }
+
+    fn rel(tag: &str, exact: bool, commits_after: u32) -> Option<Release> {
+        Some(Release {
+            tag: tag.into(),
+            exact,
+            commits_after,
+        })
+    }
+
+    #[test]
+    fn describe_names_the_release() {
+        assert_eq!(
+            describe_release("v3.0.0-68-gf9a665f"),
+            rel("v3.0.0", false, 68)
+        );
+        assert_eq!(
+            describe_release("v3.0.0-68-gf9a665f-dirty"),
+            rel("v3.0.0", false, 68)
+        );
+        assert_eq!(
+            describe_release("v2.0.0-rc1-5-gabc1234"),
+            rel("v2.0.0-rc1", false, 5)
+        );
+        assert_eq!(describe_release("v3.1.0"), rel("v3.1.0", true, 0));
+        assert_eq!(describe_release("v3.1.0-dirty"), rel("v3.1.0", true, 0));
+        assert_eq!(describe_release("5c53b30"), None);
+        assert_eq!(describe_release(""), None);
+        assert_eq!(rel("v3.0.0", false, 68).unwrap().label(), "v3.0.0+68");
+        assert_eq!(rel("v3.1.0", true, 0).unwrap().label(), "v3.1.0");
+    }
+
+    /// Requests after `releases/latest` + `commits/{tag}`, which every check makes.
+    fn extra(http: &FakeHttp) -> Vec<&str> {
+        http.requested[2..].iter().map(String::as_str).collect()
+    }
+
+    #[test]
+    fn up_to_date_and_ahead_need_no_extra_call() {
+        let mut http = FakeHttp::released();
+        let c = check(&mut http, DEFAULT_REPO, running("5c53b30")).unwrap();
+        assert_eq!(c.running.release, rel("v3.1.0", true, 0));
+        assert_eq!(http.requested.len(), 2);
+
+        // Same tree (the live f9a665f case): exact, compare only.
+        let mut http = FakeHttp::released();
+        http.reply(
+            &format!("/repos/rdlu/sofleii/compare/f9a665f...{RELEASE_SHA}?per_page=1"),
+            200,
+            r#"{"status":"ahead","ahead_by":1,"behind_by":0,"files":[]}"#,
+        );
+        let c = check(&mut http, DEFAULT_REPO, running("f9a665f")).unwrap();
+        assert_eq!(c.running.release, rel("v3.1.0", true, 0));
+        assert_eq!(http.requested.len(), 3);
+
+        let mut http = FakeHttp::released();
+        http.compare("abc1234", "behind", 0, 3);
+        let c = check(&mut http, DEFAULT_REPO, running("abc1234")).unwrap();
+        assert_eq!(c.status, Status::Ahead);
+        assert_eq!(c.running.release, rel("v3.1.0", false, 3));
+        assert_eq!(http.requested.len(), 3);
+    }
+
+    #[test]
+    fn behind_with_a_describe_string_needs_no_scan() {
+        let mut http = FakeHttp::released();
+        http.compare("f9a665f", "ahead", 2, 0);
+        let c = check(&mut http, DEFAULT_REPO, running("v3.0.0-68-gf9a665f-dirty")).unwrap();
+        assert_eq!(c.status, Status::Behind);
+        assert_eq!(c.running.release, rel("v3.0.0", false, 68));
+        assert_eq!(extra(&http).len(), 1, "{:?}", http.requested);
+    }
+
+    fn release_list(tags: &[(&str, bool, bool)]) -> String {
+        let items: Vec<String> = tags
+            .iter()
+            .map(|(t, draft, pre)| {
+                format!(r#"{{"tag_name":"{t}","draft":{draft},"prerelease":{pre}}}"#)
+            })
+            .collect();
+        format!("[{}]", items.join(","))
+    }
+
+    const LIST: &str = "/repos/rdlu/sofleii/releases?per_page=10";
+
+    #[test]
+    fn behind_bare_sha_scans_older_releases_skipping_drafts_and_prereleases() {
+        let mut http = FakeHttp::released();
+        http.compare("1a2b3c4", "ahead", 30, 0);
+        http.reply(
+            LIST,
+            200,
+            &release_list(&[
+                ("v3.2.0-draft", true, false),
+                ("v3.1.0", false, false),
+                ("v3.1.0-rc1", false, true),
+                ("v3.0.0", false, false),
+                ("v2.8.0", false, false),
+            ]),
+        );
+        http.reply(
+            "/repos/rdlu/sofleii/compare/v3.0.0...1a2b3c4?per_page=1",
+            200,
+            r#"{"status":"ahead","ahead_by":12,"behind_by":0,"files":[{"filename":"x"}]}"#,
+        );
+        let c = check(&mut http, DEFAULT_REPO, running("1a2b3c4")).unwrap();
+        assert_eq!(c.status, Status::Behind);
+        assert_eq!(c.running.release, rel("v3.0.0", false, 12));
+        // compare with latest, the list, one compare (v3.0.0); stops there.
+        assert_eq!(
+            extra(&http),
+            vec![
+                format!("/repos/rdlu/sofleii/compare/1a2b3c4...{RELEASE_SHA}?per_page=1").as_str(),
+                LIST,
+                "/repos/rdlu/sofleii/compare/v3.0.0...1a2b3c4?per_page=1",
+            ]
+        );
+    }
+
+    #[test]
+    fn scan_finds_an_exact_older_release_by_tree() {
+        let mut http = FakeHttp::released();
+        http.compare("1a2b3c4", "diverged", 5, 1);
+        http.reply(
+            LIST,
+            200,
+            &release_list(&[("v3.1.0", false, false), ("v3.0.0", false, false)]),
+        );
+        http.reply(
+            "/repos/rdlu/sofleii/compare/v3.0.0...1a2b3c4?per_page=1",
+            200,
+            r#"{"status":"ahead","ahead_by":1,"behind_by":0,"files":[]}"#,
+        );
+        let c = check(&mut http, DEFAULT_REPO, running("1a2b3c4")).unwrap();
+        assert_eq!(c.status, Status::Diverged);
+        assert_eq!(c.running.release, rel("v3.0.0", true, 0));
+    }
+
+    #[test]
+    fn scan_is_capped_and_can_find_nothing() {
+        let mut http = FakeHttp::released();
+        http.compare("1a2b3c4", "diverged", 5, 1);
+        // 12 listed (GitHub would honour per_page; the cap holds anyway),
+        // none fit: every compare is "diverged" or a 404.
+        let tags: Vec<String> = (0..12).map(|i| format!("v2.{i}.0")).collect();
+        let list: Vec<(&str, bool, bool)> =
+            tags.iter().map(|t| (t.as_str(), false, false)).collect();
+        http.reply(LIST, 200, &release_list(&list));
+        for t in &tags[..3] {
+            http.reply(
+                &format!("/repos/rdlu/sofleii/compare/{t}...1a2b3c4?per_page=1"),
+                200,
+                r#"{"status":"diverged","ahead_by":2,"behind_by":2,"files":[{"filename":"x"}]}"#,
+            );
+        }
+        let c = check(&mut http, DEFAULT_REPO, running("1a2b3c4")).unwrap();
+        assert_eq!(c.running.release, None);
+        // compare with latest + list + 10 compares, not 12.
+        assert_eq!(extra(&http).len(), 12, "{:?}", http.requested);
+    }
+
+    #[test]
+    fn scan_failure_keeps_the_verdict_with_a_note() {
+        let mut http = FakeHttp::released();
+        http.compare("1a2b3c4", "ahead", 3, 0);
+        http.replies.insert(
+            LIST.into(),
+            Reply {
+                status: 403,
+                body: "{}".into(),
+                rate_limited: true,
+            },
+        );
+        let c = check(&mut http, DEFAULT_REPO, running("1a2b3c4")).unwrap();
+        assert_eq!(c.status, Status::Behind);
+        assert_eq!(c.running.release, None);
+        assert!(c.note.unwrap().contains("rate limited"));
+    }
+
+    #[test]
+    fn unknown_uses_the_describe_string_only() {
+        let mut http = FakeHttp::released();
+        let c = check(&mut http, DEFAULT_REPO, running("v3.1.0-1-gdeadbee")).unwrap();
+        assert_eq!(c.status, Status::Unknown);
+        assert_eq!(c.running.release, rel("v3.1.0", false, 1));
+        let mut http = FakeHttp::released();
+        let c = check(&mut http, DEFAULT_REPO, running("deadbee")).unwrap();
+        assert_eq!(c.running.release, None);
+        assert!(!http.requested.iter().any(|p| p.contains("/releases?")));
     }
 }

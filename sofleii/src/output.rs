@@ -443,28 +443,36 @@ pub fn info(style: Style, transport: &TransportInfo, i: &Info) -> String {
     String::from_utf8(out).expect("utf-8")
 }
 
-fn commits(n: Option<u32>) -> String {
-    match n {
-        Some(1) => "1 commit".into(),
-        Some(n) => format!("{n} commits"),
-        None => "? commits".into(),
+/// The running build as a version: `v3.1.0 (f9a665f)`, `v3.0.0+68
+/// (f9a665f)`, or just the commit (or raw version) with no release.
+fn running_version(r: &update::Running) -> String {
+    let id = match (&r.commit, &r.version) {
+        (Some(c), _) => short(c).to_string(),
+        // `git describe --dirty` already appends "-dirty"; the row says it once.
+        (None, Some(v)) => v.strip_suffix("-dirty").unwrap_or(v).to_string(),
+        (None, None) => "-".into(),
+    };
+    match &r.release {
+        Some(rel) => format!("{} ({id})", rel.label()),
+        None => id,
     }
 }
 
-/// The one-line verdict: `up to date (v3.1.0, 5c53b30)`, `3 commits behind
-/// v3.1.0`, `2 commits ahead of v3.1.0`, `diverged from v3.1.0: …`.
+/// The one-line verdict, led by versions: `up to date: v3.1.0 (f9a665f)`,
+/// `v3.1.0 available, running v3.0.0+68 (f9a665f)`, `ahead of v3.1.0:
+/// running v3.1.0+3 (abc1234)`. The commit counts stay in the JSON.
 pub fn update_headline(c: &update::Check) -> String {
     let tag = &c.latest.tag;
+    let mut running = running_version(&c.running);
+    if c.running.release.is_none() {
+        running.push_str(" (no release)");
+    }
     match c.status {
-        update::Status::UpToDate => format!("up to date ({tag}, {})", short(&c.latest.commit)),
-        update::Status::Behind => format!("{} behind {tag}", commits(c.commits_behind)),
-        update::Status::Ahead => format!("{} ahead of {tag}", commits(c.commits_ahead)),
-        update::Status::Diverged => format!(
-            "diverged from {tag}: {} behind, {} ahead",
-            commits(c.commits_behind),
-            commits(c.commits_ahead)
-        ),
-        update::Status::Unknown => format!("unknown build, can't compare with {tag}"),
+        update::Status::UpToDate => format!("up to date: {running}"),
+        update::Status::Behind => format!("{tag} available, running {running}"),
+        update::Status::Ahead => format!("ahead of {tag}: running {running}"),
+        update::Status::Diverged => format!("diverged from {tag}: running {running}"),
+        update::Status::Unknown => format!("can't compare with {tag}: running {running}"),
     }
 }
 
@@ -484,17 +492,7 @@ pub fn update_check(style: Style, transport: &TransportInfo, c: &update::Check) 
     };
     let _ = writeln!(w, "{}", style.bold(&headline));
     let r = &c.running;
-    let mut running = match &r.version {
-        // `git describe --dirty` already appends "-dirty"; show it once.
-        Some(v) => v.strip_suffix("-dirty").unwrap_or(v).to_string(),
-        None => "-".into(),
-    };
-    // An exact tag carries no SHA: show the commit it resolved to.
-    if let Some(commit) = &r.commit
-        && !running.contains(commit.as_str())
-    {
-        running.push_str(&format!(" ({})", short(commit)));
-    }
+    let mut running = running_version(r);
     if r.dirty {
         running.push_str(&format!(" {}", style.paint("33", "(dirty)")));
     }
@@ -950,16 +948,22 @@ mod tests {
         status: update::Status,
         behind: u32,
         ahead: u32,
+        release: Option<(&str, u32)>,
     ) -> update::Check {
         let known = status != update::Status::Unknown;
         update::Check {
             running: update::Running {
                 version: Some(version.into()),
-                commit: Some(update::parse_describe(version).0).and_then(|d| match d {
+                commit: match update::parse_describe(version).0 {
                     update::Describe::Commit(c) => Some(c),
                     _ => None,
-                }),
+                },
                 dirty: version.ends_with("-dirty"),
+                release: release.map(|(tag, n)| update::Release {
+                    tag: tag.into(),
+                    exact: n == 0,
+                    commits_after: n,
+                }),
             },
             latest: update::Latest {
                 tag: "v3.1.0".into(),
@@ -975,59 +979,67 @@ mod tests {
 
     #[test]
     fn update_check_human() {
+        use update::Status::*;
         let t = transport(TransportKind::Usb);
-        let out = update_check(
-            Style::plain(Format::Human),
-            &t,
-            &update_sample("5c53b30", update::Status::UpToDate, 0, 0),
-        );
+        let human = |c: &update::Check| update_check(Style::plain(Format::Human), &t, c);
+        let out = human(&update_sample(
+            "f9a665f",
+            UpToDate,
+            1,
+            0,
+            Some(("v3.1.0", 0)),
+        ));
         assert_eq!(
             out,
-            "up to date (v3.1.0, 5c53b30)\n\
-             running         5c53b30\n\
+            "up to date: v3.1.0 (f9a665f)\n\
+             running         v3.1.0 (f9a665f)\n\
              latest          v3.1.0 5c53b30, published 2026-10-19T19:20:31Z\n"
         );
-        let out = update_check(
-            Style::plain(Format::Human),
-            &t,
-            &update_sample("v3.0.0-68-gf9a665f-dirty", update::Status::Behind, 3, 0),
-        );
-        assert!(out.starts_with("3 commits behind v3.1.0\n"), "{out}");
+        let out = human(&update_sample(
+            "v3.0.0-68-gf9a665f-dirty",
+            Behind,
+            3,
+            0,
+            Some(("v3.0.0", 68)),
+        ));
         assert!(
-            out.contains("running         v3.0.0-68-gf9a665f (dirty)\n"),
+            out.starts_with("v3.1.0 available, running v3.0.0+68 (f9a665f)\n"),
+            "{out}"
+        );
+        assert!(!out.contains("3 commits"), "{out}");
+        assert!(
+            out.contains("running         v3.0.0+68 (f9a665f) (dirty)\n"),
             "{out}"
         );
         assert!(
             out.contains("note            dirty build: uncommitted changes on top of f9a665f"),
             "{out}"
         );
-        for (status, b, a, want) in [
-            (update::Status::Ahead, 0, 1, "1 commit ahead of v3.1.0\n"),
+        for (c, want) in [
             (
-                update::Status::Diverged,
-                4,
-                2,
-                "diverged from v3.1.0: 4 commits behind, 2 commits ahead\n",
+                update_sample("abc1234", Ahead, 0, 3, Some(("v3.1.0", 3))),
+                "ahead of v3.1.0: running v3.1.0+3 (abc1234)\n",
             ),
             (
-                update::Status::Unknown,
-                0,
-                0,
-                "unknown build, can't compare with v3.1.0\n",
+                update_sample("abc1234", Diverged, 4, 2, Some(("v3.0.0", 9))),
+                "diverged from v3.1.0: running v3.0.0+9 (abc1234)\n",
+            ),
+            (
+                update_sample("abc1234", Behind, 4, 0, None),
+                "v3.1.0 available, running abc1234 (no release)\n",
+            ),
+            (
+                update_sample("abc1234", Unknown, 0, 0, None),
+                "can't compare with v3.1.0: running abc1234 (no release)\n",
             ),
         ] {
-            let out = update_check(
-                Style::plain(Format::Human),
-                &t,
-                &update_sample("abc1234", status, b, a),
-            );
+            let out = human(&c);
             assert!(out.starts_with(want), "{out}");
         }
         // An exact tag shows the commit it resolved to.
-        let mut c = update_sample("v3.1.0", update::Status::UpToDate, 0, 0);
+        let mut c = update_sample("v3.1.0", UpToDate, 0, 0, Some(("v3.1.0", 0)));
         c.running.commit = Some(c.latest.commit.clone());
-        let out = update_check(Style::plain(Format::Human), &t, &c);
-        assert!(out.contains("running         v3.1.0 (5c53b30)\n"), "{out}");
+        assert!(human(&c).contains("running         v3.1.0 (5c53b30)\n"));
     }
 
     #[test]
@@ -1035,7 +1047,13 @@ mod tests {
         let v: Value = serde_json::from_str(&update_check(
             Style::plain(Format::Json),
             &transport(TransportKind::Usb),
-            &update_sample("5c53b30", update::Status::UpToDate, 0, 0),
+            &update_sample(
+                "5c53b30",
+                update::Status::UpToDate,
+                0,
+                0,
+                Some(("v3.1.0", 0)),
+            ),
         ))
         .unwrap();
         assert_eq!(
@@ -1043,7 +1061,8 @@ mod tests {
             serde_json::json!({
                 "schema": 1,
                 "transport": {"kind": "usb", "device": "/dev/ttyACM1"},
-                "running": {"version": "5c53b30", "commit": "5c53b30", "dirty": false},
+                "running": {"version": "5c53b30", "commit": "5c53b30", "dirty": false,
+                            "release": {"tag": "v3.1.0", "exact": true, "commits_after": 0}},
                 "latest": {"tag": "v3.1.0",
                            "commit": "5c53b30fce99031611442b1a3ccbbe7052327020",
                            "published_at": "2026-10-19T19:20:31Z"},
