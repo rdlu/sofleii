@@ -456,6 +456,57 @@ fn an_action_reports_done_then_refreshes() {
 }
 
 #[test]
+fn an_output_handover_is_verified_over_ble_and_the_link_follows() {
+    let s = start(
+        |c| c,
+        Kb {
+            ble: true,
+            ..Kb::default()
+        },
+    );
+    let seen = s.until("status", status_ok);
+    assert_eq!(
+        links(&seen).last().and_then(LinkState::kind),
+        Some(TransportKind::Usb)
+    );
+    let t = s.h.send(Request::SetOutput(TransportKind::Ble));
+    let (seen, r) = s.done(t);
+    // The firmware switched before replying: silence over USB, then the
+    // read-back over BLE.
+    match r {
+        Ok(Outcome::Output(o)) => {
+            assert!(o.verified && !o.reply, "{o:?}");
+            assert_eq!(o.verified_over, Some(TransportKind::Ble));
+            assert_eq!(o.studio_transport, Some(TransportKind::Ble));
+        }
+        other => panic!("{other:?}"),
+    }
+    assert!(
+        links(&seen).is_empty(),
+        "no link event before Done: {seen:#?}"
+    );
+    // Then the session replans (USB is deaf now) and settles on BLE, with
+    // no Deaf/Lost/Searching on the way.
+    let seen = s.until("status", status_ok);
+    let got = links(&seen);
+    assert_eq!(
+        got,
+        [
+            LinkState::Connecting {
+                kind: Some(TransportKind::Ble)
+            },
+            got.last().cloned().unwrap()
+        ],
+        "{seen:#?}"
+    );
+    assert_eq!(got[1].kind(), Some(TransportKind::Ble));
+    let Some(Event::Status(Stamped { value: Ok(p), .. })) = seen.last() else {
+        unreachable!()
+    };
+    assert_eq!(p.output_priority, Some("ble"));
+}
+
+#[test]
 fn a_bad_rename_fails_before_any_rpc() {
     let s = start(|c| c, Kb::default());
     // The split read ends the first batch.
@@ -553,6 +604,15 @@ fn risk_follows_the_handover_rules() {
         "no change"
     );
     assert_eq!(Request::SwitchProfile(1).risk(&unknown), Risk::None);
+    // An empty slot starts pairing and drops the BLE connection, even over
+    // USB with priority usb.
+    assert_eq!(Request::SwitchProfile(2).risk(&usb), Risk::DropsCurrentLink);
+    let on_empty = snapshot(Some(Usb), 2, "usb");
+    assert_eq!(
+        Request::SwitchProfile(2).risk(&on_empty),
+        Risk::None,
+        "already active"
+    );
 
     // Output: away from the transport in use.
     assert_eq!(Request::SetOutput(Ble).risk(&usb), Risk::DropsCurrentLink);

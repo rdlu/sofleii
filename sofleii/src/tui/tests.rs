@@ -147,7 +147,7 @@ fn dashboard_80x24() {
     }
     assert_eq!(
         s[23],
-        "└ q quit · r refresh · u update check · ↑↓/jk select · d debug · ? help ───────┘"
+        "└ q quit · r refresh · ⏎ switch · o output · u update · d debug · ? help ──────┘"
     );
 }
 
@@ -173,7 +173,7 @@ fn dashboard_60x20_is_one_column() {
         "│                                                          │",
         "│                                                          │",
         "│                                                          │",
-        "└ q quit · r refresh · ? help ─────────────────────────────┘",
+        "└ q quit · r refresh · ⏎ switch · o output · ? help ───────┘",
     ];
     assert_eq!(screen(&demo(), 60, 20), expected);
 }
@@ -594,7 +594,9 @@ fn help_overlay() {
         "↑ ↓  k j",
         "refresh everything now",
         "debug lines in the log",
-        "(coming soon)",
+        "switch to the selected profile",
+        "toggle the output priority usb / ble",
+        "risky switches ask first (y / n)",
         "? or Esc closes",
     ] {
         assert!(s.contains(k), "{k}:\n{s}");
@@ -776,4 +778,410 @@ fn a_signal_stops_the_loop_with_quit() {
     )
     .unwrap();
     assert_eq!(*rec.0.borrow(), [Request::Quit]);
+}
+
+// Write actions: `⏎`/`s` and `o`, the confirm modal, pending and results.
+
+use crate::commands::{output, profile};
+use crate::session::{Outcome, Presence, Risk};
+
+/// `demo()` (USB link, priority usb, 0 active, 1 bonded, 2-4 empty) with
+/// both transports present on this host.
+fn actions_app() -> App {
+    let mut a = demo();
+    a.apply(
+        &Event::Presence(Presence {
+            usb: true,
+            ble: true,
+        }),
+        t0(),
+    );
+    a
+}
+
+fn press(a: &mut App, rec: &Rec, code: KeyCode) {
+    let now = a.now;
+    a.handle(Input::Term(TermEvent::Key(key(code))), rec, now);
+}
+
+fn sent(rec: &Rec) -> Vec<Request> {
+    rec.0.borrow().clone()
+}
+
+fn output_done(target: &'static str, over: TransportKind) -> Outcome {
+    Outcome::Output(output::Outcome {
+        action: "output",
+        output_priority: target,
+        previous_output_priority: Some("usb"),
+        ok: true,
+        reply: false,
+        verified: true,
+        verified_over: Some(over),
+        studio_transport: Some(over),
+        note: Some("no reply over usb (expected); read back over ble".into()),
+    })
+}
+
+fn profile_done(n: u32, over: TransportKind) -> Outcome {
+    Outcome::Profile(profile::Outcome {
+        action: "profile_switch",
+        profile: n,
+        name: None,
+        ok: true,
+        sent: true,
+        reply: true,
+        verified: true,
+        verified_over: Some(over),
+        previous_active_profile: Some(0),
+        active_profile: Some(n),
+        slot: None,
+        studio_transport: Some(over),
+        note: None,
+    })
+}
+
+#[test]
+fn enter_on_a_safe_target_sends_without_a_modal() {
+    let rec = Rec::default();
+    let mut a = actions_app();
+    press(&mut a, &rec, KeyCode::Down);
+    press(&mut a, &rec, KeyCode::Enter);
+    // Over USB with priority usb, a bonded slot keeps the link.
+    assert_eq!(sent(&rec), [Request::SwitchProfile(1)]);
+    assert!(a.confirm.is_none());
+    assert_eq!(a.action.as_ref().unwrap().ticket, Ticket(1));
+    // `s` is the same key.
+    let rec = Rec::default();
+    let mut a = actions_app();
+    press(&mut a, &rec, KeyCode::Down);
+    press(&mut a, &rec, KeyCode::Char('s'));
+    assert_eq!(sent(&rec), [Request::SwitchProfile(1)]);
+}
+
+#[test]
+fn enter_on_the_active_profile_does_nothing() {
+    let rec = Rec::default();
+    let mut a = actions_app();
+    press(&mut a, &rec, KeyCode::Enter);
+    assert!(sent(&rec).is_empty() && a.confirm.is_none() && a.action.is_none());
+    let s = screen(&a, 80, 24);
+    assert!(
+        s[23].starts_with("└ ✓ profile 0 is already active ─"),
+        "{}",
+        s[23]
+    );
+    assert!(
+        s.join("\n")
+            .contains("17:42:10 profile 0 is already active")
+    );
+}
+
+#[test]
+fn a_risky_target_opens_the_modal_and_y_sends() {
+    for yes in [KeyCode::Char('y'), KeyCode::Enter] {
+        let rec = Rec::default();
+        let mut a = actions_app();
+        press(&mut a, &rec, KeyCode::Down);
+        press(&mut a, &rec, KeyCode::Down);
+        press(&mut a, &rec, KeyCode::Enter);
+        // Slot 2 is empty: it starts pairing, so it asks.
+        assert!(sent(&rec).is_empty());
+        let c = a.confirm.clone().expect("a modal");
+        assert_eq!(c.risk, Risk::DropsCurrentLink);
+        assert_eq!(c.req, Request::SwitchProfile(2));
+        press(&mut a, &rec, yes);
+        assert_eq!(sent(&rec), [Request::SwitchProfile(2)], "{yes:?}");
+        assert!(a.confirm.is_none() && a.action.is_some());
+    }
+}
+
+#[test]
+fn n_esc_or_any_other_key_cancels_the_modal() {
+    for no in [
+        KeyCode::Char('n'),
+        KeyCode::Esc,
+        KeyCode::Char('j'),
+        KeyCode::Char('q'),
+    ] {
+        let rec = Rec::default();
+        let mut a = actions_app();
+        press(&mut a, &rec, KeyCode::Char('o'));
+        assert!(a.confirm.is_some(), "USB link to BLE asks");
+        press(&mut a, &rec, no);
+        assert!(sent(&rec).is_empty(), "{no:?}");
+        assert!(
+            a.confirm.is_none() && a.action.is_none() && !a.quit,
+            "{no:?}"
+        );
+        let s = screen(&a, 80, 24);
+        assert!(
+            s[23].starts_with("└ ✓ cancelled: switching output to BLE ─"),
+            "{}",
+            s[23]
+        );
+    }
+}
+
+#[test]
+fn o_toggles_the_output_priority() {
+    // Over USB, BLE is the other one: confirmed, then sent.
+    let rec = Rec::default();
+    let mut a = actions_app();
+    press(&mut a, &rec, KeyCode::Char('o'));
+    press(&mut a, &rec, KeyCode::Char('y'));
+    assert_eq!(sent(&rec), [Request::SetOutput(TransportKind::Ble)]);
+    // Over BLE with priority usb (no USB on the left half), `o` asks for
+    // BLE, which keeps the link: no modal.
+    let ble = || {
+        let mut a = empty();
+        a.apply(
+            &Event::Link(via(TransportKind::Ble, "DD:1F:23:76:6E:71")),
+            t0(),
+        );
+        a
+    };
+    let rec = Rec::default();
+    let mut a = ble();
+    a.apply(&status(t0(), "usb", true), t0());
+    press(&mut a, &rec, KeyCode::Char('o'));
+    assert!(a.confirm.is_none());
+    assert_eq!(sent(&rec), [Request::SetOutput(TransportKind::Ble)]);
+    // And back: priority ble over BLE, `o` asks for USB, which moves it.
+    let rec = Rec::default();
+    let mut a = ble();
+    a.apply(&status(t0(), "ble", true), t0());
+    press(&mut a, &rec, KeyCode::Char('o'));
+    assert_eq!(
+        a.confirm.as_ref().unwrap().req,
+        Request::SetOutput(TransportKind::Usb)
+    );
+    // Not read yet: nothing to toggle.
+    let rec = Rec::default();
+    let mut a = empty();
+    press(&mut a, &rec, KeyCode::Char('o'));
+    assert!(sent(&rec).is_empty() && a.confirm.is_none());
+}
+
+#[test]
+fn action_keys_are_ignored_while_pending() {
+    let rec = Rec::default();
+    let mut a = actions_app();
+    press(&mut a, &rec, KeyCode::Down);
+    press(&mut a, &rec, KeyCode::Enter);
+    for k in [KeyCode::Enter, KeyCode::Char('s'), KeyCode::Char('o')] {
+        press(&mut a, &rec, k);
+    }
+    assert!(a.confirm.is_none());
+    assert_eq!(sent(&rec), [Request::SwitchProfile(1)]);
+    // Refresh and navigation still work, and the spinner stays.
+    press(&mut a, &rec, KeyCode::Char('r'));
+    press(&mut a, &rec, KeyCode::Up);
+    assert_eq!(sent(&rec)[1], Request::Refresh(Scope::All));
+    assert_eq!(a.selected, 0);
+    assert!(a.action.is_some());
+}
+
+#[test]
+fn done_clears_pending_and_shows_the_result() {
+    let rec = Rec::default();
+    let mut a = actions_app();
+    press(&mut a, &rec, KeyCode::Down);
+    press(&mut a, &rec, KeyCode::Enter);
+    // Another request's Done leaves it pending.
+    a.apply(
+        &Event::Done {
+            ticket: Ticket(9),
+            result: Ok(Outcome::Ok),
+        },
+        t0(),
+    );
+    assert!(a.action.is_some());
+    a.apply(
+        &Event::Done {
+            ticket: Ticket(1),
+            result: Ok(profile_done(1, TransportKind::Usb)),
+        },
+        t0(),
+    );
+    assert!(a.action.is_none());
+    let s = screen(&a, 80, 24);
+    assert!(
+        s[23].starts_with("└ ✓ profile 1 active (verified over usb) ─"),
+        "{}",
+        s[23]
+    );
+    assert!(
+        s.join("\n")
+            .contains("17:42:10 profile 1 active (verified over usb)")
+    );
+    // A success fades on its own, and action keys work again.
+    a.tick(at(6));
+    assert!(a.flash.is_none());
+    assert!(screen(&a, 80, 24)[23].starts_with("└ q quit"));
+    press(&mut a, &rec, KeyCode::Char('o'));
+    assert!(a.confirm.is_some());
+}
+
+#[test]
+fn a_failure_stays_until_the_next_key() {
+    let rec = Rec::default();
+    let mut a = actions_app();
+    press(&mut a, &rec, KeyCode::Char('o'));
+    press(&mut a, &rec, KeyCode::Char('y'));
+    a.apply(
+        &Event::Done {
+            ticket: Ticket(1),
+            result: Err(ErrorView {
+                kind: "protocol",
+                message: "the priority reads back as usb".into(),
+                exit_code: 4,
+            }),
+        },
+        t0(),
+    );
+    assert!(a.action.is_none());
+    a.tick(at(60));
+    let s = screen(&a, 80, 24);
+    assert_eq!(
+        s[23],
+        "└ ✕ switching output to BLE failed: the priority reads back as usb ────────────┘"
+    );
+    assert!(
+        s.join("\n")
+            .contains("error: switching output to BLE failed: the priority reads back")
+    );
+    press(&mut a, &rec, KeyCode::Down);
+    assert!(screen(&a, 80, 24)[23].starts_with("└ q quit"));
+}
+
+#[test]
+fn an_output_success_logs_its_note() {
+    let rec = Rec::default();
+    let mut a = actions_app();
+    press(&mut a, &rec, KeyCode::Char('o'));
+    press(&mut a, &rec, KeyCode::Enter);
+    a.apply(
+        &Event::Done {
+            ticket: Ticket(1),
+            result: Ok(output_done("ble", TransportKind::Ble)),
+        },
+        t0(),
+    );
+    let s = screen(&a, 80, 24).join("\n");
+    assert!(
+        s.contains("✓ output priority ble (verified over ble)"),
+        "{s}"
+    );
+    assert!(
+        s.contains("17:42:10 no reply over usb (expected); read back over ble"),
+        "{s}"
+    );
+}
+
+#[test]
+fn pending_renders_a_spinner() {
+    let rec = Rec::default();
+    let mut a = actions_app();
+    press(&mut a, &rec, KeyCode::Down);
+    press(&mut a, &rec, KeyCode::Enter);
+    let s = screen(&a, 80, 24);
+    assert_eq!(
+        s[23],
+        "└ ⠋ switching to profile 1… ───────────────────────────────────────────────────┘"
+    );
+    // One frame per tick.
+    a.tick(t0() + TICK * 2);
+    assert!(screen(&a, 80, 24)[23].starts_with("└ ⠹ switching"));
+}
+
+/// The modal's rows, cut out of the 80x24 screen (60 wide at column 10).
+fn modal(a: &App) -> Vec<String> {
+    screen(a, 80, 24)
+        .into_iter()
+        .map(|r| r.chars().skip(10).take(60).collect::<String>())
+        .filter(|r| r.starts_with(['┌', '│', '└']))
+        .collect()
+}
+
+#[test]
+fn modal_renders_for_a_link_drop() {
+    let rec = Rec::default();
+    let mut a = actions_app();
+    press(&mut a, &rec, KeyCode::Char('o'));
+    assert_eq!(
+        modal(&a),
+        [
+            "┌─ Switch output? ─────────────────────────────────────────┐",
+            "│                                                          │",
+            "│ Switching output to BLE: this USB link goes quiet;       │",
+            "│ sofleii continues over BLE (verified by read-back).      │",
+            "│                                                          │",
+            "│ Continue?                                                │",
+            "└ y / ⏎ confirm · n / Esc cancel ──────────────────────────┘",
+        ]
+    );
+}
+
+#[test]
+fn modal_renders_for_an_empty_slot() {
+    let rec = Rec::default();
+    let mut a = actions_app();
+    press(&mut a, &rec, KeyCode::Down);
+    press(&mut a, &rec, KeyCode::Down);
+    press(&mut a, &rec, KeyCode::Enter);
+    assert_eq!(
+        modal(&a),
+        [
+            "┌─ Switch profile? ────────────────────────────────────────┐",
+            "│                                                          │",
+            "│ Profile 2 is empty: switching starts pairing on it and   │",
+            "│ disconnects this host's BLE link; sofleii stays on USB.  │",
+            "│                                                          │",
+            "│ Continue?                                                │",
+            "└ y / ⏎ confirm · n / Esc cancel ──────────────────────────┘",
+        ]
+    );
+}
+
+#[test]
+fn modal_renders_for_a_switch_over_ble() {
+    let rec = Rec::default();
+    let mut a = actions_app();
+    a.apply(
+        &Event::Link(via(TransportKind::Ble, "DD:1F:23:76:6E:71")),
+        t0(),
+    );
+    press(&mut a, &rec, KeyCode::Down);
+    press(&mut a, &rec, KeyCode::Enter);
+    assert_eq!(
+        modal(&a),
+        [
+            "┌─ Switch profile? ────────────────────────────────────────┐",
+            "│                                                          │",
+            "│ Switching to profile 1 drops this host's BLE connection; │",
+            "│ sofleii continues over USB (verified by read-back).      │",
+            "│                                                          │",
+            "│ Continue?                                                │",
+            "└ y / ⏎ confirm · n / Esc cancel ──────────────────────────┘",
+        ]
+    );
+}
+
+#[test]
+fn modal_renders_destructive() {
+    let mut a = actions_app();
+    a.confirm = actions::confirm(&Request::UnpairProfile(1), &a.session);
+    assert_eq!(a.confirm.as_ref().unwrap().risk, Risk::Destructive);
+    assert_eq!(
+        modal(&a),
+        [
+            "┌─ Unpair profile? ────────────────────────────────────────┐",
+            "│                                                          │",
+            "│ Unpairing profile 1 deletes its bond: that host has to   │",
+            "│ pair again. This can't be undone.                        │",
+            "│                                                          │",
+            "│ Continue?                                                │",
+            "└ y / ⏎ confirm · n / Esc cancel ──────────────────────────┘",
+        ]
+    );
 }

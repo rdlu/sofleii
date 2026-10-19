@@ -2,14 +2,20 @@
 //! end like the CLI: it reads the core, and `commands`, `client`,
 //! `transport` and `session` never depend on it.
 //!
-//! **Live, read-only:** [`run`] spawns a [`Session`] with the CLI's
+//! **Live:** [`run`] spawns a [`Session`] with the CLI's
 //! connection flags and folds its events into a [`session::Snapshot`]; the
 //! dashboard renders a [`Snapshot`] derived from it. One loop reads one
 //! channel, fed by an input thread (crossterm) and a forwarder (the
 //! session's events), and redraws at least every [`TICK`] for ages and
-//! staleness. `r` refreshes and `u` checks for an update; the write actions
-//! (switch, output) come with the next PR. `SOFLEII_TUI_DEMO=1` shows a
-//! fixture instead, with no session.
+//! staleness. `r` refreshes and `u` checks for an update.
+//!
+//! **Writes:** `⏎`/`s` switches to the selected profile and `o` toggles the
+//! output priority. A request [`Request::risk`] calls risky (it drops the
+//! current link) opens a confirm modal first; the core never prompts. One
+//! write at a time: its spinner sits on the bottom edge until its
+//! [`Event::Done`], and action keys are ignored meanwhile. The result
+//! stays there briefly (an error until the next key) and goes to the log.
+//! `SOFLEII_TUI_DEMO=1` shows a fixture instead, with no session.
 //!
 //! The terminal is restored on every way out: a normal quit (`q`, `Esc`,
 //! `Ctrl-C`), SIGTERM/SIGHUP/SIGINT (flags checked by the event loop), and a
@@ -18,6 +24,7 @@
 //! joins a thread: [`Request::Quit`] tells the session to stop, and the
 //! process exit takes any thread still blocked in I/O.
 
+pub mod actions;
 pub mod log_pane;
 pub mod snapshot;
 pub mod view;
@@ -39,11 +46,15 @@ use ratatui::crossterm::execute;
 use crate::connect;
 use crate::output::{Format, Style};
 use crate::session::{self, Event, LogLevel, Request, Scope, Session, SessionHandle, Ticket};
+use crate::transport::TransportKind;
+pub use actions::{Confirm, Flash, Pending};
 pub use snapshot::{LogLine, Snapshot};
 
 /// How often the loop wakes without input, for signals, ages and new log
 /// lines.
 pub const TICK: Duration = Duration::from_millis(250);
+/// How long a write's success message stays on the bottom edge.
+pub const FLASH_FOR: Duration = Duration::from_secs(5);
 
 /// What the loop reads: the terminal's input and the session's events, on
 /// one channel.
@@ -100,6 +111,12 @@ pub struct App {
     pub quit: bool,
     /// Requests sent from a key, by ticket, to name a failure in the log.
     pending: HashMap<Ticket, &'static str>,
+    /// A risky request waiting for `y` / `n`.
+    pub confirm: Option<Confirm>,
+    /// The write in flight.
+    pub action: Option<Pending>,
+    /// The last write's result (or why a key did nothing).
+    pub flash: Option<Flash>,
 }
 
 impl App {
@@ -120,6 +137,9 @@ impl App {
             color,
             quit: false,
             pending: HashMap::new(),
+            confirm: None,
+            action: None,
+            flash: None,
         };
         app.follow_active();
         app
@@ -149,23 +169,70 @@ impl App {
         self.selected = self.selected.min(count.saturating_sub(1));
     }
 
+    /// A line of the TUI's own in the Log pane.
+    fn note(&mut self, level: LogLevel, at: SystemTime, msg: &str) {
+        if self.notes.len() >= log_pane::CAPACITY {
+            self.notes.remove(0);
+        }
+        self.notes.push(LogLine {
+            at,
+            level,
+            text: log_pane::text(level, &format_args!("{msg}")),
+        });
+    }
+
+    /// Shows `text` on the bottom edge (and in the log).
+    fn tell(&mut self, level: LogLevel, text: String, sticky: bool) {
+        let now = self.now;
+        self.note(level, now, &text);
+        self.flash = Some(Flash {
+            at: now,
+            level,
+            text,
+            sticky,
+        });
+    }
+
+    /// The write's `Done`: its result on the bottom edge and in the log.
+    fn finish(
+        &mut self,
+        p: Pending,
+        result: &Result<session::Outcome, session::ErrorView>,
+        now: SystemTime,
+    ) {
+        let (level, lines) = actions::finished(&p.req, result);
+        let mut lines = lines.into_iter();
+        if let Some(first) = lines.next() {
+            self.flash = Some(Flash {
+                at: now,
+                level,
+                text: first.clone(),
+                sticky: level == LogLevel::Error,
+            });
+            self.note(level, now, &first);
+        }
+        for l in lines {
+            self.note(LogLevel::Info, now, &l);
+        }
+    }
+
     /// Folds one session event in, at `now`.
     pub fn apply(&mut self, e: &Event, now: SystemTime) {
         match e {
             Event::Link(l) if *l != self.session.link => self.link_at = now,
+            Event::Done { ticket, result }
+                if self.action.as_ref().is_some_and(|p| p.ticket == *ticket) =>
+            {
+                if let Some(p) = self.action.take() {
+                    self.finish(p, result, now);
+                }
+            }
             Event::Done {
                 ticket,
                 result: Err(err),
             } => {
                 if let Some(what) = self.pending.remove(ticket) {
-                    if self.notes.len() >= log_pane::CAPACITY {
-                        self.notes.remove(0);
-                    }
-                    self.notes.push(LogLine {
-                        at: now,
-                        level: LogLevel::Warn,
-                        text: format!("warning: {what}: {}", err.message),
-                    });
+                    self.note(LogLevel::Warn, now, &format!("{what}: {}", err.message));
                 }
             }
             Event::Done { ticket, .. } => {
@@ -179,10 +246,81 @@ impl App {
         }
     }
 
-    /// Moves the clock: ages, staleness and the retry countdown.
+    /// Moves the clock: ages, staleness, the retry countdown, and a
+    /// success message's fade.
     pub fn tick(&mut self, now: SystemTime) {
         self.now = now;
         self.session.tick(now);
+        if self.flash.as_ref().is_some_and(|f| {
+            !f.sticky && now.duration_since(f.at).unwrap_or(Duration::ZERO) >= FLASH_FOR
+        }) {
+            self.flash = None;
+        }
+    }
+
+    /// The selected slot.
+    fn selected_profile(&self) -> Option<&crate::commands::profiles::Profile> {
+        self.profiles().get(self.selected)
+    }
+
+    /// `⏎` / `s`: the selected profile, unless it's already active.
+    fn switch_request(&mut self) -> Option<Request> {
+        let p = self.selected_profile()?;
+        let (index, active) = (p.index, p.active);
+        if active {
+            self.tell(
+                LogLevel::Info,
+                format!("profile {index} is already active"),
+                false,
+            );
+            return None;
+        }
+        Some(Request::SwitchProfile(index))
+    }
+
+    /// `o`: the other output priority.
+    fn output_request(&mut self) -> Option<Request> {
+        let priority = self
+            .session
+            .status
+            .value
+            .as_ref()
+            .and_then(|p| p.output_priority);
+        let target = match priority {
+            Some("usb") => TransportKind::Ble,
+            Some("ble") => TransportKind::Usb,
+            _ => {
+                self.tell(LogLevel::Info, "output priority not read yet".into(), false);
+                return None;
+            }
+        };
+        Some(Request::SetOutput(target))
+    }
+
+    /// A write from a key: held for the modal when risky, else sent.
+    fn ask(&mut self, req: Option<Request>) -> Option<Request> {
+        let req = req?;
+        match actions::confirm(&req, &self.session) {
+            Some(c) => {
+                self.help = false;
+                self.confirm = Some(c);
+                None
+            }
+            None => Some(req),
+        }
+    }
+
+    /// A key while the modal is up: `y`/`⏎` sends, anything else cancels.
+    fn on_confirm_key(&mut self, code: KeyCode) -> Option<Request> {
+        let c = self.confirm.take()?;
+        match code {
+            KeyCode::Char('y' | 'Y') | KeyCode::Enter => Some(c.req),
+            _ => {
+                let text = format!("cancelled: {}", actions::what(&c.req));
+                self.tell(LogLevel::Info, text, false);
+                None
+            }
+        }
     }
 
     /// Handles a key; returns the request it asks for, if any.
@@ -192,8 +330,17 @@ impl App {
         }
         let ctrl_c =
             key.modifiers.contains(KeyModifiers::CONTROL) && key.code == KeyCode::Char('c');
+        if ctrl_c {
+            self.quit = true;
+            return None;
+        }
+        if self.confirm.is_some() {
+            return self.on_confirm_key(key.code);
+        }
+        // Any key dismisses the last result, sticky errors included.
+        self.flash = None;
+        let busy = self.action.is_some();
         match key.code {
-            _ if ctrl_c => self.quit = true,
             KeyCode::Char('q') => self.quit = true,
             KeyCode::Esc | KeyCode::Char('?') if self.help => self.help = false,
             KeyCode::Esc => self.quit = true,
@@ -201,6 +348,15 @@ impl App {
             KeyCode::Char('r') => return Some(Request::Refresh(Scope::All)),
             KeyCode::Char('u') => return Some(Request::CheckUpdate),
             KeyCode::Char('d') => self.debug = !self.debug,
+            // One write at a time: ignored while one is in flight.
+            KeyCode::Enter | KeyCode::Char('s') if !busy => {
+                let req = self.switch_request();
+                return self.ask(req);
+            }
+            KeyCode::Char('o') if !busy => {
+                let req = self.output_request();
+                return self.ask(req);
+            }
             KeyCode::Up | KeyCode::Char('k') => {
                 self.moved = true;
                 self.selected = self.selected.saturating_sub(1);
@@ -220,12 +376,21 @@ impl App {
         match input {
             Input::Term(TermEvent::Key(key)) => {
                 if let Some(req) = self.on_key(key) {
+                    let write = actions::is_action(&req);
                     let what = match req {
                         Request::CheckUpdate => "update check",
                         _ => "refresh",
                     };
-                    let t = session.send(req);
-                    self.pending.insert(t, what);
+                    let t = session.send(req.clone());
+                    if write {
+                        self.action = Some(Pending {
+                            ticket: t,
+                            req,
+                            since: now,
+                        });
+                    } else {
+                        self.pending.insert(t, what);
+                    }
                 }
             }
             Input::Term(TermEvent::FocusGained) => self.focus(true, session),

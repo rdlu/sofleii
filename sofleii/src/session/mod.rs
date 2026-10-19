@@ -165,8 +165,9 @@ pub enum Request {
 #[serde(rename_all = "snake_case")]
 pub enum Risk {
     None,
-    /// Studio RPC moves to the other transport (or the BLE connection drops):
-    /// confirm, then the session follows it.
+    /// Studio RPC moves to the other transport, or the BLE connection drops
+    /// (a profile switch over BLE, or to an empty slot, which also starts
+    /// pairing on it): confirm, then the session follows it.
     DropsCurrentLink,
     /// Can't be undone (unpair: the host has to pair again). Always confirm.
     Destructive,
@@ -194,7 +195,10 @@ impl Request {
                 let changes = p.active_profile != Some(n);
                 let hands_over =
                     kind == Some(TransportKind::Ble) || p.output_priority == Some("ble");
-                if changes && hands_over {
+                // A known-empty slot starts pairing on it, and the active
+                // profile's BLE connection (likely this host's) drops.
+                let empty = p.profiles.iter().any(|s| s.index == n && !s.bonded);
+                if changes && (hands_over || empty) {
                     Risk::DropsCurrentLink
                 } else {
                     Risk::None

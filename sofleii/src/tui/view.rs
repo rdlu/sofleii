@@ -3,7 +3,9 @@
 //!
 //! Square panes in the docs site's `┌─ Title ───` style: one outer frame,
 //! `├─ Profiles ─┤` / `├─ Log ─┤` separators across it, the link state in
-//! the top-right corner and the keys along the bottom edge. Below [`WIDE`]
+//! the top-right corner and the keys along the bottom edge (or, around a
+//! write, its spinner and then its result). A risky write's confirm modal
+//! is a centred pane over the dashboard, like the help. Below [`WIDE`]
 //! columns the summary collapses to one column. Stale values are dimmed,
 //! and a field's latest error shows as a `! …` note next to its last good
 //! value.
@@ -18,9 +20,10 @@ use ratatui::style::{Color, Modifier, Style};
 use ratatui::text::{Line, Span};
 use ratatui::widgets::{Block, BorderType, Clear, Paragraph};
 
-use super::App;
+use super::actions::Confirm;
 use super::log_pane;
 use super::snapshot::{Health, Keyboard, Snapshot};
+use super::{App, TICK};
 use crate::commands::battery::{Level, Thresholds};
 use crate::commands::profiles::Profile;
 use crate::commands::update::Status as UpdateStatus;
@@ -123,7 +126,7 @@ pub fn render(f: &mut Frame, app: &App) {
         .border_style(t.border())
         .title_top(header(&snap, t))
         .title_top(corner(&snap, t).right_aligned())
-        .title_bottom(footer(wide, t));
+        .title_bottom(bottom(app, area.width, wide, t));
     let inner = outer.inner(area);
     f.render_widget(outer, area);
 
@@ -176,6 +179,9 @@ pub fn render(f: &mut Frame, app: &App) {
 
     if app.help {
         help(f, area, t);
+    }
+    if let Some(c) = &app.confirm {
+        confirm(f, area, c, t);
     }
 }
 
@@ -232,18 +238,56 @@ fn corner(snap: &Snapshot, t: Theme) -> Line<'static> {
     ])
 }
 
+/// Braille spinner frames, one per [`TICK`].
+const SPINNER: [&str; 10] = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"];
+
+/// The bottom edge: a write's spinner while it's in flight, then its
+/// result for a moment, else the keys.
+fn bottom(app: &App, width: u16, wide: bool, t: Theme) -> Line<'static> {
+    let (mark, text, style) = if let Some(p) = &app.action {
+        let n = app
+            .now
+            .duration_since(p.since)
+            .unwrap_or(Duration::ZERO)
+            .as_millis()
+            / TICK.as_millis();
+        let frame = SPINNER[n as usize % SPINNER.len()];
+        (frame, super::actions::doing(&p.req), t.warn())
+    } else if let Some(fl) = &app.flash {
+        match fl.level {
+            LogLevel::Error => ("✕", fl.text.clone(), t.bad()),
+            LogLevel::Warn => ("!", fl.text.clone(), t.warn()),
+            LogLevel::Info | LogLevel::Debug => ("✓", fl.text.clone(), t.good()),
+        }
+    } else {
+        return footer(wide, t);
+    };
+    // `└ ` and ` ─┘` around it.
+    let room = width.saturating_sub(6);
+    let span = fit(Span::styled(format!("{mark} {text}"), style), room)
+        .unwrap_or_else(|| Span::styled(mark, style));
+    Line::from(vec![Span::raw(" "), span, Span::raw(" ")])
+}
+
 fn footer(wide: bool, t: Theme) -> Line<'static> {
     let keys: &[(&str, &str)] = if wide {
         &[
             ("q", "quit"),
             ("r", "refresh"),
-            ("u", "update check"),
-            ("↑↓/jk", "select"),
+            ("⏎", "switch"),
+            ("o", "output"),
+            ("u", "update"),
             ("d", "debug"),
             ("?", "help"),
         ]
     } else {
-        &[("q", "quit"), ("r", "refresh"), ("?", "help")]
+        &[
+            ("q", "quit"),
+            ("r", "refresh"),
+            ("⏎", "switch"),
+            ("o", "output"),
+            ("?", "help"),
+        ]
     };
     let mut spans = vec![Span::raw(" ")];
     for (i, (k, what)) in keys.iter().enumerate() {
@@ -702,28 +746,86 @@ fn separator(
     }
 }
 
-/// Every key; the ones whose actions come in later PRs say so.
+/// Every key.
 const HELP: &[(&str, &str)] = &[
     ("q  Ctrl-C", "quit"),
     ("Esc", "close this help; quit from the dashboard"),
     ("↑ ↓  k j", "select a profile"),
+    ("⏎  s", "switch to the selected profile"),
+    ("o", "toggle the output priority usb / ble"),
     ("r", "refresh everything now"),
     ("u", "check for a firmware update now"),
     ("d", "debug lines in the log on / off"),
     ("?", "this help"),
-    ("⏎", "switch to profile   (coming soon)"),
-    ("o", "output usb / ble    (coming soon)"),
+    ("", "risky switches ask first (y / n)"),
 ];
 
-fn help(f: &mut Frame, area: Rect, t: Theme) {
-    let w = 56.min(area.width.saturating_sub(4));
-    let h = (HELP.len() as u16 + 2).min(area.height.saturating_sub(2));
-    let r = Rect {
+/// A pane's `─ Title ` for the top edge.
+fn pane_title(title: &str, style: Style, t: Theme) -> Line<'static> {
+    Line::from(vec![
+        Span::styled("─ ", t.border()),
+        Span::styled(title.to_string(), style),
+        Span::raw(" "),
+    ])
+}
+
+/// `w` x `h` centred in `area`, clamped to it.
+fn centred(area: Rect, w: u16, h: u16) -> Rect {
+    let w = w.min(area.width);
+    let h = h.min(area.height);
+    Rect {
         x: area.x + (area.width - w) / 2,
         y: area.y + (area.height - h) / 2,
         width: w,
         height: h,
+    }
+}
+
+/// The confirm modal: what will happen, wrapped, then `Continue?`; the
+/// keys on its bottom edge. Anything but `y`/`⏎` cancels.
+fn confirm(f: &mut Frame, area: Rect, c: &Confirm, t: Theme) {
+    let w = 60.min(area.width.saturating_sub(4));
+    let text_w = usize::from(w.saturating_sub(4)).max(10);
+    let mut lines = vec![Line::raw("")];
+    lines.extend(
+        wrap(&c.text, text_w)
+            .into_iter()
+            .map(|l| Line::raw(format!(" {l}"))),
+    );
+    lines.push(Line::raw(""));
+    lines.push(Line::styled(
+        " Continue?",
+        Style::new().add_modifier(Modifier::BOLD),
+    ));
+    let h = lines.len() as u16 + 2;
+    let r = centred(area, w, h);
+    let title_style = match c.risk {
+        crate::session::Risk::Destructive => t.bad().add_modifier(Modifier::BOLD),
+        _ => t.title(),
     };
+    let block = Block::bordered()
+        .border_type(BorderType::Plain)
+        .border_style(t.border())
+        .title_top(pane_title(&c.title, title_style, t))
+        .title_bottom(Line::from(vec![
+            Span::raw(" "),
+            Span::styled("y", Style::new().add_modifier(Modifier::BOLD)),
+            Span::raw(" / "),
+            Span::styled("⏎", Style::new().add_modifier(Modifier::BOLD)),
+            Span::raw(" confirm · "),
+            Span::styled("n", Style::new().add_modifier(Modifier::BOLD)),
+            Span::raw(" / "),
+            Span::styled("Esc", Style::new().add_modifier(Modifier::BOLD)),
+            Span::raw(" cancel "),
+        ]));
+    f.render_widget(Clear, r);
+    f.render_widget(Paragraph::new(lines).block(block), r);
+}
+
+fn help(f: &mut Frame, area: Rect, t: Theme) {
+    let w = 60.min(area.width.saturating_sub(4));
+    let h = (HELP.len() as u16 + 2).min(area.height.saturating_sub(2));
+    let r = centred(area, w, h);
     let lines: Vec<Line> = HELP
         .iter()
         .map(|(k, what)| {
@@ -739,11 +841,7 @@ fn help(f: &mut Frame, area: Rect, t: Theme) {
     let block = Block::bordered()
         .border_type(BorderType::Plain)
         .border_style(t.border())
-        .title_top(Line::from(vec![
-            Span::styled("─ ", t.border()),
-            Span::styled("Help", t.title()),
-            Span::raw(" "),
-        ]))
+        .title_top(pane_title("Help", t.title(), t))
         .title_bottom(Line::from(" ? or Esc closes "));
     f.render_widget(Clear, r);
     f.render_widget(Paragraph::new(lines).block(block), r);

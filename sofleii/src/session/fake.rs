@@ -54,6 +54,8 @@ pub struct Kb {
     pub steps: VecDeque<Step>,
     /// The serial port exists (presence, and whether USB opens).
     pub usb: bool,
+    /// This host has the keyboard connected over BLE (whether BLE opens).
+    pub ble: bool,
     /// USB opens tried.
     pub attempts: usize,
     pub opened: usize,
@@ -76,12 +78,25 @@ impl Default for Kb {
             modes: VecDeque::new(),
             steps: VecDeque::new(),
             usb: true,
+            ble: false,
             attempts: 0,
             opened: 0,
             dropped: 0,
             plans: 0,
             requests: 0,
             battery_reads: 0,
+        }
+    }
+}
+
+impl Kb {
+    /// Where Studio answers, as the firmware picks it: the priority's
+    /// transport when it's ready, else the other one.
+    pub fn selected(&self) -> TransportKind {
+        match self.priority {
+            bm::OutputPriority::Ble if self.ble => TransportKind::Ble,
+            _ if self.usb => TransportKind::Usb,
+            _ => TransportKind::Ble,
         }
     }
 }
@@ -125,8 +140,16 @@ impl Transport for FakeTransport {
             {
                 continue;
             }
+            // Studio only listens on the selected endpoint, and a write
+            // that moves it replies on the new one: silence here.
+            if kb.selected() != self.kind {
+                continue;
+            }
             self.answered += 1;
-            if let Some(r) = req.subsystem.and_then(|s| answer(&mut kb, s)) {
+            let r = req.subsystem.and_then(|s| answer(&mut kb, s));
+            if let Some(r) = r
+                && kb.selected() == self.kind
+            {
                 self.out
                     .push_back(framing::encode(&response(req.request_id, r)));
             }
@@ -261,7 +284,8 @@ fn profiles(active: u32) -> bm::GetProfilesResponse {
 }
 
 /// The system side of [`connect::Connector`] over `kb`: USB is present when
-/// `kb.usb` says, BLE never is; opening follows `kb.steps` and `kb.modes`.
+/// `kb.usb` says, BLE when `kb.ble` does; opening USB follows `kb.steps`
+/// and `kb.modes`.
 #[derive(Clone)]
 pub struct FakeOpener(pub Shared);
 
@@ -273,7 +297,11 @@ impl Opener for FakeOpener {
     }
 
     fn ble_connected(&self, _: Option<&str>, _: Duration) -> std::result::Result<(), String> {
-        Err("fake: no BLE".into())
+        if self.0.lock().ble {
+            Ok(())
+        } else {
+            Err("fake: no BLE".into())
+        }
     }
 
     fn open_usb(&self, _: Option<&str>) -> Result<Box<dyn Transport>> {
@@ -296,8 +324,19 @@ impl Opener for FakeOpener {
         }))
     }
 
+    /// Only when `kb.ble`; never deaf by [`Mode`] (those are USB's).
     fn open_ble(&self, _: Option<&str>, _: Duration) -> Result<Box<dyn Transport>> {
-        Err(Error::NotFound("fake: no BLE".into()))
+        if !self.0.lock().ble {
+            return Err(Error::NotFound("fake: no BLE".into()));
+        }
+        Ok(Box::new(FakeTransport {
+            kb: self.0.clone(),
+            mode: Mode::Normal,
+            answered: 0,
+            kind: TransportKind::Ble,
+            decoder: Decoder::new(),
+            out: VecDeque::new(),
+        }))
     }
 }
 
