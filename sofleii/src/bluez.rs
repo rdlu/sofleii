@@ -1,4 +1,6 @@
-//! BlueZ over the system D-Bus (zbus, blocking API, no tokio).
+//! BlueZ over the system D-Bus (zbus, no tokio). zbus 6 dropped its
+//! blocking API, so every call goes through [`call`], which runs it to
+//! completion on the calling thread with `zbus::block_on`.
 //!
 //! - The read-only [`Gatt`] implementation behind `sofleii battery`: only
 //!   `GetManagedObjects`, `ReadValue({})` and cached property values.
@@ -11,9 +13,8 @@
 use std::collections::HashMap;
 use std::time::Duration;
 
-use zbus::blocking::Connection;
-use zbus::blocking::connection::Builder;
-use zbus::zvariant::{OwnedObjectPath, OwnedValue, Value};
+use zbus::connection::Builder;
+use zbus::{Connection, DBusError, DynamicType, Message, OwnedObjectPath, OwnedVariant, Variant};
 
 use crate::commands::battery::Gatt;
 use crate::gatt::{CharacteristicObj, DescriptorObj, DeviceObj, ServiceObj, Tree};
@@ -21,7 +22,7 @@ use crate::{Error, Result};
 
 pub const BLUEZ: &str = "org.bluez";
 
-type Props = HashMap<String, OwnedValue>;
+type Props = HashMap<String, OwnedVariant>;
 type Managed = HashMap<OwnedObjectPath, HashMap<String, Props>>;
 
 pub struct Bluez {
@@ -32,9 +33,8 @@ impl Bluez {
     /// Connects to the system bus; every method call times out after
     /// `timeout`. A missing bus is "not found" (exit 2).
     pub fn connect(timeout: Duration) -> Result<Self> {
-        let conn = Builder::system()
-            .and_then(|b| b.method_timeout(timeout).build())
-            .map_err(|e| {
+        let conn =
+            zbus::block_on(Builder::system().method_timeout(timeout).build()).map_err(|e| {
                 Error::NotFound(format!(
                     "BlueZ unavailable: cannot connect to the system D-Bus ({e})"
                 ))
@@ -48,16 +48,14 @@ impl Bluez {
 
     /// `GetManagedObjects`, as plain data.
     pub fn managed_tree(&self) -> Result<Tree> {
-        let reply = self
-            .conn
-            .call_method(
-                Some(BLUEZ),
-                "/",
-                Some("org.freedesktop.DBus.ObjectManager"),
-                "GetManagedObjects",
-                &(),
-            )
-            .map_err(|e| call_error("GetManagedObjects", e))?;
+        let reply = call(
+            &self.conn,
+            "/",
+            "org.freedesktop.DBus.ObjectManager",
+            "GetManagedObjects",
+            &(),
+        )
+        .map_err(|e| call_error("GetManagedObjects", e))?;
         let managed: Managed = reply
             .body()
             .deserialize()
@@ -66,10 +64,8 @@ impl Bluez {
     }
 
     fn read(&self, path: &str, iface: &str) -> Result<Vec<u8>> {
-        let opts: HashMap<&str, Value> = HashMap::new();
-        let reply = self
-            .conn
-            .call_method(Some(BLUEZ), path, Some(iface), "ReadValue", &(opts,))
+        let opts: HashMap<&str, Variant> = HashMap::new();
+        let reply = call(&self.conn, path, iface, "ReadValue", &(opts,))
             .map_err(|e| call_error("ReadValue", e))?;
         reply
             .body()
@@ -78,10 +74,35 @@ impl Bluez {
     }
 }
 
+/// One method call on `org.bluez`, blocking the calling thread until the
+/// reply (or the connection's method timeout).
+pub fn call<B>(
+    conn: &Connection,
+    path: &str,
+    iface: &str,
+    method: &str,
+    body: &B,
+) -> zbus::Result<Message>
+where
+    B: serde::Serialize + DynamicType,
+{
+    zbus::block_on(conn.call_method(Some(BLUEZ), path, Some(iface), method, body))
+}
+
 /// Maps a zbus error; BlueZ not running, or the device dropping the
 /// connection, is "not found" (exit 2).
 pub fn call_error(what: &str, e: zbus::Error) -> Error {
-    if let zbus::Error::MethodError(name, desc, _) = &e {
+    // zbus 6 reports the org.freedesktop.DBus.Error.* replies as `FDO`,
+    // every other error reply as `MethodError`.
+    let reply = match &e {
+        zbus::Error::MethodError(name, desc, _) => Some((name.as_str().to_string(), desc.clone())),
+        zbus::Error::FDO(f) => Some((
+            f.name().as_str().to_string(),
+            f.description().map(str::to_string),
+        )),
+        _ => None,
+    };
+    if let Some((name, desc)) = reply {
         let name = name.as_str();
         if name == "org.freedesktop.DBus.Error.ServiceUnknown"
             || name == "org.freedesktop.DBus.Error.NameHasNoOwner"
@@ -166,18 +187,18 @@ fn tree_from(managed: &Managed) -> Tree {
 
 fn string(p: &Props, key: &str) -> Option<String> {
     match p.get(key).map(|v| &**v) {
-        Some(Value::Str(s)) => Some(s.as_str().to_string()),
-        Some(Value::ObjectPath(o)) => Some(o.as_str().to_string()),
+        Some(Variant::Str(s)) => Some(s.as_str().to_string()),
+        Some(Variant::ObjectPath(o)) => Some(o.as_str().to_string()),
         _ => None,
     }
 }
 
 fn strings(p: &Props, key: &str) -> Vec<String> {
     match p.get(key).map(|v| &**v) {
-        Some(Value::Array(a)) => a
+        Some(Variant::Array(a)) => a
             .iter()
             .filter_map(|v| match v {
-                Value::Str(s) => Some(s.as_str().to_string()),
+                Variant::Str(s) => Some(s.as_str().to_string()),
                 _ => None,
             })
             .collect(),
@@ -186,25 +207,41 @@ fn strings(p: &Props, key: &str) -> Vec<String> {
 }
 
 fn boolean(p: &Props, key: &str) -> bool {
-    matches!(p.get(key).map(|v| &**v), Some(Value::Bool(true)))
+    matches!(p.get(key).map(|v| &**v), Some(Variant::Bool(true)))
 }
 
 fn handle(p: &Props) -> u16 {
     match p.get("Handle").map(|v| &**v) {
-        Some(Value::U16(h)) => *h,
+        Some(Variant::U16(h)) => *h,
         _ => 0,
     }
 }
 
 fn bytes(p: &Props, key: &str) -> Vec<u8> {
     match p.get(key).map(|v| &**v) {
-        Some(Value::Array(a)) => a
+        Some(Variant::Array(a)) => a
             .iter()
             .filter_map(|v| match v {
-                Value::U8(b) => Some(*b),
+                Variant::U8(b) => Some(*b),
                 _ => None,
             })
             .collect(),
         _ => Vec::new(),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn missing_bluez_is_not_found_from_the_fdo_error() {
+        // zbus 6 reports ServiceUnknown as `FDO`, not `MethodError`.
+        let fdo = zbus::Error::FDO(Box::new(zbus::fdo::Error::ServiceUnknown(
+            "The name org.bluez was not provided by any .service files".into(),
+        )));
+        let e = call_error("GetManagedObjects", fdo);
+        assert_eq!(e.exit_code(), crate::error::exit::NOT_FOUND);
+        assert!(e.to_string().contains("org.bluez is not running"), "{e}");
     }
 }

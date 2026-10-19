@@ -2,7 +2,7 @@
 name = "sofleii"
 version = "0.1.0"
 edition = "2024"
-rust-version = "1.85"
+rust-version = "1.99"
 license = "MIT"
 description = "Sofle Interactive Interface: CLI (and later TUI) for the Eyelash Sofle over ZMK Studio RPC"
 repository = "https://github.com/rdlu/sofleii"
@@ -26,10 +26,11 @@ serialport = { version = "4", default-features = false }
 # 1.26 MB of release binary (1.69 -> 2.95 MB, measured 2026-10-19; the
 # roots are ~65 KB of that, the rest is rustls + ring).
 ureq = { version = "3.4.2", default-features = false, features = ["rustls"] }
-# BlueZ over the system D-Bus for `battery`. Pure Rust (no libdbus), and the
-# blocking API on the async-io backend needs no tokio (bluer would).
-# 5.13 is the newest zbus whose MSRV fits rust-version 1.85.
-zbus = { version = "5.13.2", default-features = false, features = ["blocking-api", "async-io"] }
+# BlueZ over the system D-Bus for `battery` and the BLE transport. Pure Rust
+# (no libdbus). zbus 6 has no blocking API: `bluez::call` wraps each call in
+# `zbus::block_on`, on zbus's own runtime (`default-rt`, no tokio; bluer
+# would need it).
+zbus = { version = "6.0.0", default-features = false, features = ["default-rt"] }
 
 [build-dependencies]
 prost-build = "0.14"
