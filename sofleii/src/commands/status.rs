@@ -106,9 +106,19 @@ pub fn run<T: Transport>(client: &mut Client<T>) -> Result<Status> {
 ///   selected endpoint, so a reply over BLE means BLE is selected (and, with
 ///   priority `usb`, that USB isn't connected).
 pub fn effective_output(transport: &TransportInfo, s: &Status) -> Option<&'static str> {
+    effective(transport, s.output_priority, s.profile.as_ref())
+}
+
+/// [`effective_output`] from its parts: the output priority and the active
+/// profile, as `profiles` (and the session's status reads) report them.
+pub fn effective(
+    transport: &TransportInfo,
+    priority: Option<&str>,
+    active: Option<&Profile>,
+) -> Option<&'static str> {
     let usb = transport.kind == TransportKind::Usb;
-    let ble = s.profile.as_ref().is_some_and(|p| p.connected);
-    match (s.output_priority, usb, ble) {
+    let ble = active.is_some_and(|p| p.connected);
+    match (priority, usb, ble) {
         (Some("ble"), _, true) => Some("ble"),
         (_, true, _) => Some("usb"),
         (_, false, true) => Some("ble"),

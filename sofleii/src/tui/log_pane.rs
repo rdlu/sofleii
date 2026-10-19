@@ -1,12 +1,16 @@
 //! The TUI's logger: core diagnostics (`log::warn!` and friends) go into
 //! the log pane's buffer, since stderr is the screen while the TUI runs.
+//! The pane merges them with the session's own log by time.
 
 use std::collections::VecDeque;
 use std::sync::{Arc, Mutex};
+use std::time::SystemTime;
 
+use jiff::tz::TimeZone;
 use log::{Level, LevelFilter, Log, Metadata, Record};
 
 use super::snapshot::LogLine;
+use crate::session::LogLevel;
 
 /// The pane keeps this many lines.
 pub const CAPACITY: usize = 200;
@@ -31,19 +35,32 @@ impl Buffer {
     }
 }
 
-/// One record as the pane shows it (no `sofleii:` prefix: the pane is
-/// sofleii's own).
-pub fn text(level: Level, args: &std::fmt::Arguments<'_>) -> String {
-    match level {
-        Level::Error => format!("error: {args}"),
-        Level::Warn => format!("warning: {args}"),
-        Level::Info | Level::Debug | Level::Trace => args.to_string(),
+/// The session's level for a `log` record.
+pub fn level(l: Level) -> LogLevel {
+    match l {
+        Level::Error => LogLevel::Error,
+        Level::Warn => LogLevel::Warn,
+        Level::Info => LogLevel::Info,
+        Level::Debug | Level::Trace => LogLevel::Debug,
     }
 }
 
-/// The local wall-clock time, `HH:MM:SS`.
-pub fn now() -> String {
-    jiff::Zoned::now().strftime("%H:%M:%S").to_string()
+/// One line as the pane shows it (no `sofleii:` prefix: the pane is
+/// sofleii's own).
+pub fn text(level: LogLevel, args: &std::fmt::Arguments<'_>) -> String {
+    match level {
+        LogLevel::Error => format!("error: {args}"),
+        LogLevel::Warn => format!("warning: {args}"),
+        LogLevel::Info | LogLevel::Debug => args.to_string(),
+    }
+}
+
+/// `at` as wall-clock time in `tz`, `HH:MM:SS`.
+pub fn clock(at: SystemTime, tz: &TimeZone) -> String {
+    jiff::Timestamp::try_from(at).map_or_else(
+        |_| "--:--:--".into(),
+        |t| t.to_zoned(tz.clone()).strftime("%H:%M:%S").to_string(),
+    )
 }
 
 struct Pane(Buffer);
@@ -55,9 +72,11 @@ impl Log for Pane {
 
     fn log(&self, r: &Record<'_>) {
         if self.enabled(r.metadata()) {
+            let level = level(r.level());
             self.0.push(LogLine {
-                at: now(),
-                text: text(r.level(), r.args()),
+                at: SystemTime::now(),
+                level,
+                text: text(level, r.args()),
             });
         }
     }
@@ -83,24 +102,26 @@ mod tests {
     #[test]
     fn pane_text_and_capacity() {
         assert_eq!(
-            text(Level::Warn, &format_args!("two devices")),
+            text(level(Level::Warn), &format_args!("two devices")),
             "warning: two devices"
         );
         assert_eq!(
-            text(Level::Debug, &format_args!("stale id 3")),
+            text(level(Level::Debug), &format_args!("stale id 3")),
             "stale id 3"
         );
         let b = Buffer::default();
         for i in 0..CAPACITY + 5 {
             b.push(LogLine {
-                at: "00:00:00".into(),
+                at: SystemTime::UNIX_EPOCH,
+                level: LogLevel::Info,
                 text: i.to_string(),
             });
         }
         let lines = b.lines();
         assert_eq!(lines.len(), CAPACITY);
         assert_eq!(lines[0].text, "5");
-        let t = now();
+        let t = clock(SystemTime::now(), &TimeZone::system());
         assert_eq!(t.len(), 8, "{t}");
+        assert_eq!(clock(SystemTime::UNIX_EPOCH, &TimeZone::UTC), "00:00:00");
     }
 }

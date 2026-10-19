@@ -1,7 +1,7 @@
 # sofleii
 
 **Sofle Interactive Interface**: a command-line tool and a ratatui TUI (a
-skeleton so far) that talk to the Eyelash Sofle over the **ZMK Studio RPC**
+live, read-only dashboard so far) that talk to the Eyelash Sofle over the **ZMK Studio RPC**
 protocol, the same protocol the Studio web app uses, without a browser.
 Design and roadmap: [#44](https://github.com/rdlu/sofleii/issues/44).
 
@@ -56,7 +56,7 @@ named `Eyelash Sofle`, for the batteries and Studio RPC; implies BLE),
 `--timeout <ms>` per response (default 3000), `--format
 human|json|waybar` (default `human`; `--json` is the same as `--format json`;
 `waybar` is `status` and `battery` only, a usage error elsewhere). With no
-subcommand, sofleii opens the [TUI](#tui-skeleton) when stdout is a terminal
+subcommand, sofleii opens the [TUI](#tui) when stdout is a terminal
 and prints usage (exit 0) when it isn't; `--json`/`--format` without a
 subcommand is a usage error (exit 3).
 
@@ -81,45 +81,70 @@ connected. Over USB, USB counts as connected. Over BLE, sofleii can't see
 whether USB is plugged in, so a connected active profile means `ble`
 (whatever the priority). The firmware agrees: Studio only answers on the
 selected endpoint, so a reply over BLE means BLE is selected. With priority
-`usb` the row then reads `ble (priority usb; USB not connected)`.
+`usb` the row then reads `ble (priority usb); USB not connected to the left
+half (the right half's USB only charges)`: only the central (left) half does
+USB (ZMK's `ZMK_USB` needs `!ZMK_SPLIT || ZMK_SPLIT_ROLE_CENTRAL`), so a cable
+in the right half looks like no USB at all. The JSON keeps the plain
+`output_priority`.
 
-## TUI (skeleton)
+## TUI
 
-`sofleii` with no subcommand, on a terminal (`mise run sofleii`):
+`sofleii` with no subcommand, on a terminal (`mise run sofleii`), live over
+USB:
 
 ```
-┌─ sofleii · Eyelash Sofle ─────────────────────────────── ● usb /dev/ttyACM1 ─┐
-│ Transport  USB /dev/ttyACM1 (auto)           Output     USB  (priority usb)  │
-│ Profile    0 "desk"  connected               Studio     unlocked             │
-│ Battery    L ████████░░  82%   R ██████░░░░  61%                read 12s ago │
+┌─ sofleii · Eyelash Sofle ──────────────────────── ● usb /dev/ttyACM0 (auto) ─┐
+│ Transport  USB /dev/ttyACM0 (auto)           Output     USB  (priority usb)  │
+│ Profile    0  connected                      Studio     unlocked             │
+│ Battery    L ██████████ 100%   R ███████░░░  72%                read 13s ago │
 │ Firmware   v3.1.0 (f9a665f) · up to date with v3.1.0          checked 2m ago │
 │ Split      unavailable (get_split_info is broken upstream)                   │
 ├─ Profiles ───────────────────────────────────────────────────────────────────┤
-│ ▶ 0  desk     DD:1F:23:76:6E:71   active · connected · bonded                │
-│   1  laptop   C8:3A:35:10:22:9E   bonded                                     │
+│ ▶ 0  —        84:9E:56:52:6A:D2   active · connected · bonded                │
+│   1  —                            empty                                      │
 │   2  —                            empty                                      │
-├─ Log ────────────────────────────────────────────────────────────────────────┤
-│ 17:42:10 USB went quiet (output BLE?), switched to BLE DD:1F:23:76:6E:71     │
-└ q quit · r refresh · ↑↓/jk select · ⏎ switch · o output · u update · ? help ─┘
+├─ Log (info) ─────────────────────────────────────────────────────────────────┤
+│ 19:07:50 connected over usb /dev/ttyACM0 (auto)                              │
+└ q quit · r refresh · u update check · ↑↓/jk select · d debug · ? help ───────┘
 ```
 
-- **No live data yet.** The dashboard is drawn from a plain `Snapshot`
-  that nothing fills from the keyboard so far, so it shows the
-  "Searching…" state. `SOFLEII_TUI_DEMO=1` shows the fixture above instead
-  (for screenshots). Live reads come with the session thread (#44's PR
-  plan).
-- Keys: `q`, `Esc` or `Ctrl-C` quit (`Esc` closes the help first), `↑↓`/`jk`
-  select a profile, `?` help. `r`, `⏎`, `o` and `u` are listed but not
-  wired yet.
+- **Live, read-only.** The TUI runs the core's session (`src/session/`)
+  with the global `--transport`, `--device`, `--bt-address` and `--timeout`
+  (contradicting flags exit 3 before the screen opens), and renders a view
+  derived from its `Snapshot`. Profiles and output priority are polled every
+  5 s (30 s while the terminal is unfocused, through focus reporting), the
+  batteries every 60 s over BlueZ, and the update check uses the shared 6 h
+  cache. The RPC link is leased, so `sofleii status` (waybar) still works
+  while the TUI runs. `SOFLEII_TUI_DEMO=1` shows a fixture instead, with no
+  session (for screenshots).
+- **Link state** in the top-right corner: `○ searching`, `◌ connecting`,
+  `● usb /dev/ttyACM0 (auto)`, `◐ ble not answering` (the hint shows in the
+  summary until data arrives), `✕ lost, retrying in 3s`. The session only
+  reports a link as connected once a request has answered on it, so a link
+  that opens but stays deaf (`--transport ble` while USB is the selected
+  output) shows a steady "not answering"; retaking the lease on a healthy
+  link changes nothing. When the link drops,
+  the last values stay on screen.
+- **Freshness:** a value older than 3 refresh intervals is dimmed, and the
+  status's age goes on the Profiles separator. A failed read shows its error
+  as `! …` beside the last good value (cut to fit; the Log pane has more).
+- **Log pane:** the session's log and the core's `log::warn!`/`debug!`
+  records, merged by time, in local `HH:MM:SS`; a run of the same line shows
+  once with `(×N)`. It shows info and up by default (`Log (info)`); `d`
+  toggles the debug lines (`Log (debug)`). The CLI prints the same core records as
+  `sofleii: warning: …` on stderr.
+- **Keys:** `r` refreshes everything now, `u` checks for a firmware update
+  now (past the cache), `↑↓`/`jk` select a profile, `d` debug lines in the
+  log on/off, `?` help, `q`, `Esc` or
+  `Ctrl-C` quit (`Esc` closes the help first). Switching profile (`⏎`) and
+  output (`o`) are in the help as coming soon. Quitting is instant: no
+  thread is joined.
 - Square panes as on the docs site; below 70 columns the summary is one
   column. Battery bars use `battery`'s defaults (warning below 20%,
   critical below 10%). `NO_COLOR` turns colour off (bold and dim remain).
 - The terminal is restored on quit, on SIGTERM/SIGHUP/SIGINT, and on a
   panic (ratatui's panic hook runs before the release profile's
   `panic = "abort"`).
-- Core diagnostics (`log::warn!`/`debug!` in the transports and client) go
-  to the Log pane instead of stderr. The CLI prints the same records as
-  `sofleii: warning: …` on stderr.
 
 ## Transports
 
@@ -698,7 +723,7 @@ JSON:
   "return-type": "json",
   "interval": 30,
   "format": "{}",
-  // the TUI (a skeleton for now)
+  // the TUI (a live, read-only dashboard for now)
   "on-click": "foot -e sofleii",
   "tooltip": true
 }
@@ -749,10 +774,11 @@ src/
                  deaf/lost handling, the write actions through commands/); watch.rs (batteries and
                  presence over BlueZ and sysfs); jobs.rs (update check + its cache); state.rs
                  (Snapshot, the pure reducer); fake.rs + tests.rs (a fake keyboard, no hardware)
-  tui/           the TUI: event loop, terminal restore, signals (mod.rs); snapshot.rs (plain data
-                 the view draws, Searching state, demo fixture); view.rs (rendering); log_pane.rs
-                 (the TUI's logger); tests.rs (TestBackend renders, keys). Nothing in transport/,
-                 client/ or commands/ depends on it
+  tui/           the TUI: the session, input thread and event loop, terminal restore, signals
+                 (mod.rs); snapshot.rs (the view derived from session::Snapshot, demo fixture);
+                 view.rs (rendering); log_pane.rs (the TUI's logger); tests.rs (TestBackend renders
+                 from scripted events, keys, the loop against a fake session). Nothing in
+                 transport/, client/, commands/ or session/ depends on it
   main.rs        clap CLI, exit codes, the unpair confirmation; no subcommand on a TTY opens the TUI
 proto/           vendored .proto files (see proto/README.md for sources and licenses)
 tests/golden.rs  request bytes captured from the v3.0.0 firmware, plus the zmk__device_info call and

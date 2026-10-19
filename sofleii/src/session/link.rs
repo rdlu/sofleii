@@ -4,6 +4,11 @@
 //! priority, reads `info` once per (re)connect, and runs the write actions
 //! through `commands` as the CLI does.
 //!
+//! A newly opened link is [`LinkState::Connecting`] until a request answers
+//! on it (an open BLE link can still be deaf), then `Connected`; a deaf link
+//! stays `Deaf` through its replans until one answers. Retaking the lease on
+//! the same healthy link changes nothing.
+//!
 //! Failures are classified (`classify`) by the error and
 //! [`Client::is_dead`](crate::client::Client::is_dead):
 //! - **deaf** (a request timed out on a live client, e.g. USB while the
@@ -154,6 +159,9 @@ struct Link {
     client: Option<RpcClient>,
     /// The last link, kept across lease releases.
     via: Option<ConnectedVia>,
+    /// Opened but nothing answered on it yet: shown as Connecting (or
+    /// still Deaf), and Connected on the first answer.
+    pending: Option<ConnectedVia>,
     /// What the front end was last told.
     state: LinkState,
     /// `cormoran_ble`'s index, resolved once per (re)connect.
@@ -186,6 +194,7 @@ impl Link {
             jobs,
             client: None,
             via: None,
+            pending: None,
             state: LinkState::Searching,
             ble_index: None,
             need_info: true,
@@ -241,6 +250,27 @@ impl Link {
         matches!(self.state, LinkState::Connected { .. })
     }
 
+    /// Up, or opened and waiting for its first answer.
+    fn linked(&self) -> bool {
+        self.up() || self.pending.is_some()
+    }
+
+    /// Something answered on the link: a pending one is Connected now.
+    fn confirm(&mut self) {
+        self.deaf_streak = 0;
+        self.attempt = 0;
+        if let Some(via) = self.pending.take() {
+            let msg = format!(
+                "connected over {} {}{}",
+                via.transport.kind,
+                via.transport.device,
+                if via.auto { " (auto)" } else { "" }
+            );
+            self.log(LogLevel::Info, msg);
+            self.set_state(LinkState::Connected { via });
+        }
+    }
+
     fn interval(&self) -> Duration {
         if self.focused {
             self.cfg.poll
@@ -264,6 +294,7 @@ impl Link {
         if down {
             self.ble_index = None;
             self.need_info = true;
+            self.pending = None;
         }
     }
 
@@ -272,31 +303,33 @@ impl Link {
         if self.client.is_some() {
             return Ok(());
         }
-        if !self.up() && self.state != LinkState::Searching {
+        // Searching retries quietly, and a deaf link stays deaf until it
+        // answers (no Connecting/Deaf flicker on every replan).
+        if !self.linked() && !matches!(self.state, LinkState::Searching | LinkState::Deaf { .. }) {
             let kind = self.via.as_ref().map(|v| v.transport.kind);
             self.set_state(LinkState::Connecting { kind });
         }
         match self.connector.connect() {
             Ok((c, via)) => {
-                let was_up = self.up();
-                if !was_up || self.via.as_ref() != Some(&via) {
-                    if !was_up {
+                let was_linked = self.linked();
+                if !was_linked || self.via.as_ref() != Some(&via) {
+                    if !was_linked {
                         self.need_info = true;
                         self.ble_index = None;
                     }
-                    let msg = format!(
-                        "connected over {} {}{}",
-                        via.transport.kind,
-                        via.transport.device,
-                        if via.auto { " (auto)" } else { "" }
-                    );
-                    self.log(LogLevel::Info, msg);
+                    // Open, but not Connected until a request answers on it
+                    // (`confirm`): a deaf BLE link opens fine and then times
+                    // out. A lease cycle on the same healthy link skips this.
                     self.via = Some(via.clone());
-                    self.set_state(LinkState::Connected { via });
+                    if !matches!(self.state, LinkState::Deaf { .. }) {
+                        self.set_state(LinkState::Connecting {
+                            kind: Some(via.transport.kind),
+                        });
+                    }
+                    self.pending = Some(via);
                 }
                 self.client = Some(c);
                 self.last_used = Instant::now();
-                self.attempt = 0;
                 Ok(())
             }
             Err(e) => {
@@ -376,10 +409,14 @@ impl Link {
         self.last_used = Instant::now();
         match r {
             Ok(v) => {
-                self.deaf_streak = 0;
+                self.confirm();
                 Ok(v)
             }
             Err(e) => {
+                // An RPC error is still an answer: the link works.
+                if classify(&e, Some(dead)) == Failure::Read {
+                    self.confirm();
+                }
                 let v = e.view();
                 self.fail(&e, Some(dead));
                 Err(v)

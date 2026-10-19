@@ -186,6 +186,90 @@ fn a_deaf_link_invalidates_the_plan_and_replans_at_once() {
     assert_eq!(kb.opened, 2);
 }
 
+/// The link states in `seen`, in order.
+fn links(seen: &[Event]) -> Vec<LinkState> {
+    seen.iter()
+        .filter_map(|e| match e {
+            Event::Link(l) => Some(l.clone()),
+            _ => None,
+        })
+        .collect()
+}
+
+#[test]
+fn a_link_that_opens_but_never_answers_is_steadily_deaf() {
+    let ms = Duration::from_millis;
+    let s = start(
+        |c| Config {
+            backoff_base: ms(1),
+            backoff_cap: ms(2),
+            ..c
+        },
+        Kb {
+            // Past the connect probe, then quiet, four times; then healthy.
+            modes: [Mode::DeafAfter(1); 4].into(),
+            ..Kb::default()
+        },
+    );
+    let seen = s.until("connected", connected);
+    let states = links(&seen);
+    // Opened four times without an answer, but never Connected, and no
+    // Connecting between the replans: one steady Deaf.
+    assert!(
+        matches!(
+            states.as_slice(),
+            [
+                LinkState::Searching,
+                LinkState::Connecting {
+                    kind: Some(TransportKind::Usb)
+                },
+                LinkState::Deaf { .. },
+                LinkState::Connected { .. },
+            ]
+        ),
+        "{states:#?}"
+    );
+    assert_eq!(s.kb.lock().opened, 5);
+}
+
+#[test]
+fn a_healthy_link_stays_connected_across_leases() {
+    let ms = Duration::from_millis;
+    let s = start(
+        |c| Config {
+            poll: ms(15),
+            lease_idle: ms(3),
+            ..c
+        },
+        Kb::default(),
+    );
+    let polls = std::cell::Cell::new(0);
+    let seen = s.until("four polls", |e| {
+        if status_ok(e) {
+            polls.set(polls.get() + 1);
+        }
+        polls.get() == 4
+    });
+    assert!(s.kb.lock().opened >= 3, "{:?}", s.kb.lock());
+    let states = links(&seen);
+    assert!(
+        matches!(
+            states.as_slice(),
+            [
+                LinkState::Searching,
+                LinkState::Connecting { .. },
+                LinkState::Connected { .. }
+            ]
+        ),
+        "{states:#?}"
+    );
+    let connects = seen
+        .iter()
+        .filter(|e| matches!(e, Event::Log { msg, .. } if msg.starts_with("connected over")))
+        .count();
+    assert_eq!(connects, 1, "logged once, not per lease");
+}
+
 #[test]
 fn a_lost_link_backs_off() {
     let ms = Duration::from_millis;

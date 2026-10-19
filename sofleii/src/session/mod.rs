@@ -241,13 +241,15 @@ pub enum LinkState {
     /// No keyboard found (yet); retrying quietly, and at once on a presence
     /// edge.
     Searching,
-    /// Opening a transport; `kind` is the last one, if any.
+    /// Opening a transport, or opened and waiting for its first answer;
+    /// `kind` is the one being opened (or the last one), if known.
     Connecting { kind: Option<TransportKind> },
-    /// The keyboard answers. Stays `Connected` while the lease is released
-    /// between polls.
+    /// A request answered on this link. Stays `Connected` while the lease
+    /// is released and retaken between polls, until a request fails.
     Connected { via: ConnectedVia },
     /// The transport is open but Studio doesn't answer (on BLE, usually USB
-    /// being the selected output). The session replans at once.
+    /// being the selected output). The session replans at once, and stays
+    /// `Deaf` through the replans until something answers.
     Deaf {
         kind: Option<TransportKind>,
         hint: Option<String>,
