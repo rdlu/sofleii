@@ -103,10 +103,9 @@ USB:
 │ ▶ 0  —        84:9E:56:52:6A:D2   active · connected · bonded                │
 │   1  —                            empty                                      │
 │   2  —                            empty                                      │
-├─ Log ────────────────────────────────────────────────────────────────────────┤
+├─ Log (info) ─────────────────────────────────────────────────────────────────┤
 │ 19:07:50 connected over usb /dev/ttyACM0 (auto)                              │
-│ 19:08:02 RPC lease released after 1.5s idle (×3)                             │
-└ q quit · r refresh · u update check · ↑↓/jk select · ? help ─────────────────┘
+└ q quit · r refresh · u update check · ↑↓/jk select · d debug · ? help ───────┘
 ```
 
 - **Live, read-only.** The TUI runs the core's session (`src/session/`)
@@ -120,17 +119,23 @@ USB:
   session (for screenshots).
 - **Link state** in the top-right corner: `○ searching`, `◌ connecting`,
   `● usb /dev/ttyACM0 (auto)`, `◐ ble not answering` (the hint shows in the
-  summary until data arrives), `✕ lost, retrying in 3s`. When the link drops,
+  summary until data arrives), `✕ lost, retrying in 3s`. The session only
+  reports a link as connected once a request has answered on it, so a link
+  that opens but stays deaf (`--transport ble` while USB is the selected
+  output) shows a steady "not answering"; retaking the lease on a healthy
+  link changes nothing. When the link drops,
   the last values stay on screen.
 - **Freshness:** a value older than 3 refresh intervals is dimmed, and the
   status's age goes on the Profiles separator. A failed read shows its error
   as `! …` beside the last good value (cut to fit; the Log pane has more).
 - **Log pane:** the session's log and the core's `log::warn!`/`debug!`
   records, merged by time, in local `HH:MM:SS`; a run of the same line shows
-  once with `(×N)`. The CLI prints the same core records as
+  once with `(×N)`. It shows info and up by default (`Log (info)`); `d`
+  toggles the debug lines (`Log (debug)`). The CLI prints the same core records as
   `sofleii: warning: …` on stderr.
 - **Keys:** `r` refreshes everything now, `u` checks for a firmware update
-  now (past the cache), `↑↓`/`jk` select a profile, `?` help, `q`, `Esc` or
+  now (past the cache), `↑↓`/`jk` select a profile, `d` debug lines in the
+  log on/off, `?` help, `q`, `Esc` or
   `Ctrl-C` quit (`Esc` closes the help first). Switching profile (`⏎`) and
   output (`o`) are in the help as coming soon. Quitting is instant: no
   thread is joined.

@@ -163,9 +163,14 @@ pub fn render(f: &mut Frame, app: &App) {
         )
     });
     separator(f.buffer_mut(), area, sep1, "Profiles", status_note, t);
-    separator(f.buffer_mut(), area, sep2, "Log", None, t);
+    let filter = if app.debug {
+        "Log (debug)"
+    } else {
+        "Log (info)"
+    };
+    separator(f.buffer_mut(), area, sep2, filter, None, t);
     f.render_widget(
-        Paragraph::new(log_lines(&snap, log.height, &app.tz, t)),
+        Paragraph::new(log_lines(&snap, log.height, app.debug, &app.tz, t)),
         log,
     );
 
@@ -234,6 +239,7 @@ fn footer(wide: bool, t: Theme) -> Line<'static> {
             ("r", "refresh"),
             ("u", "update check"),
             ("↑↓/jk", "select"),
+            ("d", "debug"),
             ("?", "help"),
         ]
     } else {
@@ -598,13 +604,20 @@ fn profile_lines(snap: &Snapshot, selected: usize, wide: bool, t: Theme) -> Vec<
 
 /// The newest lines that fit in `height`, with the time in `tz`. A run of
 /// the same line (the lease released on every poll, say) shows once, at
-/// its latest time, with `(×N)`.
-fn log_lines(snap: &Snapshot, height: u16, tz: &TimeZone, t: Theme) -> Vec<Line<'static>> {
-    if snap.log.is_empty() {
-        return vec![Line::styled(" nothing yet", t.label())];
-    }
+/// its latest time, with `(×N)`. Debug lines only with `debug` (`d`).
+fn log_lines(
+    snap: &Snapshot,
+    height: u16,
+    debug: bool,
+    tz: &TimeZone,
+    t: Theme,
+) -> Vec<Line<'static>> {
     let mut runs: Vec<(&super::LogLine, usize)> = Vec::new();
-    for l in &snap.log {
+    for l in snap
+        .log
+        .iter()
+        .filter(|l| debug || l.level != LogLevel::Debug)
+    {
         match runs.last_mut() {
             Some((last, n)) if last.text == l.text && last.level == l.level => {
                 *last = l;
@@ -612,6 +625,9 @@ fn log_lines(snap: &Snapshot, height: u16, tz: &TimeZone, t: Theme) -> Vec<Line<
             }
             _ => runs.push((l, 1)),
         }
+    }
+    if runs.is_empty() {
+        return vec![Line::styled(" nothing yet", t.label())];
     }
     let skip = runs.len().saturating_sub(usize::from(height));
     runs[skip..]
@@ -674,6 +690,7 @@ const HELP: &[(&str, &str)] = &[
     ("↑ ↓  k j", "select a profile"),
     ("r", "refresh everything now"),
     ("u", "check for a firmware update now"),
+    ("d", "debug lines in the log on / off"),
     ("?", "this help"),
     ("⏎", "switch to profile   (coming soon)"),
     ("o", "output usb / ble    (coming soon)"),

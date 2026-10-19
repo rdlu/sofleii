@@ -94,6 +94,8 @@ pub struct App {
     /// The user moved the selection: it stops following the active slot.
     moved: bool,
     pub help: bool,
+    /// The Log pane shows debug lines too (`d`); info and up otherwise.
+    pub debug: bool,
     pub color: bool,
     pub quit: bool,
     /// Requests sent from a key, by ticket, to name a failure in the log.
@@ -114,6 +116,7 @@ impl App {
             selected: 0,
             moved: false,
             help: false,
+            debug: false,
             color,
             quit: false,
             pending: HashMap::new(),
@@ -197,6 +200,7 @@ impl App {
             KeyCode::Char('?') => self.help = true,
             KeyCode::Char('r') => return Some(Request::Refresh(Scope::All)),
             KeyCode::Char('u') => return Some(Request::CheckUpdate),
+            KeyCode::Char('d') => self.debug = !self.debug,
             KeyCode::Up | KeyCode::Char('k') => {
                 self.moved = true;
                 self.selected = self.selected.saturating_sub(1);

@@ -137,7 +137,7 @@ fn dashboard_80x24() {
         "│   2  —                            empty                                      │",
         "│   3  —                            empty                                      │",
         "│   4  —                            empty                                      │",
-        "├─ Log ────────────────────────────────────────────────────────────────────────┤",
+        "├─ Log (info) ─────────────────────────────────────────────────────────────────┤",
         "│ 17:41:56 connected over usb /dev/ttyACM1 (auto)                              │",
     ];
     let s = screen(&demo(), 80, 24);
@@ -147,7 +147,7 @@ fn dashboard_80x24() {
     }
     assert_eq!(
         s[23],
-        "└ q quit · r refresh · u update check · ↑↓/jk select · ? help ─────────────────┘"
+        "└ q quit · r refresh · u update check · ↑↓/jk select · d debug · ? help ───────┘"
     );
 }
 
@@ -168,7 +168,7 @@ fn dashboard_60x20_is_one_column() {
         "│   2  —        empty                                      │",
         "│   3  —        empty                                      │",
         "│   4  —        empty                                      │",
-        "├─ Log ────────────────────────────────────────────────────┤",
+        "├─ Log (info) ─────────────────────────────────────────────┤",
         "│ 17:41:56 connected over usb /dev/ttyACM1 (auto)          │",
         "│                                                          │",
         "│                                                          │",
@@ -191,7 +191,7 @@ fn searching_state() {
     );
     assert!(s[3].starts_with("├─ Profiles ─"), "{}", s[3]);
     assert!(s[4].starts_with("│ —  "), "{}", s[4]);
-    assert!(s[5].starts_with("├─ Log ─"), "{}", s[5]);
+    assert!(s[5].starts_with("├─ Log (info) ─"), "{}", s[5]);
     assert!(s[6].starts_with("│ nothing yet  "), "{}", s[6]);
     // Nothing to select, and moving doesn't panic.
     let mut app = app;
@@ -425,7 +425,7 @@ fn the_log_merges_session_and_core_lines() {
         "{}",
         s[15]
     );
-    // A run of one line folds into its latest, counted.
+    // Debug lines are hidden by default (`Log (info)`).
     for i in 1..=3 {
         app.log.push(LogLine {
             at: at(i),
@@ -434,12 +434,34 @@ fn the_log_merges_session_and_core_lines() {
         });
     }
     let s = screen(&app, 80, 24);
+    assert!(s[12].starts_with("├─ Log (info) ─"), "{}", s[12]);
+    assert!(!s.join("\n").contains("lease released"));
+    // `d` shows them, a run folded into its latest, counted; `d` again hides.
+    app.on_key(key(KeyCode::Char('d')));
+    let s = screen(&app, 80, 24);
+    assert!(s[12].starts_with("├─ Log (debug) ─"), "{}", s[12]);
     assert!(
         s[16].starts_with("│ 17:42:13 RPC lease released after 1.5s idle (×3) "),
         "{}",
         s[16]
     );
     assert!(s[17].starts_with("│     "), "{}", s[17]);
+    app.on_key(key(KeyCode::Char('d')));
+    assert!(!app.debug);
+    assert!(screen(&app, 80, 24)[12].starts_with("├─ Log (info) ─"));
+}
+
+#[test]
+fn only_debug_lines_means_nothing_yet_at_info() {
+    let mut app = empty();
+    app.log.push(LogLine {
+        at: t0(),
+        level: LogLevel::Debug,
+        text: "presence changed".into(),
+    });
+    assert!(screen(&app, 80, 24)[6].starts_with("│ nothing yet  "));
+    app.debug = true;
+    assert!(screen(&app, 80, 24)[6].contains("presence changed"));
 }
 
 #[test]
@@ -453,6 +475,7 @@ fn help_overlay() {
         "q  Ctrl-C",
         "↑ ↓  k j",
         "refresh everything now",
+        "debug lines in the log",
         "(coming soon)",
         "? or Esc closes",
     ] {
