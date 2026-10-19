@@ -6,6 +6,7 @@ use serde::Serialize;
 use crate::Result;
 use crate::client::{Client, rpc::device_info};
 use crate::proto::core::LockState;
+use crate::proto::custom;
 use crate::proto::device_info as di;
 use crate::transport::Transport;
 
@@ -92,22 +93,8 @@ pub fn run<T: Transport>(client: &mut Client<T>) -> Result<Info> {
     let dev = client.get_device_info()?;
     let lock = client.get_lock_state()?;
     let subsystems = client.list_custom_subsystems()?;
-    // Resolved by identifier, never by index: indices change between builds.
-    let di_index = subsystems
-        .iter()
-        .find(|s| s.identifier == device_info::IDENTIFIER)
-        .map(|s| s.index);
-    let (build, hardware) = match di_index {
-        Some(i) => {
-            let payload = client.custom_call(
-                "zmk__device_info get_device_info",
-                i,
-                device_info::get_device_info(),
-            )?;
-            from_response(device_info::decode(&payload)?)
-        }
-        None => (Build::unavailable(BUILD_MISSING_NOTE), Hardware::default()),
-    };
+    let (build, hardware) = fetch_build(client, &subsystems)?
+        .unwrap_or_else(|| (Build::unavailable(BUILD_MISSING_NOTE), Hardware::default()));
     Ok(Info {
         device: Device {
             name: dev.name,
@@ -127,6 +114,28 @@ pub fn run<T: Transport>(client: &mut Client<T>) -> Result<Info> {
             })
             .collect(),
     })
+}
+
+/// Calls `zmk__device_info` `get_device_info`; `None` when the firmware has
+/// no such subsystem. Shared with `update check`.
+pub fn fetch_build<T: Transport>(
+    client: &mut Client<T>,
+    subsystems: &[custom::CustomSubsystemInfo],
+) -> Result<Option<(Build, Hardware)>> {
+    // Resolved by identifier, never by index: indices change between builds.
+    let Some(i) = subsystems
+        .iter()
+        .find(|s| s.identifier == device_info::IDENTIFIER)
+        .map(|s| s.index)
+    else {
+        return Ok(None);
+    };
+    let payload = client.custom_call(
+        "zmk__device_info get_device_info",
+        i,
+        device_info::get_device_info(),
+    )?;
+    Ok(Some(from_response(device_info::decode(&payload)?)))
 }
 
 impl Build {
@@ -219,7 +228,7 @@ pub fn hex(bytes: &[u8]) -> String {
 pub(crate) mod tests {
     use super::*;
     use crate::client::ResponseSubsystem;
-    use crate::proto::{core, custom};
+    use crate::proto::core;
     use crate::transport::mock::{Mock, custom_reply};
     use prost::Message;
     use std::time::Duration;
@@ -230,7 +239,7 @@ pub(crate) mod tests {
         })
     }
 
-    fn subsystem(index: u32, identifier: &str) -> custom::CustomSubsystemInfo {
+    pub fn subsystem(index: u32, identifier: &str) -> custom::CustomSubsystemInfo {
         custom::CustomSubsystemInfo {
             index,
             identifier: identifier.into(),
@@ -294,7 +303,7 @@ pub(crate) mod tests {
         }
     }
 
-    fn device_info_reply(index: u32, r: di::response::ResponseType) -> ResponseSubsystem {
+    pub fn device_info_reply(index: u32, r: di::response::ResponseType) -> ResponseSubsystem {
         custom_reply(
             index,
             di::Response {

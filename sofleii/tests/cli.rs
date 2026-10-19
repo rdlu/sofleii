@@ -118,3 +118,20 @@ fn ble_without_bluez_is_not_found() {
     let v: serde_json::Value = serde_json::from_str(&stdout).unwrap();
     assert_eq!(v["error"]["kind"], "not_found");
 }
+
+#[test]
+fn update_check_not_found_exits_2_before_github() {
+    let (code, stdout) = sofleii(&["--device", "/dev/nonexistent", "update", "check", "--json"]);
+    assert_eq!(code, 2);
+    let v: serde_json::Value = serde_json::from_str(&stdout).unwrap();
+    assert_eq!(v["error"]["kind"], "not_found");
+}
+
+#[test]
+fn update_check_rejects_a_malformed_repo() {
+    for repo in ["sofleii", "rdlu/", "a/b/c", "rdlu/so fleii"] {
+        let (code, stdout) = sofleii(&["update", "check", "--repo", repo]);
+        assert_eq!(code, 3, "{repo}");
+        assert!(stdout.is_empty());
+    }
+}

@@ -6,7 +6,8 @@ the same protocol the Studio web app uses, without a browser. Design and
 roadmap: [#44](https://github.com/rdlu/sofleii/issues/44).
 
 Status: **spike.** Studio RPC over USB serial (left half) or BLE GATT
-through BlueZ; batteries over BLE GATT; read-only commands.
+through BlueZ; batteries over BLE GATT; update checks over the GitHub REST
+API; read-only commands.
 
 ## Build and run
 
@@ -39,6 +40,7 @@ to the port (the `uucp` group on Arch). Over BLE, see
 | `sofleii battery [--json] [--format waybar] [--warn-below <pct>] [--critical-below <pct>]` | Both halves' levels over BLE GATT (BlueZ, system D-Bus), not Studio RPC. See [Battery](#battery). |
 | `sofleii info [--json]` | `core.get_device_info` (name, serial number), Studio lock state, `custom.list_custom_subsystems`, and the firmware build from the `zmk__device_info` subsystem (#46, looked up by identifier): versions, config commit + dirty flag, build time, board, build hash, hardware id and reset cause. See [`info`](#info). |
 | `sofleii profiles [--json]` | `cormoran_ble.get_profiles` and `get_output_priority` (the subsystem index is looked up by identifier, never hardcoded). |
+| `sofleii update check [--json] [--repo OWNER/NAME]` | The running build (`zmk_config_version` from `zmk__device_info`) against the latest GitHub release of `--repo` (default `rdlu/sofleii`): up to date, N commits behind or ahead, diverged, or unknown. See [`update check`](#update-check). |
 
 Global options: `--transport auto|usb|ble` (default `auto`, see
 [Transports](#transports)), `--device <path>` (serial port for Studio RPC;
@@ -285,6 +287,83 @@ subsystems
    1  cormoran_rsr
 ```
 
+### `update check`
+
+Reads `zmk_config_version` from the keyboard (as `info` does), then asks the
+GitHub REST API, without `gh`:
+
+1. `GET /repos/{repo}/releases/latest` for `tag_name` and `published_at`,
+   then `GET /repos/{repo}/commits/{tag}` for the tag's commit.
+2. The running commit comes from the version string: the SHA in
+   `v3.0.0-68-gf9a665f`, a bare `5c53b30` (CI builds), or, exactly on a tag
+   (`v3.1.0`), that tag resolved through the API. An empty version (CI
+   builds before the v3.1.0 fix) or a tag GitHub doesn't know is `unknown`.
+3. If the running SHA is a prefix of the release's, it's **up to date**.
+   Otherwise `GET /repos/{repo}/compare/{running}...{latest}`: the release
+   is the head, so GitHub's `ahead_by` is how far the keyboard is
+   **behind**. A 404 there means the commit isn't on GitHub (an unpushed
+   local build): `unknown`.
+4. When the compare changes **no files**, the status is `up_to_date` even
+   though the counts aren't 0. That's a PR-branch build whose branch was
+   merged as is: the release only adds the merge commit, and the firmware
+   is the same. `note` says so.
+
+A `-dirty` build is compared by its commit, with `running.dirty: true` and a
+note in the text output. Real output (2026-10-19; the left half runs the
+`feat/device-info` CI build at `f9a665f`, which PR #70 merged unchanged as
+`5c53b30` = v3.1.0):
+
+```
+$ sofleii update check
+up to date (v3.1.0, 5c53b30)
+running         f9a665f
+latest          v3.1.0 5c53b30, published 2026-10-19T19:11:48Z
+note            same source as v3.1.0: the commits between f9a665f and 5c53b30 change no files
+```
+
+Other verdicts: `3 commits behind v3.1.0`, `2 commits ahead of v3.1.0`,
+`diverged from v3.1.0: 4 commits behind, 2 commits ahead`, `unknown build,
+can't compare with v3.1.0` (with the reason as a `note`).
+
+```json
+{
+  "schema": 1,
+  "transport": { "kind": "usb", "device": "/dev/ttyACM0" },
+  "running": { "version": "f9a665f", "commit": "f9a665f", "dirty": false },
+  "latest": { "tag": "v3.1.0",
+              "commit": "5c53b30fce99031611442b1a3ccbbe7052327020",
+              "published_at": "2026-10-19T19:11:48Z" },
+  "status": "up_to_date",
+  "commits_behind": 1,
+  "commits_ahead": 0,
+  "note": "same source as v3.1.0: the commits between f9a665f and 5c53b30 change no files"
+}
+```
+
+- `status`: `up_to_date`, `behind`, `ahead`, `diverged` or `unknown`.
+  `commits_behind` / `commits_ahead` are `null` only when `unknown`.
+- `running.version` is the raw string, `-dirty` included. `running.commit`
+  is the abbreviated SHA from it, or the full SHA an exact tag resolved to.
+  `latest.commit` is always the full SHA.
+- `note` explains an `unknown` status or a same-source `up_to_date`;
+  otherwise `null`.
+- **Exit codes:** 0 `up_to_date` or `ahead`; **1** `behind`, `diverged` or
+  `unknown` (worth a look; usable as `sofleii update check || notify-send
+  "Sofle firmware update"`); 2 keyboard not found (checked before any
+  network call); 3 usage (e.g. a malformed `--repo`); **4** transport or
+  protocol error, firmware **without** `zmk__device_info` (`kind:
+  "unsupported"`; unlike `info`, which exits 0 there), or a GitHub failure
+  (`kind: "github"`: network, a 404 release for `--repo`, a rejected token,
+  rate limiting).
+- **Token:** none needed for public releases. `GH_TOKEN`, else
+  `GITHUB_TOKEN`, is sent as a bearer token if set, which lifts the
+  anonymous limit of 60 requests per hour (a check makes 2 to 4). A rate
+  limit error says so. Requests send `User-Agent: sofleii/<version>` and
+  time out after 10 s each.
+- HTTPS is `ureq` (blocking, rustls with bundled roots): no tokio, no
+  OpenSSL. Proxies come from the usual `HTTPS_PROXY` / `ALL_PROXY` /
+  `NO_PROXY` variables.
+
 On failure with `--json`, stdout carries an error object instead:
 
 ```json
@@ -292,7 +371,7 @@ On failure with `--json`, stdout carries an error object instead:
 ```
 
 `kind` is one of `not_found`, `usage`, `io`, `timeout`, `protocol`, `rpc`,
-`bluez`.
+`bluez`, `unsupported`, `github`.
 
 ## Battery
 
@@ -430,10 +509,10 @@ JSON:
 | Code | Meaning |
 |---|---|
 | 0 | OK |
-| 1 | Check failed / attention needed: `battery --warn-below` with a half below it |
+| 1 | Check failed / attention needed: `battery --warn-below` with a half below it; `update check` behind, diverged or unknown |
 | 2 | Keyboard not found / not connected (a `--device` path that does not exist; `auto` with neither USB nor BLE; over BLE or for `battery`, not connected or BlueZ/D-Bus unavailable) |
 | 3 | Usage error (bad flag; `--device`/`--bt-address`/`--transport` contradicting each other) |
-| 4 | Transport or protocol error: timeout (over BLE, usually USB being the selected output), bad frame, RPC error (including a failing `zmk__device_info` call), D-Bus/GATT error. A firmware *without* `zmk__device_info` is not an error for `info` (exit 0, `build.available: false`) |
+| 4 | Transport or protocol error: timeout (over BLE, usually USB being the selected output), bad frame, RPC error (including a failing `zmk__device_info` call), D-Bus/GATT error, GitHub API failure (`update check`). A firmware *without* `zmk__device_info` is not an error for `info` (exit 0, `build.available: false`), but is for `update check` |
 
 ## Layout
 
@@ -446,14 +525,16 @@ src/
                  mock.rs (tests)
   client/        request ids, response matching, notifications set aside; rpc.rs = pure request builders
   commands/      status, info, profiles (status reuses profiles::fetch), battery (Gatt trait,
-                 half identification; tested with a fake BlueZ tree): plain data, never print, no UI code
+                 half identification; tested with a fake BlueZ tree), update (Http trait, version
+                 parsing, compare; tested with canned GitHub JSON): plain data, never print, no UI code
   gatt.rs        BlueZ's object tree as plain data, and the keyboard lookup (battery + BLE)
   bluez.rs       system D-Bus (zbus blocking API; no tokio, no libdbus): the Gatt trait, the tree
+  github.rs      GitHub REST API over ureq (blocking, rustls): the Http trait
   output.rs      human, JSON and waybar rendering
   main.rs        clap CLI and exit codes
 proto/           vendored .proto files (see proto/README.md for sources and licenses)
 tests/golden.rs  request bytes captured from the v3.0.0 firmware, plus the zmk__device_info call
-tests/cli.rs     exit codes and error output with no keyboard (not found, usage)
+tests/cli.rs     exit codes and error output with no keyboard (not found, usage; no network)
 ```
 
 License: MIT (see the repository's `LICENSE`). The vendored protos keep

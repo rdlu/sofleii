@@ -32,8 +32,9 @@ reports which build is running (see [Firmware](../reference/firmware/#modules)).
 - **Battery** levels.
 - **Output priority**: USB or BLE first.
 - **Firmware updates**: check the running firmware against the
-  [GitHub releases](https://github.com/rdlu/sofleii/releases), and flash
-  from the tool.
+  [GitHub releases](https://github.com/rdlu/sofleii/releases) (the first
+  piece, `sofleii update check`, already does this), and flash from the
+  tool.
 - **The repo's routines** as CLI subcommands and TUI actions, instead of
   remembering task names: `flash-release`, `flash-release-reset`,
   `build-flash`, `doctor`, `deps-check` and `draw`. Today they are

@@ -7,7 +7,8 @@
 //! `gatt` is BlueZ's object tree as plain data (plus the keyboard lookup);
 //! `bluez` (system D-Bus) fills it, implements [`commands::battery::Gatt`]
 //! so `commands` stays free of D-Bus details, and carries the BLE transport
-//! (`transport::ble`).
+//! (`transport::ble`). `github` (blocking HTTPS via `ureq`) implements
+//! [`commands::update::Http`] the same way for `update check`.
 
 pub mod bluez;
 pub mod client;
@@ -15,6 +16,7 @@ pub mod commands;
 pub mod error;
 pub mod framing;
 pub mod gatt;
+pub mod github;
 pub mod output;
 pub mod proto;
 pub mod transport;
