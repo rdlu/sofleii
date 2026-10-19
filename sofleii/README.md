@@ -138,6 +138,15 @@ contradicting `--transport` (`--transport usb --bt-address …`,
 `--transport ble --device …`), is a usage error (exit 3). `battery` always
 reads over BlueZ and ignores `--transport`/`--device`.
 
+The serial port is opened exclusively (TIOCEXCL plus `flock`), so only one
+sofleii can hold it. A busy port is retried 3 times, 100 ms apart, then
+fails with `port busy (another sofleii, e.g. the TUI or waybar, has it
+open)`, exit 4.
+
+Request ids start at a per-process value (pid mixed with the clock), not 1,
+so two sofleii processes on the same BLE link don't take each other's
+replies.
+
 JSON `transport` is `{"kind": "usb", "device": "/dev/ttyACM1"}` or
 `{"kind": "ble", "address": "DD:1F:23:76:6E:71"}` (the BLE shape is new,
 so no schema bump).
@@ -708,7 +717,7 @@ JSON:
 | 1 | Check failed / attention needed: `battery --warn-below` with a half below it; `update check` behind or unknown |
 | 2 | Keyboard not found / not connected (a `--device` path that does not exist; `auto` with neither USB nor BLE; over BLE or for `battery`, not connected or BlueZ/D-Bus unavailable) |
 | 3 | Usage error (bad flag; `--device`/`--bt-address`/`--transport` contradicting each other; a profile out of range; a rename too long or on an empty slot; `unpair` without a terminal or `--yes`, or not confirmed) |
-| 4 | Transport or protocol error: timeout (over BLE, usually USB being the selected output; not after an [endpoint handover](#endpoint-handover)), bad frame, RPC error (including a failing `zmk__device_info` call, and a write's `error` or `success: false` reply), D-Bus/GATT error, GitHub API failure (`update check`). A firmware *without* `zmk__device_info` is not an error for `info` (exit 0, `build.available: false`), but is for `update check` |
+| 4 | Transport or protocol error: a busy serial port (another sofleii has it), timeout (over BLE, usually USB being the selected output; not after an [endpoint handover](#endpoint-handover)), bad frame, RPC error (including a failing `zmk__device_info` call, and a write's `error` or `success: false` reply), D-Bus/GATT error, GitHub API failure (`update check`). A firmware *without* `zmk__device_info` is not an error for `info` (exit 0, `build.available: false`), but is for `update check` |
 
 ## Layout
 
@@ -716,15 +725,20 @@ JSON:
 src/
   proto.rs       prost-generated messages (build.rs, from proto/)
   framing.rs     SOF 0xAB / ESC 0xAC / EOF 0xAD, streaming decoder
-  transport/     Transport trait and `auto` selection (mod.rs); serial.rs (USB, discovery);
-                 ble.rs (BlueZ GATT: Studio service choice, AcquireNotify/StartNotify, WriteValue);
-                 mock.rs (tests)
-  client/        request ids, response matching, notifications set aside; rpc.rs = pure request builders
+  transport/     Transport trait (Send) and `auto` selection (mod.rs); serial.rs (USB, discovery,
+                 busy-port retry); ble.rs (BlueZ GATT: Studio service choice, AcquireNotify/StartNotify,
+                 WriteValue); mock.rs (tests)
+  client/        request ids (random first id per process), response matching, notifications set
+                 aside, is_dead (link lost vs deaf); rpc.rs = pure request builders
   commands/      status, info, profiles (status reuses profiles::fetch), battery (Gatt trait,
                  half identification; tested with a fake BlueZ tree), update (Http trait, version
                  parsing, compare; tested with canned GitHub JSON); the writes profile and output,
                  sharing handover (the expected silence, the read-back over the other transport):
                  plain data, never print or prompt, no UI code
+  connect.rs     opening the link without clap types: Config, the `auto` plan with the 1 s USB probe
+                 and BLE fallback, Connector (remembers the plan between connects; invalidate),
+                 open_other (handover read-back), ble_connected, read_battery
+  error.rs       Error, the exit codes, ErrorView (Clone + Serialize: kind, message, exit_code)
   gatt.rs        BlueZ's object tree as plain data, and the keyboard lookup (battery + BLE)
   bluez.rs       system D-Bus (zbus + block_on; no tokio, no libdbus): the Gatt trait, the tree
   github.rs      GitHub REST API over ureq (blocking, rustls): the Http trait

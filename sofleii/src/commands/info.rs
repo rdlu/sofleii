@@ -326,7 +326,7 @@ pub(crate) mod tests {
             di::response::ResponseType::DeviceInfo(sample_response()),
         ));
         let mock = Mock::replying(replies);
-        let mut c = Client::new(mock, Duration::from_secs(1));
+        let mut c = Client::with_first_id(mock, Duration::from_secs(1), 1);
         let info = run(&mut c).unwrap();
 
         assert!(info.build.available);
@@ -349,7 +349,7 @@ pub(crate) mod tests {
             subsystem(0, "cormoran_ble"),
             subsystem(1, "cormoran_rsr"),
         ]);
-        let mut c = Client::new(Mock::replying(replies), Duration::from_secs(1));
+        let mut c = Client::with_first_id(Mock::replying(replies), Duration::from_secs(1), 1);
         let info = run(&mut c).unwrap();
         assert_eq!(info.build, Build::unavailable(BUILD_MISSING_NOTE));
         assert_eq!(info.hardware, Hardware::default());
@@ -365,7 +365,7 @@ pub(crate) mod tests {
                 message: "Failed to process request".into(),
             }),
         ));
-        let mut c = Client::new(Mock::replying(replies), Duration::from_secs(1));
+        let mut c = Client::with_first_id(Mock::replying(replies), Duration::from_secs(1), 1);
         let err = run(&mut c).unwrap_err();
         assert!(
             matches!(&err, crate::Error::Rpc(m) if m.contains("Failed to process")),

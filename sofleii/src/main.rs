@@ -7,27 +7,16 @@ use std::time::Duration;
 
 use clap::{CommandFactory, Parser, Subcommand, ValueEnum};
 
-use sofleii::bluez::Bluez;
-use sofleii::client::Client;
-use sofleii::client::DEFAULT_TIMEOUT;
-use sofleii::commands::battery::{self, DEFAULT_CRITICAL_BELOW, DEFAULT_WARN_BELOW, Thresholds};
+use sofleii::commands::battery::{DEFAULT_CRITICAL_BELOW, DEFAULT_WARN_BELOW, Thresholds};
 use sofleii::commands::status::Battery;
 use sofleii::commands::update::DEFAULT_REPO;
+use sofleii::connect::{self, Connected, Connector, STATUS_BATTERY_TIMEOUT, read_battery};
 use sofleii::error::exit;
-use sofleii::gatt::{Query, find_device};
 use sofleii::github::GitHub;
 use sofleii::output::{self, Format, Style};
-use sofleii::transport::{
-    Plan, Preference, Transport, TransportKind, ble::BleTransport, plan, serial,
-    serial::SerialTransport,
-};
+use sofleii::transport::{Preference, TransportKind};
 use sofleii::{Error, Result, commands};
 
-/// `status` reads the batteries with at most this timeout, to stay snappy.
-const STATUS_BATTERY_TIMEOUT: Duration = Duration::from_millis(1000);
-/// With `--transport auto`, USB gets this long to answer before sofleii
-/// falls back to BLE (Studio only answers on the selected output endpoint).
-const AUTO_USB_PROBE: Duration = Duration::from_millis(1000);
 /// Each GitHub API request (`update check`) gets this long, all in.
 const GITHUB_TIMEOUT: Duration = Duration::from_secs(10);
 
@@ -323,99 +312,19 @@ fn usage_error(msg: &str) -> ExitCode {
     ExitCode::from(exit::USAGE)
 }
 
-/// Whether the keyboard is connected to BlueZ, or why not.
-fn ble_connected(bt_address: Option<&str>, timeout: Duration) -> std::result::Result<(), String> {
-    let reason = |e: Error| match e {
-        Error::NotFound(m) => m,
-        e => e.to_string(),
-    };
-    let bluez = Bluez::connect(timeout).map_err(reason)?;
-    let tree = bluez.managed_tree().map_err(reason)?;
-    let query = Query {
-        address: bt_address.map(str::to_string),
-    };
-    find_device(&tree, &query, &mut Vec::new())
-        .map(drop)
-        .map_err(reason)
-}
-
-/// Opens the transport `--transport`/`--device`/`--bt-address` pick.
-fn connect(cli: &Cli, timeout: Duration) -> Result<Client<Box<dyn Transport>>> {
-    let pref = match cli.transport {
-        TransportArg::Auto => Preference::Auto,
-        TransportArg::Usb => Preference::Usb,
-        TransportArg::Ble => Preference::Ble,
-    };
-    let bt_address = cli.bt_address.as_deref();
-    let chosen = plan(
-        pref,
-        cli.device.as_deref(),
-        bt_address,
-        || !serial::discover().is_empty(),
-        || ble_connected(bt_address, timeout.min(DEFAULT_TIMEOUT)),
-    )?;
-    let ble = |address: Option<&str>| -> Result<Client<Box<dyn Transport>>> {
-        Ok(Client::new(
-            Box::new(BleTransport::connect(address, timeout)?),
-            timeout,
-        ))
-    };
-    match chosen {
-        Plan::Ble { address } => ble(address.as_deref()),
-        Plan::Usb { device, auto } => {
-            let usb: Box<dyn Transport> = Box::new(SerialTransport::open(device.as_deref())?);
-            let mut client = Client::new(usb, timeout);
-            if !auto {
-                return Ok(client);
-            }
-            // Studio only listens on the selected output endpoint: with
-            // output priority BLE and the profile connected, USB is plugged
-            // in but deaf. Probe it briefly, then fall back to BLE.
-            client.set_timeout(timeout.min(AUTO_USB_PROBE));
-            match client.get_device_info() {
-                Ok(_) => {
-                    client.set_timeout(timeout);
-                    Ok(client)
-                }
-                Err(e @ Error::Timeout { .. }) => {
-                    if ble_connected(None, timeout.min(DEFAULT_TIMEOUT)).is_err() {
-                        return Err(e);
-                    }
-                    eprintln!(
-                        "sofleii: note: USB ({}) didn't answer (Studio only answers on the \
-                         selected output, BLE here?); using BLE",
-                        client.transport_info().device
-                    );
-                    ble(None)
-                }
-                Err(e) => Err(e),
-            }
-        }
+/// The connection settings `--transport`/`--device`/`--bt-address`/
+/// `--timeout` ask for.
+fn connect_config(cli: &Cli) -> connect::Config {
+    connect::Config {
+        transport: match cli.transport {
+            TransportArg::Auto => Preference::Auto,
+            TransportArg::Usb => Preference::Usb,
+            TransportArg::Ble => Preference::Ble,
+        },
+        device: cli.device.clone(),
+        bt_address: cli.bt_address.clone(),
+        timeout: Duration::from_millis(cli.timeout),
     }
-}
-
-/// Opens the transport that isn't `current`, to read back after a write
-/// handed Studio over to it. `--device`/`--bt-address` only pin the
-/// transport they name.
-fn open_other(
-    cli: &Cli,
-    current: TransportKind,
-    timeout: Duration,
-) -> Result<Client<Box<dyn Transport>>> {
-    let t: Box<dyn Transport> = match current {
-        TransportKind::Usb => {
-            let address = cli.bt_address.as_deref();
-            ble_connected(address, timeout.min(DEFAULT_TIMEOUT)).map_err(Error::NotFound)?;
-            Box::new(BleTransport::connect(address, timeout)?)
-        }
-        TransportKind::Ble => {
-            if serial::discover().is_empty() {
-                return Err(Error::NotFound("no \"Eyelash Sofle\" serial port".into()));
-            }
-            Box::new(SerialTransport::open(None)?)
-        }
-    };
-    Ok(Client::new(t, timeout))
 }
 
 /// Asks before `profile unpair` (the caller already checked for a TTY).
@@ -456,31 +365,17 @@ fn confirm_unpair(
     }
 }
 
-/// Reads both batteries over BlueZ, printing warnings to stderr.
-fn read_battery(bt_address: &Option<String>, timeout: Duration) -> Result<battery::Reading> {
-    let mut bluez = Bluez::connect(timeout)?;
-    let r = battery::run(
-        &mut bluez,
-        &battery::Query {
-            address: bt_address.clone(),
-        },
-    )?;
-    for w in &r.warnings {
-        eprintln!("sofleii: warning: {w}");
-    }
-    Ok(r)
-}
-
 /// Runs a command; returns the text for stdout and the exit code.
 fn run(cli: &Cli, command: &Command, style: Style) -> Result<(String, u8)> {
-    let timeout = Duration::from_millis(cli.timeout);
+    let config = connect_config(cli);
+    let timeout = config.timeout;
     if let Command::Battery {
         warn_below,
         critical_below,
         ..
     } = *command
     {
-        let r = read_battery(&cli.bt_address, timeout)?;
+        let r = read_battery(cli.bt_address.as_deref(), timeout)?;
         if let Some(n) = &r.note {
             eprintln!("sofleii: note: {n}");
         }
@@ -516,15 +411,15 @@ fn run(cli: &Cli, command: &Command, style: Style) -> Result<(String, u8)> {
         _ => {}
     }
 
-    let mut client = connect(cli, timeout)?;
-    let info = client.transport_info();
+    let mut connector = Connector::new(config);
+    let Connected { mut client, info } = connector.connect()?;
     let mut code = exit::OK;
     let text = match command {
         Command::Status { .. } => {
             let mut s = commands::status::run(&mut client)?;
             // The battery never fails `status`: unavailable is a note.
             s.battery = Battery::from_reading(read_battery(
-                &cli.bt_address,
+                cli.bt_address.as_deref(),
                 timeout.min(STATUS_BATTERY_TIMEOUT),
             ));
             output::status(style, &info, &s)
@@ -546,8 +441,7 @@ fn run(cli: &Cli, command: &Command, style: Style) -> Result<(String, u8)> {
                 OutputArg::Usb => TransportKind::Usb,
                 OutputArg::Ble => TransportKind::Ble,
             };
-            let o =
-                commands::output::set(&mut client, target, || open_other(cli, info.kind, timeout))?;
+            let o = commands::output::set(&mut client, target, || connector.open_other(info.kind))?;
             output::output_action(style, &info, &o)
         }
         Command::Profile { command } => {
@@ -557,7 +451,7 @@ fn run(cli: &Cli, command: &Command, style: Style) -> Result<(String, u8)> {
                 | ProfileCommand::Unpair { profile, .. } => profile,
             };
             let t = commands::profile::prepare(&mut client, profile)?;
-            let other = || open_other(cli, info.kind, timeout);
+            let other = || connector.open_other(info.kind);
             let o = match command {
                 ProfileCommand::Switch { .. } => commands::profile::switch(&mut client, &t, other)?,
                 ProfileCommand::Rename { name, .. } => {

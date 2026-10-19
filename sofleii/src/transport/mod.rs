@@ -51,8 +51,9 @@ impl Serialize for TransportInfo {
     }
 }
 
-/// A bidirectional byte pipe carrying framed Studio RPC messages.
-pub trait Transport {
+/// A bidirectional byte pipe carrying framed Studio RPC messages. `Send`, so
+/// a [`crate::client::Client`] can live in a worker thread (the TUI session).
+pub trait Transport: Send {
     /// Writes all of `bytes` (one or more complete frames).
     fn send(&mut self, bytes: &[u8]) -> Result<()>;
 

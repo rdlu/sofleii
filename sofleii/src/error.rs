@@ -3,6 +3,8 @@
 use std::fmt;
 use std::time::Duration;
 
+use serde::Serialize;
+
 pub type Result<T, E = Error> = std::result::Result<T, E>;
 
 /// Process exit codes (the stable contract from #44).
@@ -83,6 +85,40 @@ impl Error {
             Error::GitHub(_) => "github",
         }
     }
+
+    /// This error as plain data, see [`ErrorView`].
+    pub fn view(&self) -> ErrorView {
+        ErrorView {
+            kind: self.kind(),
+            message: self.to_string(),
+            exit_code: self.exit_code(),
+        }
+    }
+}
+
+/// An [`Error`] as plain data: `Clone`, so it can cross a channel (the TUI's
+/// session thread), and `Serialize`, as the `error` object of `--json`.
+/// `Error` holds an `io::Error`, which is neither.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct ErrorView {
+    /// [`Error::kind`].
+    pub kind: &'static str,
+    /// The `Display` text.
+    pub message: String,
+    /// [`Error::exit_code`].
+    pub exit_code: u8,
+}
+
+impl From<&Error> for ErrorView {
+    fn from(e: &Error) -> Self {
+        e.view()
+    }
+}
+
+impl fmt::Display for ErrorView {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str(&self.message)
+    }
 }
 
 impl fmt::Display for Error {
@@ -117,5 +153,48 @@ impl std::error::Error for Error {
             Error::Io { source, .. } => Some(source),
             _ => None,
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn view_carries_kind_message_and_exit_code() {
+        let e = Error::io(
+            "opening /dev/ttyACM1",
+            std::io::Error::new(std::io::ErrorKind::ResourceBusy, "port busy"),
+        );
+        let v = e.view();
+        assert_eq!(
+            v,
+            ErrorView {
+                kind: "io",
+                message: "opening /dev/ttyACM1: port busy".into(),
+                exit_code: exit::TRANSPORT,
+            }
+        );
+        assert_eq!(ErrorView::from(&e), v.clone());
+        assert_eq!(v.to_string(), e.to_string());
+        assert_eq!(
+            serde_json::to_value(&v).unwrap(),
+            serde_json::json!({
+                "kind": "io",
+                "message": "opening /dev/ttyACM1: port busy",
+                "exit_code": 4
+            })
+        );
+        let v = Error::NotFound("no serial port".into()).view();
+        assert_eq!((v.kind, v.exit_code), ("not_found", exit::NOT_FOUND));
+        let v = Error::Usage("bad".into()).view();
+        assert_eq!((v.kind, v.exit_code), ("usage", exit::USAGE));
+    }
+
+    #[test]
+    fn error_view_crosses_threads() {
+        let v = Error::Rpc("x".into()).view();
+        let got = std::thread::spawn(move || v).join().unwrap();
+        assert_eq!(got.kind, "rpc");
     }
 }

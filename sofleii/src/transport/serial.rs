@@ -111,26 +111,59 @@ impl SerialTransport {
             }
         };
         // CDC-ACM ignores the baud rate; serialport sets raw mode for us.
-        let port = serialport::new(&path, 115_200)
-            .timeout(Duration::from_millis(100))
-            .open()
-            .map_err(|e| match e.kind() {
-                serialport::ErrorKind::NoDevice => Error::NotFound(format!("{path}: {e}")),
-                serialport::ErrorKind::Io(ErrorKind::NotFound) => {
-                    Error::NotFound(format!("{path}: {e}"))
-                }
-                serialport::ErrorKind::Io(k) => Error::io(
-                    format!("opening {path}"),
-                    std::io::Error::new(k, e.description),
-                ),
-                _ => Error::io(
-                    format!("opening {path}"),
-                    std::io::Error::other(e.description),
-                ),
-            })?;
+        let port = open_retrying(
+            &path,
+            || {
+                serialport::new(&path, 115_200)
+                    .timeout(Duration::from_millis(100))
+                    .open()
+            },
+            std::thread::sleep,
+        )?;
         // Drop anything left over from an earlier session.
         let _ = port.clear(serialport::ClearBuffer::Input);
         Ok(Self { port, path })
+    }
+}
+
+/// Why an open failed with `EBUSY`. serialport opens exclusively (TIOCEXCL
+/// plus an exclusive `flock`), so a second sofleii can't share the port.
+pub const BUSY: &str = "port busy (another sofleii, e.g. the TUI or waybar, has it open)";
+/// A busy port is retried this many times, [`BUSY_PAUSE`] apart, before
+/// giving up: another sofleii's lease is usually a short one.
+pub const BUSY_RETRIES: u32 = 3;
+pub const BUSY_PAUSE: Duration = Duration::from_millis(100);
+
+/// Runs `open`, retrying a busy port (serialport's `NoDevice`, which on
+/// Linux only means `EBUSY` or a held `flock`) with `pause` in between.
+fn open_retrying<P>(
+    path: &str,
+    mut open: impl FnMut() -> serialport::Result<P>,
+    mut pause: impl FnMut(Duration),
+) -> Result<P> {
+    let mut retries = 0;
+    loop {
+        match open() {
+            Ok(p) => return Ok(p),
+            Err(e) if e.kind() == serialport::ErrorKind::NoDevice && retries < BUSY_RETRIES => {
+                retries += 1;
+                pause(BUSY_PAUSE);
+            }
+            Err(e) => return Err(open_error(path, e)),
+        }
+    }
+}
+
+fn open_error(path: &str, e: serialport::Error) -> Error {
+    let context = format!("opening {path}");
+    match e.kind() {
+        // Exit 4 (transport), not 2: the keyboard is there, just taken.
+        serialport::ErrorKind::NoDevice => {
+            Error::io(context, std::io::Error::new(ErrorKind::ResourceBusy, BUSY))
+        }
+        serialport::ErrorKind::Io(ErrorKind::NotFound) => Error::NotFound(format!("{path}: {e}")),
+        serialport::ErrorKind::Io(k) => Error::io(context, std::io::Error::new(k, e.description)),
+        _ => Error::io(context, std::io::Error::other(e.description)),
     }
 }
 
@@ -188,5 +221,79 @@ mod tests {
         assert_eq!(found.len(), 1);
         assert!(found[0].path.ends_with("ttyFAKE1"));
         assert_eq!(found[0].serial_number.as_deref(), Some("94708422E5F2FD3E"));
+    }
+
+    fn busy() -> serialport::Error {
+        serialport::Error::new(serialport::ErrorKind::NoDevice, "Device or resource busy")
+    }
+
+    #[test]
+    fn busy_port_is_retried_then_opens() {
+        let mut tries = 0;
+        let mut pauses = Vec::new();
+        let r = open_retrying(
+            "/dev/ttyACM1",
+            || {
+                tries += 1;
+                if tries < 3 { Err(busy()) } else { Ok("port") }
+            },
+            |d| pauses.push(d),
+        );
+        assert_eq!(r.unwrap(), "port");
+        assert_eq!(tries, 3);
+        assert_eq!(pauses, vec![BUSY_PAUSE; 2]);
+    }
+
+    #[test]
+    fn busy_port_gives_up_after_three_retries() {
+        let mut tries = 0;
+        let mut pauses = 0;
+        let e = open_retrying::<()>(
+            "/dev/ttyACM1",
+            || {
+                tries += 1;
+                Err(busy())
+            },
+            |_| pauses += 1,
+        )
+        .unwrap_err();
+        assert_eq!((tries, pauses), (1 + BUSY_RETRIES, BUSY_RETRIES));
+        assert_eq!(e.exit_code(), crate::error::exit::TRANSPORT);
+        assert_eq!(e.kind(), "io");
+        assert_eq!(
+            e.to_string(),
+            "opening /dev/ttyACM1: port busy (another sofleii, e.g. the TUI or waybar, has it open)"
+        );
+    }
+
+    #[test]
+    fn other_open_errors_are_not_retried() {
+        let mut tries = 0;
+        let e = open_retrying::<()>(
+            "/dev/ttyACM9",
+            || {
+                tries += 1;
+                Err(serialport::Error::new(
+                    serialport::ErrorKind::Io(ErrorKind::NotFound),
+                    "No such file or directory",
+                ))
+            },
+            |_| panic!("paused"),
+        )
+        .unwrap_err();
+        assert_eq!(tries, 1);
+        assert_eq!(e.exit_code(), crate::error::exit::NOT_FOUND);
+        let e = open_retrying::<()>(
+            "/dev/ttyACM9",
+            || {
+                Err(serialport::Error::new(
+                    serialport::ErrorKind::Io(ErrorKind::PermissionDenied),
+                    "Permission denied",
+                ))
+            },
+            |_| panic!("paused"),
+        )
+        .unwrap_err();
+        assert_eq!(e.to_string(), "opening /dev/ttyACM9: Permission denied");
     }
 }

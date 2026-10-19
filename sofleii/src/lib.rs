@@ -2,9 +2,11 @@
 //! that the CLI and TUI front ends render.
 //!
 //! Layering (each layer only depends on the ones above it):
-//! `proto` → `framing` → `transport` → `client` → `commands` → `output`
-//! → `tui`. `commands` returns plain data and never prints; front ends own
-//! rendering. Core diagnostics go through the `log` facade, and each front
+//! `proto` → `framing` → `transport` → `client` → `commands` → `connect`
+//! → `output` → `tui`. `commands` returns plain data and never prints;
+//! front ends own rendering. `connect` opens the link the flags ask for
+//! (the `auto` plan, USB probe and BLE fallback), with no clap types, so
+//! the CLI and a TUI session thread share it. Core diagnostics go through the `log` facade, and each front
 //! end installs its logger (`logger` for the CLI's stderr, the TUI's log
 //! pane in `tui::log_pane`).
 //! `gatt` is BlueZ's object tree as plain data (plus the keyboard lookup);
@@ -16,6 +18,7 @@
 pub mod bluez;
 pub mod client;
 pub mod commands;
+pub mod connect;
 pub mod error;
 pub mod framing;
 pub mod gatt;

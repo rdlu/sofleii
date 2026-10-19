@@ -6,16 +6,20 @@ use std::time::Duration;
 use prost::Message;
 
 use super::{Transport, TransportInfo, TransportKind};
-use crate::Result;
 use crate::client::ResponseSubsystem;
-use crate::framing;
+use crate::framing::{self, Decoder};
 use crate::proto::{ble_management, custom, studio};
+use crate::{Error, Result};
 
 pub struct Mock {
     pub reads: VecDeque<Vec<u8>>,
     pub sent: Vec<Vec<u8>>,
     /// What [`Transport::info`] reports (USB unless [`Mock::over`] says).
     pub kind: TransportKind,
+    /// Answers, in order, to whatever request ids arrive ([`Mock::echoing`]).
+    pub echo: VecDeque<ResponseSubsystem>,
+    /// What every `recv` fails with, if set ([`Mock::failing`]).
+    pub fail: Option<fn() -> Error>,
 }
 
 impl Mock {
@@ -24,7 +28,24 @@ impl Mock {
             reads,
             sent: vec![],
             kind: TransportKind::Usb,
+            echo: VecDeque::new(),
+            fail: None,
         }
+    }
+
+    /// Answers each request with the next of `responses`, under the id it
+    /// was sent with (for clients with a seeded first id).
+    pub fn echoing(responses: Vec<ResponseSubsystem>) -> Self {
+        let mut m = Self::new(VecDeque::new());
+        m.echo = responses.into();
+        m
+    }
+
+    /// A mock whose every `recv` fails with `fail()`.
+    pub fn failing(fail: fn() -> Error) -> Self {
+        let mut m = Self::new(VecDeque::new());
+        m.fail = Some(fail);
+        m
     }
 
     /// The same mock, reporting `kind` as its transport.
@@ -48,9 +69,21 @@ impl Mock {
 impl Transport for Mock {
     fn send(&mut self, bytes: &[u8]) -> Result<()> {
         self.sent.push(bytes.to_vec());
+        for frame in Decoder::new().feed(bytes) {
+            let Ok(req) = studio::Request::decode(frame.as_slice()) else {
+                continue;
+            };
+            if let Some(r) = self.echo.pop_front() {
+                self.reads
+                    .push_back(framing::encode(&response(req.request_id, r)));
+            }
+        }
         Ok(())
     }
     fn recv(&mut self, buf: &mut [u8], timeout: Duration) -> Result<usize> {
+        if let Some(fail) = self.fail {
+            return Err(fail());
+        }
         match self.reads.pop_front() {
             Some(mut r) => {
                 // A read longer than the caller's buffer comes back in pieces,
