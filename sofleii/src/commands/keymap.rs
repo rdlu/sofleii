@@ -355,9 +355,12 @@ mod tests {
         env!("CARGO_MANIFEST_DIR"),
         "/tests/fixtures/keymap_live.hex"
     ));
+    /// The `.keymap` the capture was taken with, frozen beside it, so
+    /// editing `config/eyelash_sofle.keymap` never breaks these tests
+    /// (`keymap::dts`'s tests parse the live file).
     const KEYMAP: &str = include_str!(concat!(
         env!("CARGO_MANIFEST_DIR"),
-        "/../config/eyelash_sofle.keymap"
+        "/tests/fixtures/keymap_live.keymap"
     ));
 
     /// The captured replies by request name, as `RequestResponse` payloads.
@@ -420,7 +423,7 @@ mod tests {
         let f = file();
         let s = show(&mut c, Some(&f), None).unwrap();
         let l = &s.live.layers;
-        assert_eq!(l.len(), 9);
+        assert_eq!(l.len(), 10);
         assert_eq!(l[0].name, "BASE");
         assert_eq!(l[0].bindings.len(), 64);
         let zmk = |layer: usize, pos: usize| l[layer].bindings[pos].zmk.as_str();
@@ -456,7 +459,7 @@ mod tests {
         let d = diff(&mut c, &file()).unwrap();
         assert!(!d.diff.drift, "{:#?}", d.diff.differences);
         assert_eq!(d.exit_code(), 0);
-        assert_eq!(d.diff.layers.len(), 9);
+        assert_eq!(d.diff.layers.len(), 10);
     }
 
     #[test]

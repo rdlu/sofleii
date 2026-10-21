@@ -106,7 +106,8 @@ proto/           vendored .proto files (see proto/README.md for sources and lice
 tests/golden.rs  request bytes captured from the v3.0.0 firmware, plus the zmk__device_info call and
                  the cormoran_ble write payloads (worked out from the proto; confirmed by the 2026-10-19 live test),
                  and the keymap reads: requests and replies from tests/fixtures/keymap_live.hex
-tests/keymap_capture.rs  #[ignore]d: re-captures that fixture from the keyboard over USB (read-only)
+tests/keymap_capture.rs  #[ignore]d: re-captures that fixture from the keyboard over USB (read-only),
+                 and freezes the matching .keymap beside it as tests/fixtures/keymap_live.keymap
 tests/cli.rs     exit codes and error output with no keyboard (not found, usage; no network)
 tests/layering.rs  no eprintln! outside main.rs; transport/, client/, commands/, session/ never name the TUI
 tests/session_live.rs  #[ignore]d: a read-only session against the keyboard, printing its events for 10 s
@@ -305,8 +306,20 @@ parser's `notes[]`.
 The decode tests run on a real capture: `tests/fixtures/keymap_live.hex`
 holds every request sent and reply received (unframed, request ids from 1),
 recorded read-only by `tests/keymap_capture.rs`
-(`SOFLEII_CAPTURE=1 cargo test --test keymap_capture -- --ignored`). After a
-keymap or firmware change that the tests should follow, re-capture it.
+(`SOFLEII_CAPTURE=1 cargo test --test keymap_capture -- --ignored`). It
+writes `tests/fixtures/keymap_live.keymap` in the same run, a copy of
+`config/eyelash_sofle.keymap`, and the capture tests (`commands::keymap`,
+`tests/golden.rs`) diff the capture against **that copy**, never the live
+file, so a keymap edit never breaks them. Capture only from a keyboard
+flashed with the current file and without Studio edits (`sofleii keymap
+diff` says no drift), so the pair agrees. The live file is still covered:
+`keymap::dts`'s `the_repo_keymap_parses_cleanly` parses it with no notes,
+and `config/eyelash_sofle.keymap` is in `sofleii.yml`'s `paths:` so keymap
+PRs run the crate CI. Behaviour details are captured in ascending id
+order, as `keymap::read` asks for them: the firmware's list isn't sorted (a
+MYGAME build lists id 62 first), and a capture in list order made the
+replayed ids line up with the wrong behaviours. Re-capture after a firmware
+change the tests should follow.
 
 ## Transports
 

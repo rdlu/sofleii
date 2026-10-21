@@ -10,10 +10,14 @@ on:
     paths:
       - 'sofleii/**'
       - '.github/workflows/sofleii.yml'
+      # The dts parser's test reads the live keymap (keymap::dts)
+      - 'config/eyelash_sofle.keymap'
   pull_request:
     paths:
       - 'sofleii/**'
       - '.github/workflows/sofleii.yml'
+      # The dts parser's test reads the live keymap (keymap::dts)
+      - 'config/eyelash_sofle.keymap'
   workflow_dispatch:
 
 permissions:
