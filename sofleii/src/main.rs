@@ -106,6 +106,12 @@ enum Command {
         #[arg(long)]
         json: bool,
     },
+    /// The live keymap: show it, or diff it against
+    /// config/eyelash_sofle.keymap. Read-only.
+    Keymap {
+        #[command(subcommand)]
+        command: KeymapCommand,
+    },
     /// Firmware and sofleii updates against the GitHub releases.
     Update {
         #[command(subcommand)]
@@ -170,6 +176,34 @@ enum ProfileCommand {
 enum OutputArg {
     Usb,
     Ble,
+}
+
+#[derive(Subcommand, Debug)]
+enum KeymapCommand {
+    /// Every layer (or one) as a grid on the physical layout.
+    Show {
+        /// Only this layer: its index or name (any case).
+        #[arg(long, value_name = "N|NAME")]
+        layer: Option<String>,
+        /// The .keymap whose behaviour labels to use (default:
+        /// config/eyelash_sofle.keymap in this directory or above, if any).
+        #[arg(long, value_name = "PATH")]
+        keymap: Option<std::path::PathBuf>,
+        /// Print the versioned JSON contract instead of text.
+        #[arg(long)]
+        json: bool,
+    },
+    /// Keys and layers that differ between the keyboard and the .keymap
+    /// (saved Studio edits survive a flash). Exit 0 no drift, 1 drift.
+    Diff {
+        /// The .keymap to compare with (default:
+        /// config/eyelash_sofle.keymap in this directory or above).
+        #[arg(long, value_name = "PATH")]
+        keymap: Option<std::path::PathBuf>,
+        /// Print the versioned JSON contract instead of text.
+        #[arg(long)]
+        json: bool,
+    },
 }
 
 #[derive(Subcommand, Debug)]
@@ -275,6 +309,9 @@ fn main() -> ExitCode {
             command: UpdateCommand::Check { json, .. },
         }
         | Command::Output { json, .. }
+        | Command::Keymap {
+            command: KeymapCommand::Show { json, .. } | KeymapCommand::Diff { json, .. },
+        }
         | Command::Profile {
             command:
                 ProfileCommand::Switch { json, .. }
@@ -460,7 +497,17 @@ fn run(cli: &Cli, command: &Command, style: Style) -> Result<(String, u8)> {
         return update_check(cli, style, repo, want_fw, want_cli, *refresh);
     }
 
-    // Usage errors that need no keyboard come before connecting.
+    // Usage errors that need no keyboard come before connecting; so does
+    // reading the .keymap.
+    let keymap_file = match command {
+        Command::Keymap {
+            command: KeymapCommand::Show { keymap, .. },
+        } => commands::keymap::load(keymap.as_deref(), false)?,
+        Command::Keymap {
+            command: KeymapCommand::Diff { keymap, .. },
+        } => commands::keymap::load(keymap.as_deref(), true)?,
+        _ => None,
+    };
     match command {
         Command::Profile {
             command: ProfileCommand::Rename { name, .. },
@@ -477,6 +524,7 @@ fn run(cli: &Cli, command: &Command, style: Style) -> Result<(String, u8)> {
 
     let mut connector = Connector::new(config);
     let Connected { mut client, info } = connector.connect()?;
+    let mut code = exit::OK;
     let text = match command {
         Command::Status { .. } => {
             let mut s = commands::status::run(&mut client)?;
@@ -491,6 +539,30 @@ fn run(cli: &Cli, command: &Command, style: Style) -> Result<(String, u8)> {
         Command::Info { .. } => output::info(style, &info, &commands::info::run(&mut client)?),
         Command::Profiles { .. } => {
             output::profiles(style, &info, &commands::profiles::run(&mut client)?)
+        }
+        Command::Keymap {
+            command: KeymapCommand::Show { layer, .. },
+        } => {
+            let s = commands::keymap::show(&mut client, keymap_file.as_ref(), layer.as_deref())?;
+            if style.format == Format::Human {
+                for n in &s.notes {
+                    eprintln!("sofleii: note: {n}");
+                }
+            }
+            output::keymap_show(style, &info, &s)
+        }
+        Command::Keymap {
+            command: KeymapCommand::Diff { .. },
+        } => {
+            let loaded = keymap_file.as_ref().expect("diff requires the file");
+            let d = commands::keymap::diff(&mut client, loaded)?;
+            if style.format == Format::Human {
+                for n in &d.notes {
+                    eprintln!("sofleii: note: {n}");
+                }
+            }
+            code = d.exit_code();
+            output::keymap_diff(style, &info, &d)
         }
         Command::Output { target, .. } => {
             let target = match target {
@@ -528,7 +600,7 @@ fn run(cli: &Cli, command: &Command, style: Style) -> Result<(String, u8)> {
     if n > 0 {
         eprintln!("sofleii: {n} notification(s) received and set aside");
     }
-    Ok((text, exit::OK))
+    Ok((text, code))
 }
 
 #[cfg(test)]

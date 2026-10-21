@@ -271,3 +271,46 @@ fn bad_write_arguments_are_usage_errors() {
     // forget_split_bond is deliberately not exposed.
     assert_eq!(sofleii(&["profile", "forget-split-bond"]).0, 3);
 }
+
+#[test]
+fn keymap_file_problems_are_usage_errors_before_connecting() {
+    // --device points nowhere, so reaching the keyboard would exit 2: a 3
+    // means the .keymap was checked first.
+    let (code, stdout) = sofleii(&[
+        "--device",
+        "/dev/nonexistent",
+        "keymap",
+        "diff",
+        "--keymap",
+        "/nonexistent/x.keymap",
+        "--json",
+    ]);
+    assert_eq!(code, 3);
+    let v: serde_json::Value = serde_json::from_str(&stdout).unwrap();
+    assert_eq!(v["error"]["kind"], "usage");
+
+    let dir = std::env::temp_dir().join(format!("sofleii-cli-{}", std::process::id()));
+    std::fs::create_dir_all(&dir).unwrap();
+    let bad = dir.join("bad.keymap");
+    std::fs::write(&bad, "/ { behaviors { }; };").unwrap();
+    let (code, _) = sofleii(&[
+        "--device",
+        "/dev/nonexistent",
+        "keymap",
+        "show",
+        "--keymap",
+        bad.to_str().unwrap(),
+    ]);
+    assert_eq!(code, 3);
+    let _ = std::fs::remove_dir_all(dir);
+}
+
+#[test]
+fn keymap_with_the_repo_file_then_no_keyboard_is_exit_2() {
+    // The repo's keymap (found above the crate) parses, so it gets as far
+    // as the missing device.
+    let (code, _) = sofleii(&["--device", "/dev/nonexistent", "keymap", "diff"]);
+    assert_eq!(code, 2);
+    let (code, _) = sofleii(&["keymap", "show", "--format", "waybar"]);
+    assert_eq!(code, 3);
+}

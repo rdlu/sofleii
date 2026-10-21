@@ -3,7 +3,7 @@
 
 use prost::Message;
 
-use crate::proto::{ble_management, core, custom, studio};
+use crate::proto::{behaviors, ble_management, core, custom, keymap, studio};
 use crate::{Error, Result};
 
 pub use studio::request::Subsystem as RequestSubsystem;
@@ -42,6 +42,45 @@ pub fn list_custom_subsystems() -> RequestSubsystem {
     RequestSubsystem::Custom(custom::Request {
         request_type: Some(custom::request::RequestType::ListCustomSubsystems(
             custom::ListCustomSubsystemRequest {},
+        )),
+    })
+}
+
+/// `keymap.get_keymap`: every layer's id, name and bindings.
+pub fn get_keymap() -> RequestSubsystem {
+    RequestSubsystem::Keymap(keymap::Request {
+        request_type: Some(keymap::request::RequestType::GetKeymap(true)),
+    })
+}
+
+/// `keymap.get_physical_layouts`: key geometry, and which layout is active.
+pub fn get_physical_layouts() -> RequestSubsystem {
+    RequestSubsystem::Keymap(keymap::Request {
+        request_type: Some(keymap::request::RequestType::GetPhysicalLayouts(true)),
+    })
+}
+
+/// `keymap.check_unsaved_changes`: whether Studio edits are applied but not
+/// saved yet.
+pub fn check_unsaved_changes() -> RequestSubsystem {
+    RequestSubsystem::Keymap(keymap::Request {
+        request_type: Some(keymap::request::RequestType::CheckUnsavedChanges(true)),
+    })
+}
+
+/// `behaviors.list_all_behaviors`: the firmware's behaviour ids.
+pub fn list_all_behaviors() -> RequestSubsystem {
+    RequestSubsystem::Behaviors(behaviors::Request {
+        request_type: Some(behaviors::request::RequestType::ListAllBehaviors(true)),
+    })
+}
+
+/// `behaviors.get_behavior_details`: one behaviour's display name and
+/// parameter metadata.
+pub fn get_behavior_details(behavior_id: u32) -> RequestSubsystem {
+    RequestSubsystem::Behaviors(behaviors::Request {
+        request_type: Some(behaviors::request::RequestType::GetBehaviorDetails(
+            behaviors::GetBehaviorDetailsRequest { behavior_id },
         )),
     })
 }

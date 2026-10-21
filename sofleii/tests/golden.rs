@@ -1,5 +1,5 @@
 //! Golden request bytes from #44, captured from the v3.0.0 firmware, plus
-//! live `get_split_info` requests and replies.
+//! live `get_split_info` requests and replies, and the keymap reads (#76).
 
 use sofleii::client::rpc;
 use sofleii::commands::split::{self, Split};
@@ -181,4 +181,163 @@ fn get_split_info_reply_without_info_is_unknown() {
     let s = split_reply("08 07 a2 06 06 12 04 12 02 32 00");
     assert_eq!(s, Split::unknown());
     assert!(!s.disconnected());
+}
+
+// Keymap reads (#76), captured live on 2026-10-21 over USB from the left
+// half (firmware build 2474a13) by `tests/keymap_capture.rs`, read-only:
+// `tests/fixtures/keymap_live.hex` holds the requests sent and the replies,
+// unframed.
+
+const KEYMAP_LIVE: &str = include_str!("fixtures/keymap_live.hex");
+
+/// The captured frames labelled `label`, in order.
+fn captured(label: &str) -> Vec<Vec<u8>> {
+    KEYMAP_LIVE
+        .lines()
+        .filter_map(|l| l.split_once(' '))
+        .filter(|(n, _)| *n == label)
+        .map(|(_, h)| {
+            (0..h.len())
+                .step_by(2)
+                .map(|i| u8::from_str_radix(&h[i..i + 2], 16).unwrap())
+                .collect()
+        })
+        .collect()
+}
+
+#[test]
+fn keymap_requests_match_what_was_sent() {
+    // keymap (5): { get_keymap (1): true }
+    assert_eq!(
+        rpc::encode_request(1, rpc::get_keymap()),
+        hex("08 01 2a 02 08 01")
+    );
+    assert_eq!(captured("request:get_keymap"), [hex("08 01 2a 02 08 01")]);
+    // keymap (5): { get_physical_layouts (6): true }
+    assert_eq!(
+        vec![rpc::encode_request(2, rpc::get_physical_layouts())],
+        captured("request:get_physical_layouts")
+    );
+    // keymap (5): { check_unsaved_changes (3): true }
+    assert_eq!(
+        vec![rpc::encode_request(3, rpc::check_unsaved_changes())],
+        captured("request:check_unsaved_changes")
+    );
+    // behaviors (4): { list_all_behaviors (1): true }
+    assert_eq!(
+        rpc::encode_request(4, rpc::list_all_behaviors()),
+        hex("08 04 22 02 08 01")
+    );
+    assert_eq!(
+        vec![rpc::encode_request(4, rpc::list_all_behaviors())],
+        captured("request:list_all_behaviors")
+    );
+    // behaviors (4): { get_behavior_details (2): { behavior_id (1): 1 } }
+    let details = captured("request:get_behavior_details");
+    assert_eq!(details[0], hex("08 05 22 04 12 02 08 01"));
+    for (i, sent) in details.iter().enumerate() {
+        let id = i as u32 + 1;
+        assert_eq!(
+            *sent,
+            rpc::encode_request(5 + i as u32, rpc::get_behavior_details(id))
+        );
+    }
+}
+
+/// A captured reply's subsystem payload.
+fn reply(frame: &[u8]) -> sofleii::client::ResponseSubsystem {
+    use sofleii::proto::studio::response::Type;
+    match rpc::decode_response(frame).unwrap() {
+        Type::RequestResponse(r) => r.subsystem.unwrap(),
+        Type::Notification(n) => panic!("notification {n:?}"),
+    }
+}
+
+#[test]
+fn keymap_reply_decodes() {
+    use sofleii::client::ResponseSubsystem;
+    use sofleii::keymap::{self, Behavior, Labels, dts};
+    use sofleii::proto::{behaviors as pb, keymap as kpb};
+
+    let ResponseSubsystem::Keymap(kpb::Response {
+        response_type: Some(kpb::response::ResponseType::GetKeymap(km)),
+    }) = reply(&captured("get_keymap")[0])
+    else {
+        panic!("not get_keymap");
+    };
+    let names: Vec<&str> = km.layers.iter().map(|l| l.name.as_str()).collect();
+    assert_eq!(
+        names,
+        [
+            "BASE", "NAV", "CODE", "MEDIA", "SYS|NUM", "GAME?", "MINECRFT", "GAME", "NOMANSKY"
+        ]
+    );
+    assert!(km.layers.iter().all(|l| l.bindings.len() == 64));
+    assert_eq!(km.max_layer_name_length, 20);
+
+    let ResponseSubsystem::Keymap(kpb::Response {
+        response_type: Some(kpb::response::ResponseType::GetPhysicalLayouts(pl)),
+    }) = reply(&captured("get_physical_layouts")[0])
+    else {
+        panic!("not get_physical_layouts");
+    };
+    assert_eq!(
+        pl.layouts[pl.active_layout_index as usize].name,
+        "Eyelash Sofle"
+    );
+    let keys = &pl.layouts[0].keys;
+    assert_eq!(keys.len(), 64);
+    // The joystick centre (58) sits at 7.5u, 1u; the right inner thumb (59)
+    // is rotated -24°.
+    assert_eq!((keys[58].x, keys[58].y), (750, 100));
+    assert_eq!(keys[59].r, -2400);
+
+    let file = dts::parse(include_str!("../../config/eyelash_sofle.keymap")).unwrap();
+    let labels = Labels::with_file(&file);
+    let behaviors: std::collections::HashMap<u32, Behavior> = captured("get_behavior_details")
+        .iter()
+        .map(|f| match reply(f) {
+            ResponseSubsystem::Behaviors(pb::Response {
+                response_type: Some(pb::response::ResponseType::GetBehaviorDetails(d)),
+            }) => {
+                let b = Behavior::from_details(d, &labels);
+                (b.id, b)
+            }
+            other => panic!("{other:?}"),
+        })
+        .collect();
+    let label = |display: &str| {
+        behaviors
+            .values()
+            .find(|b| b.display_name == display)
+            .and_then(|b| b.label.clone())
+    };
+    assert_eq!(label("Key Press").as_deref(), Some("kp"));
+    assert_eq!(label("home_row_mod_left").as_deref(), Some("hml"));
+    assert_eq!(label("ralt_mod_tap").as_deref(), Some("ralt_mt"));
+    assert_eq!(label("PIPE_OP").as_deref(), Some("M_PIPE"));
+    assert_eq!(label("z_so_off").as_deref(), Some("soft_off"));
+    assert_eq!(label("mouse_move").as_deref(), Some("mmv"));
+    assert_eq!(label("rsr_vol").as_deref(), Some("rsr_vol"));
+    // Every behaviour on the firmware gets a label.
+    assert!(behaviors.values().all(|b| b.label.is_some()));
+
+    let ctx = keymap::live_context(&km.layers, file.move_val, file.scrl_val);
+    let layers = keymap::decode_layers(km.layers, &behaviors, &ctx);
+    let zmk = |l: usize, p: usize| layers[l].bindings[p].zmk.clone();
+    assert_eq!(zmk(0, 28), "&hml LALT S");
+    assert_eq!(zmk(0, 34), "&hmr_idx RSHFT J");
+    assert_eq!(zmk(0, 62), "&ralt_mt RALT F12");
+    assert_eq!(zmk(0, 60), "&mo 2");
+    assert_eq!(zmk(1, 14), "&kp LG(I)");
+    assert_eq!(zmk(3, 6), "&kp C_VOL_UP");
+    assert_eq!(zmk(4, 19), "&mmv MOVE_DOWN");
+    assert_eq!(zmk(4, 32), "&mmv MOVE_LEFT");
+    assert_eq!(zmk(4, 26), "&none");
+    assert_eq!(zmk(5, 19), "&GAME_GEN_TO");
+    assert_eq!(zmk(5, 58), "&to 0");
+
+    // And the file agrees with the keyboard it was flashed to.
+    let d = keymap::diff::diff(&layers, &behaviors, &file);
+    assert!(!d.drift, "{d:#?}");
 }

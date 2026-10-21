@@ -14,6 +14,8 @@
 //! so `commands` stays free of D-Bus details, and carries the BLE transport
 //! (`transport::ble`). `github` (blocking HTTPS via `ureq`) implements
 //! [`commands::update::Http`] the same way for `update check`.
+//! `keymap` is the keymap model, pure (rendering bindings, the `.keymap`
+//! parser, the drift diff); `commands::keymap` feeds it the reads.
 //! `session` is the long-running core over `commands` (the link, watch and
 //! jobs threads, the `Event` stream and the `Snapshot` reducer) that the
 //! TUI and a later GUI share; like the rest of the core, it has no UI code.
@@ -26,6 +28,7 @@ pub mod error;
 pub mod framing;
 pub mod gatt;
 pub mod github;
+pub mod keymap;
 pub mod logger;
 pub mod output;
 pub mod proto;
