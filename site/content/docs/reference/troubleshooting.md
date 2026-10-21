@@ -14,6 +14,7 @@ half's settings partition and **survive a normal flash**: they are applied
 on boot over the compiled keymap. Flashing the normal firmware again won't
 help. This also explains "the right half shows old behavior": the right half
 only relays key presses, and the stale keymap is on the left.
+[`sofleii keymap diff`](../../sofleii/#keymap) shows which keys differ.
 
 Fix: on the **left** half, flash `settings_reset.uf2`, wait for it to
 reboot, double-tap reset again, then flash the left firmware.

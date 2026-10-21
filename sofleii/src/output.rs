@@ -1,6 +1,7 @@
 //! Rendering of command results: human-readable text, the versioned JSON
 //! contract from #44 (`"schema": 1`, snake_case keys, explicit `null`s), or
-//! waybar's custom-module JSON for `status` and `battery`.
+//! waybar's custom-module JSON for `status` and `battery`. `keymap show`
+//! draws each layer as a text grid on the keyboard's physical layout.
 
 use std::io::{IsTerminal, Write};
 
@@ -13,8 +14,9 @@ use crate::commands::{
     status::{BatteryLevel, Split, Status, effective_output},
     update::{self, short},
 };
-use crate::commands::{output as output_cmd, profile};
+use crate::commands::{keymap as keymap_cmd, output as output_cmd, profile};
 use crate::error::{Error, ErrorView};
+use crate::keymap::render::LEGEND_WIDTH;
 use crate::transport::{TransportInfo, TransportKind};
 
 /// Bumped on any breaking change to the JSON output.
@@ -714,6 +716,207 @@ pub fn output_action(style: Style, transport: &TransportInfo, o: &output_cmd::Ou
     let headline = format!("output priority: {}{was}{unverified}", o.output_priority);
     format!("{}\n", style.bold(&headline))
         + &write_tail(style, transport, o.studio_transport, o.note.as_deref())
+}
+
+/// Columns per key unit in the keymap grids: a 6-wide legend plus a gap,
+/// so the Sofle's 16 units fit in 112 columns.
+const KEY_COLS: usize = 7;
+
+/// `keymap show`: every layer as a grid on the physical layout.
+pub fn keymap_show(style: Style, transport: &TransportInfo, s: &keymap_cmd::Show) -> String {
+    if style.format == Format::Json {
+        return json(transport, s);
+    }
+    let live = &s.live;
+    let keys = live.physical_layout.as_ref().map(|l| l.keys.as_slice());
+    let mut out = String::new();
+    let layout = live
+        .physical_layout
+        .as_ref()
+        .map_or(String::new(), |l| format!(", layout \"{}\"", l.name));
+    let unsaved = match live.unsaved_changes {
+        Some(true) => ", unsaved Studio changes",
+        _ => "",
+    };
+    out.push_str(&format!(
+        "{}\n",
+        style.dim(&format!(
+            "{} layer(s) on the keyboard{layout}{unsaved}",
+            live.layers.len()
+        ))
+    ));
+    for layer in &live.layers {
+        out.push('\n');
+        out.push_str(&keymap_grid(style, layer, keys));
+    }
+    out
+}
+
+/// One layer: a header, then two lines per key row (the tap legend, then
+/// the hold side or the kind of key), placed by the keys' x and y.
+pub fn keymap_grid(
+    style: Style,
+    layer: &crate::keymap::Layer,
+    keys: Option<&[keymap_cmd::Key]>,
+) -> String {
+    use std::collections::BTreeMap;
+    // (row, column) per position: from the layout, or 16 to a row without.
+    let mut rows: BTreeMap<i32, Vec<(usize, &crate::keymap::Binding)>> = BTreeMap::new();
+    for b in &layer.bindings {
+        let (row, col) = match keys.and_then(|k| k.get(b.position)) {
+            Some(k) => (
+                (k.y + 50).div_euclid(100),
+                ((k.x.max(0) as usize * KEY_COLS) + 50) / 100,
+            ),
+            None => (
+                1000 + (b.position / 16) as i32,
+                (b.position % 16) * KEY_COLS,
+            ),
+        };
+        rows.entry(row).or_default().push((col, b));
+    }
+    let width = LEGEND_WIDTH;
+    let mut body = String::new();
+    let mut max_end = 0;
+    for cells in rows.values_mut() {
+        cells.sort_by_key(|&(col, b)| (col, b.position));
+        // Keys closer than a cell (rotated thumbs) are pushed right.
+        let mut next = 0;
+        for c in cells.iter_mut() {
+            c.0 = c.0.max(next);
+            next = c.0 + width + 1;
+        }
+        max_end = max_end.max(next);
+        // The second line, often blank, also spaces the rows apart.
+        for line in 0..2 {
+            let mut s = String::new();
+            let mut at = 0;
+            for &(col, b) in cells.iter() {
+                let text = if line == 0 {
+                    b.legend.tap.as_str()
+                } else {
+                    b.legend.hold.as_deref().unwrap_or("")
+                };
+                let cell = fit(text, width);
+                s.push_str(&" ".repeat(col - at));
+                let faint = line == 1 || b.legend.tap == "▽";
+                s.push_str(&if faint { style.dim(&cell) } else { cell });
+                at = col + width;
+            }
+            body.push_str(s.trim_end());
+            body.push('\n');
+        }
+    }
+    let title = format!("{} {}", layer.index, layer.name);
+    let id = if layer.id as usize != layer.index {
+        format!(" (id {})", layer.id)
+    } else {
+        String::new()
+    };
+    let used = title.chars().count() + id.chars().count() + 4;
+    let rule = "─".repeat(max_end.saturating_sub(used).max(4));
+    format!(
+        "{} {}{} {}\n{body}",
+        style.dim("──"),
+        style.bold(&title),
+        style.dim(&id),
+        style.dim(&rule)
+    )
+}
+
+/// `s` centred in `width` columns, cut with `…` when longer.
+fn fit(s: &str, width: usize) -> String {
+    let n = s.chars().count();
+    if n > width {
+        let cut: String = s.chars().take(width - 1).collect();
+        return format!("{cut}…");
+    }
+    let left = (width - n) / 2;
+    format!("{}{s}{}", " ".repeat(left), " ".repeat(width - n - left))
+}
+
+/// `keymap diff`: what differs, layer by layer, then a one-line verdict.
+pub fn keymap_diff(style: Style, transport: &TransportInfo, r: &keymap_cmd::DiffReport) -> String {
+    if style.format == Format::Json {
+        return json(transport, r);
+    }
+    let d = &r.diff;
+    let mut out = format!("{}\n", style.dim(&format!("keyboard vs {}", r.keymap_file)));
+    for l in d.layers.iter().filter(|l| l.differences > 0) {
+        let keys = if l.differences == 1 {
+            "key differs"
+        } else {
+            "keys differ"
+        };
+        out.push_str(&format!(
+            "\n{} {}: {} {keys}\n",
+            style.bold(&l.live_index.to_string()),
+            style.bold(&l.name),
+            l.differences
+        ));
+        for x in d
+            .differences
+            .iter()
+            .filter(|x| x.live_index == l.live_index)
+        {
+            out.push_str(&format!(
+                "  {}  {} {:<24} {} {}\n",
+                style.dim(&format!("pos {:>2}", x.position)),
+                style.dim("file"),
+                or_dash(x.file.as_deref()),
+                style.dim("keyboard"),
+                or_dash(x.live.as_deref()),
+            ));
+        }
+    }
+    let mut layer_lines = Vec::new();
+    for m in &d.reordered {
+        layer_lines.push(format!(
+            "moved: {} (file index {}, keyboard index {})",
+            m.name, m.file_index, m.live_index
+        ));
+    }
+    for n in &d.renamed {
+        layer_lines.push(format!(
+            "renamed: index {} is {} in the file, {} on the keyboard",
+            n.live_index, n.file_name, n.live_name
+        ));
+    }
+    for a in &d.added {
+        layer_lines.push(format!(
+            "only on the keyboard: {} (index {})",
+            a.name, a.index
+        ));
+    }
+    for rm in &d.removed {
+        layer_lines.push(format!(
+            "only in the file: {} (index {})",
+            rm.name, rm.index
+        ));
+    }
+    if !layer_lines.is_empty() {
+        out.push('\n');
+        for l in layer_lines {
+            out.push_str(&format!("{l}\n"));
+        }
+    }
+    let keys: usize = d.differences.len();
+    let layers = d.layers.iter().filter(|l| l.differences > 0).count();
+    let verdict = if d.drift {
+        let mut v = format!("drift: {keys} key(s) differ on {layers} layer(s)");
+        let moved = d.reordered.len() + d.renamed.len() + d.added.len() + d.removed.len();
+        if moved > 0 {
+            v.push_str(&format!(", {moved} layer change(s)"));
+        }
+        style.paint("33", &v)
+    } else {
+        style.green(&format!("no drift: {} layer(s) match", d.layers.len()))
+    };
+    out.push_str(&format!("\n{verdict}\n"));
+    if r.unsaved_changes == Some(true) {
+        out.push_str("the keyboard also has unsaved Studio changes\n");
+    }
+    out
 }
 
 #[cfg(test)]
@@ -1499,5 +1702,152 @@ mod tests {
         }
         let text = profile_action(Style::plain(Format::Human), &t, &o);
         assert_eq!(text, "profile 2 is now active (was 0)\n");
+    }
+
+    fn keymap_layer() -> (crate::keymap::Layer, Vec<keymap_cmd::Key>) {
+        use crate::keymap::{BehaviorRef, Binding, Context, keys, render};
+        let ctx = Context::new(vec![], true);
+        let bind = |position: usize, label: &str, p1: u32, p2: u32| {
+            let r = render::render(label, None, p1, p2, &ctx);
+            Binding {
+                position,
+                behavior: BehaviorRef {
+                    id: 1,
+                    name: Some(label.into()),
+                    display_name: None,
+                },
+                param1: p1,
+                param2: p2,
+                legend: render::legend(&r),
+                params: r.params,
+                zmk: r.zmk,
+            }
+        };
+        let k = |n| keys::value(n).unwrap();
+        let layer = crate::keymap::Layer {
+            index: 1,
+            id: 4,
+            name: "NAV".into(),
+            bindings: vec![
+                bind(0, "kp", k("A"), 0),
+                bind(1, "mt", k("LALT"), k("S")),
+                bind(2, "trans", 0, 0),
+                bind(3, "kp", k("C_VOL_UP"), 0),
+            ],
+        };
+        let key = |position, x, y| keymap_cmd::Key {
+            position,
+            x,
+            y,
+            width: 100,
+            height: 100,
+            r: 0,
+            rx: 0,
+            ry: 0,
+        };
+        // Two on a row, one a quarter key lower (same row), one below; 3
+        // overlaps 0 and is pushed right.
+        let keys = vec![
+            key(0, 0, 0),
+            key(1, 100, 25),
+            key(2, 0, 100),
+            key(3, 50, 100),
+        ];
+        (layer, keys)
+    }
+
+    #[test]
+    fn keymap_grid_places_keys_by_geometry() {
+        let (layer, keys) = keymap_layer();
+        let g = keymap_grid(Style::plain(Format::Human), &layer, Some(&keys));
+        let lines: Vec<&str> = g.lines().collect();
+        assert!(lines[0].starts_with("── 1 NAV (id 4) ─"), "{g}");
+        assert_eq!(lines[1], "  A      S");
+        assert_eq!(lines[2], "        ALT");
+        assert_eq!(lines[3], "  ▽     VOL+");
+        assert_eq!(lines[4], "");
+        assert_eq!(lines.len(), 5, "{g}");
+        // Without a layout, 16 to a row.
+        let g = keymap_grid(Style::plain(Format::Human), &layer, None);
+        assert!(
+            g.lines()
+                .nth(1)
+                .unwrap()
+                .starts_with("  A      S      ▽     VOL+"),
+            "{g}"
+        );
+        assert_eq!(fit("toolongname", 6), "toolo…");
+        assert_eq!(fit("ab", 6), "  ab  ");
+    }
+
+    #[test]
+    fn keymap_diff_text_and_verdicts() {
+        use crate::keymap::diff::{Diff, Difference, LayerPair, LayerRef};
+        let pair = |differences| LayerPair {
+            name: "NAV".into(),
+            file_index: 1,
+            live_index: 1,
+            live_id: 1,
+            differences,
+        };
+        let mut r = keymap_cmd::DiffReport {
+            keymap_file: "config/eyelash_sofle.keymap".into(),
+            unsaved_changes: Some(false),
+            diff: Diff {
+                drift: false,
+                layers: vec![pair(0)],
+                differences: vec![],
+                added: vec![],
+                removed: vec![],
+                reordered: vec![],
+                renamed: vec![],
+            },
+            notes: vec![],
+        };
+        let t = keymap_diff(
+            Style::plain(Format::Human),
+            &transport(TransportKind::Usb),
+            &r,
+        );
+        assert!(t.ends_with("no drift: 1 layer(s) match\n"), "{t}");
+        r.diff.drift = true;
+        r.diff.layers = vec![pair(1)];
+        r.diff.differences = vec![Difference {
+            layer: "NAV".into(),
+            live_index: 1,
+            position: 14,
+            file: Some("&kp LG(I)".into()),
+            live: Some("&kp A".into()),
+        }];
+        r.diff.removed = vec![LayerRef {
+            index: 9,
+            name: "MYGAME".into(),
+        }];
+        r.unsaved_changes = Some(true);
+        let t = keymap_diff(
+            Style::plain(Format::Human),
+            &transport(TransportKind::Usb),
+            &r,
+        );
+        assert!(t.contains("1 NAV: 1 key differs"), "{t}");
+        assert!(t.contains("pos 14  file &kp LG(I)"), "{t}");
+        assert!(t.contains("keyboard &kp A"), "{t}");
+        assert!(t.contains("only in the file: MYGAME (index 9)"), "{t}");
+        assert!(
+            t.contains("drift: 1 key(s) differ on 1 layer(s), 1 layer change(s)"),
+            "{t}"
+        );
+        assert!(t.contains("unsaved Studio changes"), "{t}");
+        let v: Value = serde_json::from_str(&keymap_diff(
+            Style::plain(Format::Json),
+            &transport(TransportKind::Usb),
+            &r,
+        ))
+        .unwrap();
+        assert_eq!(v["schema"], 1);
+        assert_eq!(v["drift"], true);
+        assert_eq!(v["differences"][0]["file"], "&kp LG(I)");
+        assert_eq!(v["removed"][0]["name"], "MYGAME");
+        assert_eq!(r.exit_code(), 1);
     }
 }

@@ -11,7 +11,7 @@ pub mod rpc;
 use std::time::{Duration, Instant, SystemTime};
 
 use crate::framing::{self, Decoder};
-use crate::proto::{core, custom, meta, studio};
+use crate::proto::{behaviors, core, custom, keymap, meta, studio};
 use crate::transport::{Transport, TransportInfo};
 use crate::{Error, Result};
 
@@ -182,6 +182,59 @@ impl<T: Transport> Client<T> {
                 response_type: Some(ResponseType::ListCustomSubsystems(l)),
             }) => Ok(l.subsystems),
             other => Err(unexpected("list_custom_subsystems", &other)),
+        }
+    }
+
+    pub fn get_keymap(&mut self) -> Result<keymap::Keymap> {
+        use keymap::response::ResponseType;
+        match self.request("get_keymap", rpc::get_keymap())? {
+            ResponseSubsystem::Keymap(keymap::Response {
+                response_type: Some(ResponseType::GetKeymap(k)),
+            }) => Ok(k),
+            other => Err(unexpected("get_keymap", &other)),
+        }
+    }
+
+    pub fn get_physical_layouts(&mut self) -> Result<keymap::PhysicalLayouts> {
+        use keymap::response::ResponseType;
+        match self.request("get_physical_layouts", rpc::get_physical_layouts())? {
+            ResponseSubsystem::Keymap(keymap::Response {
+                response_type: Some(ResponseType::GetPhysicalLayouts(l)),
+            }) => Ok(l),
+            other => Err(unexpected("get_physical_layouts", &other)),
+        }
+    }
+
+    pub fn check_unsaved_changes(&mut self) -> Result<bool> {
+        use keymap::response::ResponseType;
+        match self.request("check_unsaved_changes", rpc::check_unsaved_changes())? {
+            ResponseSubsystem::Keymap(keymap::Response {
+                response_type: Some(ResponseType::CheckUnsavedChanges(b)),
+            }) => Ok(b),
+            other => Err(unexpected("check_unsaved_changes", &other)),
+        }
+    }
+
+    pub fn list_all_behaviors(&mut self) -> Result<Vec<u32>> {
+        use behaviors::response::ResponseType;
+        match self.request("list_all_behaviors", rpc::list_all_behaviors())? {
+            ResponseSubsystem::Behaviors(behaviors::Response {
+                response_type: Some(ResponseType::ListAllBehaviors(l)),
+            }) => Ok(l.behaviors),
+            other => Err(unexpected("list_all_behaviors", &other)),
+        }
+    }
+
+    pub fn get_behavior_details(
+        &mut self,
+        id: u32,
+    ) -> Result<behaviors::GetBehaviorDetailsResponse> {
+        use behaviors::response::ResponseType;
+        match self.request("get_behavior_details", rpc::get_behavior_details(id))? {
+            ResponseSubsystem::Behaviors(behaviors::Response {
+                response_type: Some(ResponseType::GetBehaviorDetails(d)),
+            }) => Ok(d),
+            other => Err(unexpected("get_behavior_details", &other)),
         }
     }
 

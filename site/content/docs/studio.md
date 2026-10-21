@@ -47,7 +47,8 @@ Studio over BLE in the browser was not re-tested on v3.0.0; USB was.
 Saved Studio edits live in the left half's settings partition, not in the
 firmware, so **flashing a new release doesn't remove them**: the stored
 overlay is applied on boot over the compiled keymap. If a new firmware still
-behaves like the old one, that is why.
+behaves like the old one, that is why: [`sofleii keymap diff`](../sofleii/#keymap)
+lists the keys that differ from `config/eyelash_sofle.keymap`.
 
 To go back to the compiled keymap, flash `settings_reset.uf2` on the left
 half and then the left firmware (see [Flashing](../flashing/#settings-reset)).
