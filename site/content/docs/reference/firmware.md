@@ -87,24 +87,30 @@ From `config/eyelash_sofle.conf`:
 
 ## Memory budget
 
-Left half: a **local build** (2026-10-19) with the peripheral battery proxy
+Left half: a **local build** (2026-10-21) with the MYGAME custom game slot
+([#79](https://github.com/rdlu/sofleii/issues/79)), 472572 B of flash and
+128354 B of RAM. The tenth layer cost +1204 B of flash and +1232 B of RAM,
+measured as two builds of the same tree with and without it: about 1.2 KB of
+RAM per 64-key layer, since ZMK keeps the keymap in RAM so Studio can edit it.
+Before it, the 2026-10-19 build with the peripheral battery proxy
 ([#45](https://github.com/rdlu/sofleii/issues/45)), device info
 ([#46](https://github.com/rdlu/sofleii/issues/46)) and the `get_split_info`
-fix from our `ble-management` fork, 471368 B of flash and 127122 B of RAM.
+fix from our `ble-management` fork was 471368 B / 127122 B.
 The fix cost +80 B of flash and no RAM over the same build with cormoran's
 `57738cc` (471288 B / 127122 B). Device info cost +2396 B and +600 B over the #45 build
-(468892 B / 126522 B), which was +928 B and +168 B over v3.0.0. Right half and
-settings reset: unchanged from v3.0.0, measured from CI run
+(468892 B / 126522 B), which was +928 B and +168 B over v3.0.0. Right half:
+the keymap lives on the central only, so MYGAME adds nothing there; a local
+right build is 330840 B / 78952 B (re-measured 2026-10-21, the same as
+2026-10-19), the same RAM as CI run
 [39026110927](https://github.com/rdlu/sofleii/actions/runs/39026110927)
-(2026-10-17). Device info is off on the right (`CONFIG_ZMK_DEVICE_INFO` unset),
-so it adds nothing there, and neither does `ble-management` (left only): a
-local right build with both modules in the workspace is 330840 B / 78952 B
-(re-measured 2026-10-19 with the fork), the same RAM as CI and 96 B less flash (CI's longer
-source paths).
+(2026-10-17) and 96 B less flash (CI's longer source paths). Device info is
+off on the right (`CONFIG_ZMK_DEVICE_INFO` unset), so it adds nothing there,
+and neither does `ble-management` (left only). Settings reset: unchanged
+from v3.0.0, measured from that CI run.
 
 | Build | Flash used | Flash free | RAM used | RAM free |
 | --- | ---: | ---: | ---: | ---: |
-| Left (Studio, nice!view; local build) | 460 KB / 792 KB (58.12%) | **332 KB** | 124 KB / 256 KB (48.49%) | **132 KB** |
+| Left (Studio, nice!view; local build) | 461 KB / 792 KB (58.27%) | **331 KB** | 125 KB / 256 KB (48.96%) | **131 KB** |
 | Right (nice!view) | 323 KB / 792 KB (40.8%) | **469 KB** | 77 KB / 256 KB (30.1%) | **179 KB** |
 | Settings reset | 51 KB / 792 KB (6.5%) | | 13 KB / 256 KB (4.9%) | |
 
