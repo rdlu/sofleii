@@ -57,8 +57,15 @@ usual; sofleii reuses that connection.
 
 > [!NOTE]
 > **Coming with v0.1.0 ([#83](https://github.com/rdlu/sofleii/issues/83)):**
-> `mise use -g github:rdlu/sofleii`, release tarballs with a checksum and a
-> build attestation, and `cargo install --git`.
+> prebuilt binaries for x86_64 and aarch64 Linux, released under
+> `sofleii-vX.Y.Z` tags (the plain `vX.Y.Z` releases are the firmware).
+> Install with `mise use -g github:rdlu/sofleii`; or download
+> `sofleii-<version>-<target>.tar.gz` from the
+> [releases](https://github.com/rdlu/sofleii/releases) and check it with
+> `sha256sum -c sofleii-<version>-<target>.tar.gz.sha256` and
+> `gh attestation verify sofleii-<version>-<target>.tar.gz -R rdlu/sofleii`;
+> or `cargo install --git https://github.com/rdlu/sofleii sofleii --locked`
+> (Rust 1.99+ and `protoc`).
 
 ## The TUI
 
@@ -180,7 +187,7 @@ Every subcommand prints text by default and the [JSON contract](#json) with
 | `sofleii battery` | Both halves' battery levels (Bluetooth only) |
 | `sofleii info` | Device name, serial number, the firmware build, custom RPC subsystems |
 | `sofleii profiles` | The BLE profiles: active, connected, bonded, address, name |
-| `sofleii update check` | The running firmware against the latest [release](https://github.com/rdlu/sofleii/releases) |
+| `sofleii update check` | The running firmware against the newest firmware [release](https://github.com/rdlu/sofleii/releases), and sofleii against the newest sofleii release |
 | `sofleii profile switch <n>` | **Write.** Make profile `<n>` active |
 | `sofleii profile rename <n> <name>` | **Write.** Name a bonded profile (at most 31 bytes; `""` clears it) |
 | `sofleii profile unpair <n>` | **Write, destructive.** Remove the profile's bond; asks first unless `--yes` |
@@ -223,7 +230,18 @@ $ sofleii update check
 up to date: v3.1.0 (f9a665f)
 running         v3.1.0 (f9a665f)
 latest          v3.1.0 5c53b30, published 2026-10-19T19:11:48Z
+sofleii         no sofleii release yet (running v0.1.0)
 ```
+
+`update check` compares the firmware with the newest `vX.Y.Z` release and
+sofleii itself with the newest `sofleii-vX.Y.Z` release (drafts and
+prereleases don't count), from one GitHub request. `--firmware` or `--cli`
+checks just one; `--cli` doesn't need the keyboard. Answers come from the
+6-hour cache the TUI shares (`~/.cache/sofleii/update.json`), with a
+`checked … ago, cached` line; `--refresh` asks GitHub anyway. With no
+sofleii release yet, the sofleii part is `unknown` and doesn't change the
+exit code. `sofleii --version` also names the firmware line the binary was
+built for (the vendored protocol pins).
 
 ```console
 $ sofleii info
@@ -313,7 +331,7 @@ field by field in the [crate README](https://github.com/rdlu/sofleii/blob/main/s
 | Code | Meaning |
 |---|---|
 | 0 | OK |
-| 1 | Attention needed: `update check` behind (or can't tell), `battery --warn-below` with a half below it |
+| 1 | Attention needed: `update check` with the firmware or sofleii behind (or a firmware build it can't place), `battery --warn-below` with a half below it |
 | 2 | Keyboard not found or not connected |
 | 3 | Usage error: a bad or contradicting flag, a profile out of range, a name too long, `unpair` not confirmed |
 | 4 | Transport or protocol error: timeout, a busy port, an RPC error, a BlueZ or GitHub failure |

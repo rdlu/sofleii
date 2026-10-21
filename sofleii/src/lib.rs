@@ -32,5 +32,6 @@ pub mod proto;
 pub mod session;
 pub mod transport;
 pub mod tui;
+pub mod version;
 
 pub use error::{Error, Result};

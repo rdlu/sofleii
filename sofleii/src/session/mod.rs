@@ -109,7 +109,7 @@ impl Default for Config {
             usb_every: Duration::from_secs(2),
             ble_every: Duration::from_secs(5),
             update_every: Duration::from_secs(6 * 3600),
-            update_ttl: Duration::from_secs(6 * 3600),
+            update_ttl: jobs::UPDATE_TTL,
             repo: DEFAULT_REPO.into(),
             cache_dir: None,
             bluez_timeout: Duration::from_secs(3),
@@ -318,7 +318,7 @@ pub enum Outcome {
     Ok,
     Profile(profile::Outcome),
     Output(output::Outcome),
-    Update(UpdateReport),
+    Update(Box<UpdateReport>),
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]

@@ -593,19 +593,17 @@ fn firmware(k: &Keyboard, t: Theme) -> (Vec<Span<'static>>, Option<Span<'static>
         UpdateStatus::Behind => Span::styled(format!("update: {}", u.latest), t.warn()),
         UpdateStatus::Unknown => Span::styled(format!("unknown build ({})", u.latest), t.warn()),
     });
+    if let Some(v) = &u.cli_available {
+        s.push(Span::styled(" · ", t.label()));
+        s.push(Span::styled(format!("sofleii v{v} available"), t.warn()));
+    }
     let checked = format!("checked {}", ago(u.age));
     (freshness(s, h.stale), note(err, Some(checked), t))
 }
 
 /// `12s ago`, `2m ago`, `3h ago`, `2d ago`.
 pub fn ago(d: Duration) -> String {
-    let s = d.as_secs();
-    match s {
-        0..60 => format!("{s}s ago"),
-        60..3600 => format!("{}m ago", s / 60),
-        3600..86_400 => format!("{}h ago", s / 3600),
-        _ => format!("{}d ago", s / 86_400),
-    }
+    crate::output::ago(d)
 }
 
 fn profile_state(p: &Profile) -> String {
