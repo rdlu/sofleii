@@ -211,6 +211,8 @@ parse_config:
       tap: $$mdi:gamepad-variant$$
     "&GAME_NMS_TO":
       tap: $$mdi:rocket-launch-outline$$
+    "&GAME_MY_TO":
+      tap: $$mdi:star-outline$$
     "&GAME_EXIT":
       tap: $$mdi:exit-run$$
 

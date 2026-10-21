@@ -139,7 +139,7 @@
             bindings = <&GAME_EXIT>;
             key-positions = <0 12>;
             timeout-ms = <50>;
-            layers = <6 7 8>;
+            layers = <6 7 8 9>;
         };
 
         // Re-open the picker without bouncing through BASE.
@@ -147,7 +147,7 @@
             bindings = <&to 5>;
             key-positions = <0 5>;
             timeout-ms = <50>;
-            layers = <6 7 8>;
+            layers = <6 7 8 9>;
         };
     };
 
@@ -386,8 +386,8 @@
         // Game-mode entry macros: enable RGB underglow, set a solid per-game
         // color, then activate the matching layer. The color shows on USB and
         // on battery alike (CONFIG_ZMK_RGB_UNDERGLOW_AUTO_OFF_USB=n since
-        // v2.6.0); the OLED display-name ("MINECRFT" / "GAME" / "NOMANSKY")
-        // is still the primary active-mode cue.
+        // v2.6.0); the OLED display-name ("MINECRFT" / "GAME" / "NOMANSKY" /
+        // "MYGAME") is still the primary active-mode cue.
         GAME_MC_TO: GAME_MC_TO {
             compatible = "zmk,behavior-macro";
             #binding-cells = <0>;
@@ -407,6 +407,15 @@
             #binding-cells = <0>;
             bindings = <&rgb_ug RGB_ON>, <&rgb_ug RGB_EFS_CMD 0>, <&rgb_ug RGB_COLOR_HSB(0,0,50)>, <&to 8>;
             label = "GAME_NMS_TO";
+        };
+
+        // MYGAME (custom slot, #79): yellow, hue 60 — the one wide gap left in
+        // the wheel (amber 35 MEDIA, green 120 MC, teal 160 base, blue 220 GAME).
+        GAME_MY_TO: GAME_MY_TO {
+            compatible = "zmk,behavior-macro";
+            #binding-cells = <0>;
+            bindings = <&rgb_ug RGB_ON>, <&rgb_ug RGB_EFS_CMD 0>, <&rgb_ug RGB_COLOR_HSB(60,100,50)>, <&to 9>;
+            label = "GAME_MY_TO";
         };
 
         // Exit: turn the underglow off (smart-off base = dark) and return to BASE.
@@ -492,14 +501,14 @@
         // Layer 5 — GAME_PICK: transient launcher reached from the SYS layer
         // (hold left-thumb SYS, tap right-thumb outer key → &to 5). Joystick
         // UP = Minecraft, DOWN = generic GAME, LEFT = No Man's Sky,
-        // CENTER = cancel back to BASE. Every other key is &none so a stray
-        // press can't escape the picker.
+        // RIGHT = MYGAME (custom slot), CENTER = cancel back to BASE. Every
+        // other key is &none so a stray press can't escape the picker.
         layer_5 {
             bindings = <
 &none  &none  &none  &none  &none  &none      &GAME_MC_TO   &none  &none  &none  &none  &none  &none
 &none  &none  &none  &none  &none  &none      &GAME_GEN_TO  &none  &none  &none  &none  &none  &none
 &none  &none  &none  &none  &none  &none      &GAME_NMS_TO  &none  &none  &none  &none  &none  &none
-&none  &none  &none  &none  &none  &none      &none         &none  &none  &none  &none  &none  &none
+&none  &none  &none  &none  &none  &none      &GAME_MY_TO   &none  &none  &none  &none  &none  &none
 &none  &none  &none  &none  &none  &none      &to 0         &none  &none  &none  &none  &none
             >;
 
@@ -558,6 +567,23 @@
             >;
 
             display-name = "NOMANSKY";
+            sensor-bindings = <&rsr_vol &rsr_trans>;
+        };
+
+        // Layer 9 — MYGAME: the owner's custom game slot (#79), picker joystick
+        // RIGHT. Starts as a verbatim copy of GAME (7) — same chassis, GRAVE@0 —
+        // and is meant to be rebound live (Studio now, sofleii game presets
+        // later) without rebuilding the firmware.
+        layer_9 {
+            bindings = <
+&kp GRAVE   &kp N1  &kp N2  &kp N3    &kp N4     &kp N5         &kp C_VOL_UP  &kp N6     &kp N7    &kp N8     &kp N9    &kp N0     &kp MINUS
+&kp TAB     &kp Q   &kp W   &kp E     &kp R      &kp T          &kp C_VOL_DN  &kp Y      &kp U     &kp I      &kp O     &kp P      &kp EQUAL
+&kp ESC     &kp A   &kp S   &kp D     &kp F      &kp G          &kp C_MUTE    &kp H      &kp J     &kp K      &kp L     &kp SEMI   &kp APOS
+&kp LCTRL   &kp Z   &kp X   &kp C     &kp V      &kp B          &kp C_PP      &kp N      &kp M     &kp COMMA  &kp DOT   &kp FSLH   &kp RET
+&kp C_MUTE  &kp F2  &kp F11 &kp LGUI  &kp LSHFT  &kp SPACE      &kp ENTER     &kp SPACE  &kp BSPC  &kp LALT   &kp F13   &mo 3
+            >;
+
+            display-name = "MYGAME";
             sensor-bindings = <&rsr_vol &rsr_trans>;
         };
     };
