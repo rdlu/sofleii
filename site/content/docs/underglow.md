@@ -26,6 +26,7 @@ lights zones, not single keys.
 | MINECRFT | green | 120, 100 |
 | GAME | blue | 220, 100 |
 | NOMANSKY | white | 0, 0 |
+| MYGAME | yellow | 60, 100 |
 
 The brightness of every colour is the master brightness (below). Momentary
 layers light up while their key is held and go back to the BASE look on

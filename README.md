@@ -17,7 +17,7 @@ Every layer, with its own page and key grid: **[sofleii.dlu.one/keymap](https://
 ## Highlights
 
 - **v3.0.0** on ZMK `main` / Zephyr 4.1 (cormoran's `main+dya` fork), nice!nano v2 + nice!view on both halves.
-- **9 layers:** BASE, NAV, CODE, MEDIA, SYS|NUM, the GAME? picker and three game layers (MINECRFT, GAME, NOMANSKY).
+- **10 layers:** BASE, NAV, CODE, MEDIA, SYS|NUM, the GAME? picker, three game layers (MINECRFT, GAME, NOMANSKY) and the MYGAME custom slot.
 - **Home-row mods** with an opposite-hand rule and a faster index-finger Shift; AltGr on a right-thumb mod-tap.
 - **Gaming layers** with no hold-taps at all: pick one from SYS|NUM, leave with the two top corners.
 - **Per-layer underglow** from the in-repo `zmk-rgb-layer` module: BASE moods, master brightness, remembered across reboots.

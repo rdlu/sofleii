@@ -43,9 +43,10 @@ build, so it matches the keymap the site shows.
 | 6 | [MINECRFT](gaming/#minecrft) | picker, joystick up | top corners (0 + 12) |
 | 7 | [GAME](gaming/#game) | picker, joystick down: generic FPS/MOBA | top corners (0 + 12) |
 | 8 | [NOMANSKY](gaming/#nomansky) | picker, joystick left: No Man's Sky | top corners (0 + 12) |
+| 9 | [MYGAME](gaming/#mygame) | picker, joystick right: your own game | top corners (0 + 12) |
 
 Layers 1 to 4 are momentary: they last while you hold their key. Layers 5
-to 8 are locked: they stay until you leave them ([Gaming mode](../docs/gaming-mode/)).
+to 9 are locked: they stay until you leave them ([Gaming mode](../docs/gaming-mode/)).
 The layer's name shows on the nice!view, and the underglow takes its
 [colour](../docs/underglow/).
 
@@ -55,7 +56,7 @@ The layer's name shows on the nice!view, and the underglow takes its
   {{< card link="/keymap/code/" title="CODE" subtitle="Brackets and one-key programming digraphs." icon="code" >}}
   {{< card link="/keymap/media/" title="MEDIA" subtitle="Volume, playback, mic mute." icon="volume-up" >}}
   {{< card link="/keymap/sys-num/" title="SYS|NUM" subtitle="Bluetooth, underglow, mouse fallback, numpad." icon="cog" >}}
-  {{< card link="/keymap/gaming/" title="Gaming layers" subtitle="The picker, MINECRFT, GAME and NOMANSKY." icon="puzzle" >}}
+  {{< card link="/keymap/gaming/" title="Gaming layers" subtitle="The picker, MINECRFT, GAME, NOMANSKY and MYGAME." icon="puzzle" >}}
   {{< card link="/keymap/hold-tap/" title="Home-row mods & timing" subtitle="The hold-tap behaviors, read from the keymap." icon="clock" >}}
   {{< card link="/keymap/combos/" title="Combos" subtitle="Soft off, the pipe operator, game exits." icon="key" >}}
 {{< /cards >}}

@@ -14,13 +14,14 @@ excludeSearch: true
 noindex: true
 sitemap:
   disable: true
-# Pages after the basics: each list is one A4 page of layer grids (three
-# fit a portrait page), by display-name. The first one also carries the
-# key-style legend.
+# Pages after the basics: each list is one A4 page of layer grids (up to
+# three fit a portrait page), by display-name. The first one also carries the
+# key-style legend. The four game layers go two to a page.
 sheets:
   - layers: ["BASE", "NAV", "CODE"]
   - layers: ["MEDIA", "SYS|NUM", "GAME?"]
-  - layers: ["MINECRFT", "GAME", "NOMANSKY"]
+  - layers: ["MINECRFT", "GAME"]
+  - layers: ["NOMANSKY", "MYGAME"]
 captions:
   BASE: "Always on. Hold-tap keys: tap for the big legend, hold for the small one under it."
   NAV: "Hold the left thumb's NAV key. Arrows on HJKL, function keys on the top row, window-manager shortcuts on the left."
@@ -31,6 +32,7 @@ captions:
   MINECRFT: "F3 top-left. No hold-taps: plain keys, Ctrl on the pinky, Shift on the left thumb, F13 push-to-talk."
   GAME: "Generic FPS/MOBA: the same chassis as MINECRFT, with ` (console) top-left."
   NOMANSKY: "No Man's Sky: Shift on the pinky and Ctrl on the thumb (swapped), F12 (Steam screenshot) top-left."
+  MYGAME: "Your own game: starts as a copy of GAME, rebind it in Studio. Yellow underglow."
 ---
 
 <div class="cols">
@@ -86,7 +88,8 @@ Remembered across reboots.
 ## Gaming mode
 
 Hold SYS\|NUM, tap the right thumb's outer key: the **GAME?** picker.
-Joystick ↑ MINECRFT · ↓ GAME · ← NOMANSKY · centre cancels. Game layers have
+Joystick ↑ MINECRFT · ↓ GAME · ← NOMANSKY · → MYGAME (yours to rebind) ·
+centre cancels. Game layers have
 no hold-taps and stay on until you leave: <kbd>&#96;</kbd> + <kbd>-</kbd> (top
 corners) back to BASE, <kbd>&#96;</kbd> + <kbd>5</kbd> back to the picker.
 

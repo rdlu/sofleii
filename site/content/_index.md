@@ -56,7 +56,7 @@ hero:
   {{< hextra/feature-card
     title="Nine layers"
     icon="collection"
-    subtitle="BASE, NAV, CODE, MEDIA and SYS|NUM, plus a game picker and three game layers. CODE types programming digraphs (`|>`, `->`, `::<>`) in one key."
+    subtitle="BASE, NAV, CODE, MEDIA and SYS|NUM, plus a game picker, three game layers and a custom game slot. CODE types programming digraphs (`|>`, `->`, `::<>`) in one key."
     link="keymap/"
   >}}
   {{< hextra/feature-card

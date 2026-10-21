@@ -43,8 +43,8 @@ That split matters in a few places:
 - **Home-row mods** on S D F and J K L (Alt, Ctrl, Shift on each hand), held
   only when the other hand joins in. See
   [Home-row mods & timing](../../keymap/hold-tap/).
-- **Nine layers**: BASE, NAV, CODE, MEDIA, SYS|NUM, the GAME? picker, and
-  three game layers. See [Keymap](../../keymap/).
+- **Ten layers**: BASE, NAV, CODE, MEDIA, SYS|NUM, the GAME? picker,
+  three game layers and a custom game slot. See [Keymap](../../keymap/).
 - **Gaming mode**: locked layers without any hold-tap. See
   [Gaming mode](../gaming-mode/).
 - **Per-layer underglow** from the in-repo `zmk-rgb-layer` module. See
