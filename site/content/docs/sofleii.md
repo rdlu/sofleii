@@ -1,15 +1,16 @@
 ---
 title: The sofleii tool
 linkTitle: Overview
-description: sofleii, a Rust CLI and ratatui TUI for the Eyelash Sofle - a live dashboard, split link, batteries, BLE profiles, output priority and firmware update checks over the Studio RPC protocol, with a scriptable --json contract, stable exit codes and a waybar module.
-keywords: [sofleii, CLI, TUI, ratatui, Rust, Studio RPC, BLE profiles, battery, waybar, JSON, exit codes]
+description: sofleii, a Rust CLI and ratatui TUI for the Eyelash Sofle - a live dashboard, split link, batteries, BLE profiles, output priority, firmware update checks and the live keymap (with its drift from the .keymap) over the Studio RPC protocol, with a scriptable --json contract, stable exit codes and a waybar module.
+keywords: [sofleii, CLI, TUI, ratatui, Rust, Studio RPC, BLE profiles, battery, waybar, JSON, exit codes, keymap, drift]
 weight: 17
 ---
 
 **sofleii** (Sofle Interactive Interface) is a command-line tool and a
 terminal UI for the keyboard: see whether both halves are up, read the
 batteries, list and switch BLE profiles, flip the output between USB and
-Bluetooth, and check the firmware against the releases. No browser, no
+Bluetooth, check the firmware against the releases, and see the keymap the
+keyboard runs and how it differs from the repo's. No browser, no
 Chrome flags. It lives in this repo, in [`sofleii/`](https://github.com/rdlu/sofleii/tree/main/sofleii),
 next to the firmware it talks to.
 
@@ -188,6 +189,8 @@ Every subcommand prints text by default and the [JSON contract](#json) with
 | `sofleii info` | Device name, serial number, the firmware build, custom RPC subsystems |
 | `sofleii profiles` | The BLE profiles: active, connected, bonded, address, name |
 | `sofleii update check` | The running firmware against the newest firmware [release](https://github.com/rdlu/sofleii/releases), and sofleii against the newest sofleii release |
+| `sofleii keymap show [--layer N\|NAME]` | The live keymap, one grid per layer on the physical layout |
+| `sofleii keymap diff` | Keys and layers that differ between the keyboard and `config/eyelash_sofle.keymap` |
 | `sofleii profile switch <n>` | **Write.** Make profile `<n>` active |
 | `sofleii profile rename <n> <name>` | **Write.** Name a bonded profile (at most 31 bytes; `""` clears it) |
 | `sofleii profile unpair <n>` | **Write, destructive.** Remove the profile's bond; asks first unless `--yes` |
@@ -260,6 +263,48 @@ built           2026-10-19T19:02:11Z
 On firmware without the build-info subsystem (v3.0.0), `info` says
 `build unavailable` and still exits 0; `update check` needs it and exits 4.
 
+### Keymap
+
+`keymap show` reads the keymap the keyboard is running (Studio edits
+included) and draws each layer on the physical layout: the tap on top, the
+hold side of a home-row mod or the kind of key (`mo`, `bt`, `rgb_ug`) below,
+`▽` for transparent and blank for `&none`. `--layer` takes an index or a
+name. `--json` has every binding in ZMK form (`"zmk": "&hml LALT S"`), its
+raw parameters and the behaviours' metadata.
+
+```console
+$ sofleii keymap show --layer NAV
+1 layer(s) on the keyboard, layout "Eyelash Sofle"
+
+── 1 NAV ──────────────────────────────────────────────────────────────────
+ F12     F1     F2     F3     F4     F5                ↑                F6     F7  …
+
+ G+U    G+I     ▽      ▽      ▽      ▽          ←     RET     →        HOME   PGDN …
+```
+
+`keymap diff` compares it with `config/eyelash_sofle.keymap`, found from the
+current directory upwards (or `--keymap <path>`). Aliases don't count as
+drift (`LSHIFT` is `LSHFT`, `LBRC` is `LS(LBKT)`), and neither does a layer
+that only moved, as long as its `&mo`s still point at it. It exits 1 on
+drift, which is what saved [Studio](../studio/#saved-edits-outlive-a-flash)
+edits look like after a flash:
+
+```console
+$ sofleii keymap diff
+keyboard vs /home/me/sofleii/config/eyelash_sofle.keymap
+
+5 GAME?: 1 key differs
+  pos 45  file &GAME_MY_TO              keyboard &none
+
+only in the file: MYGAME (index 9)
+
+drift: 1 key(s) differ on 1 layer(s), 1 layer change(s)
+```
+
+Custom behaviours get their labels (`hml`, `M_PIPE`) from that file; without
+it, `show` uses the names the firmware reports (`PIPE_OP`, the macro's
+`label`). What the parser can't evaluate is a note on stderr, not a failure.
+
 ### Global options
 
 | Option | Does |
@@ -331,15 +376,16 @@ field by field in the [crate README](https://github.com/rdlu/sofleii/blob/main/s
 | Code | Meaning |
 |---|---|
 | 0 | OK |
-| 1 | Attention needed: `update check` with the firmware or sofleii behind (or a firmware build it can't place), `battery --warn-below` with a half below it |
+| 1 | Attention needed: `update check` with the firmware or sofleii behind (or a firmware build it can't place), `battery --warn-below` with a half below it, `keymap diff` with drift |
 | 2 | Keyboard not found or not connected |
-| 3 | Usage error: a bad or contradicting flag, a profile out of range, a name too long, `unpair` not confirmed |
+| 3 | Usage error: a bad or contradicting flag, a profile out of range, a name too long, `unpair` not confirmed, no layer by that name, a missing or unparseable `.keymap` |
 | 4 | Transport or protocol error: timeout, a busy port, an RPC error, a BlueZ or GitHub failure |
 
 So checks need no parsing:
 
 ```bash
 sofleii update check || notify-send "Sofle firmware update"
+sofleii keymap diff >/dev/null || notify-send "Sofle keymap differs from the repo"
 sofleii battery --warn-below 20 || notify-send "Sofle battery low"
 ```
 
@@ -442,14 +488,15 @@ new transport.
 Done: the CLI above, the live TUI dashboard with profile and output
 switching, the BLE transport, both
 batteries ([#45](https://github.com/rdlu/sofleii/issues/45)), the build info
-([#46](https://github.com/rdlu/sofleii/issues/46)) and the update check.
+([#46](https://github.com/rdlu/sofleii/issues/46)), the update check, and
+`keymap show`/`keymap diff` ([#76](https://github.com/rdlu/sofleii/issues/76), CLI part).
 Coming, roughly in this order (epic: [#44](https://github.com/rdlu/sofleii/issues/44)):
 
 - [#83](https://github.com/rdlu/sofleii/issues/83): the **first release**,
   `sofleii-v0.1.0`: CI, prebuilt binaries, install with mise or cargo, and
   `update check` checking the CLI too.
-- [#76](https://github.com/rdlu/sofleii/issues/76): the **live keymap**, and
-  how far it has drifted from `eyelash_sofle.keymap`.
+- [#76](https://github.com/rdlu/sofleii/issues/76): the **live keymap in the
+  TUI**, a layer at a time with the drifted keys highlighted.
 - [#77](https://github.com/rdlu/sofleii/issues/77): **live keymap editing**:
   bindings, layers and the encoder; apply, save, discard.
 - [#78](https://github.com/rdlu/sofleii/issues/78): **snapshots**: export
@@ -461,5 +508,4 @@ Coming, roughly in this order (epic: [#44](https://github.com/rdlu/sofleii/issue
 - Later: flashing from the tool ([#47](https://github.com/rdlu/sofleii/issues/47))
   and the repo's mise routines as commands ([#48](https://github.com/rdlu/sofleii/issues/48)).
 
-Until the keymap features land, use [Studio](../studio/) for live keymap
-edits.
+Until editing lands, use [Studio](../studio/) for live keymap edits.
