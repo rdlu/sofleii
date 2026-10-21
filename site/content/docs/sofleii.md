@@ -96,14 +96,51 @@ only held while a batch of requests runs, so a waybar module calling
 | `d` | Debug lines in the log on/off |
 | `?` | Help (`?` or `Esc` closes it) |
 | `q`, `Esc`, `Ctrl-C` | Quit |
-| `⏎` | Switch to the selected profile (**coming soon**) |
-| `o` | Output USB/BLE (**coming soon**) |
+| `⏎` / `s` | Switch to the selected profile |
+| `o` | Toggle the output priority USB ↔ BLE |
 
-> [!NOTE]
-> **Coming soon: TUI actions.** `⏎` and `o` already show in the help, marked
-> "coming soon". They'll switch profile and output from the dashboard, with
-> a confirmation when the switch would drop the link the TUI is using. Until
-> then, use [`profile switch`](#writes) and [`output`](#writes) from the CLI.
+### Switching from the TUI
+
+`⏎` on a profile switches to it; on the active one it just says it's
+already active. `o` flips the output priority. These are the same writes as
+[`profile switch`](#writes) and [`output`](#writes), with the same
+read-back.
+
+When a switch would drop the link the TUI is using, a box asks first and
+says what will happen, for example:
+
+```
+┌─ Switch output? ─────────────────────────────────────────┐
+│                                                          │
+│ Switching output to BLE: this USB link goes quiet;       │
+│ sofleii continues over BLE (verified by read-back).      │
+│                                                          │
+│ Continue?                                                │
+└ y confirm · n / Esc cancel ──────────────────────────────┘
+```
+
+It asks for output away from the transport in use, a profile switch over
+Bluetooth or with priority BLE, and a switch to an **empty** slot (that
+starts pairing on it and drops this computer's Bluetooth connection). Only
+`y` confirms; any other key, `⏎` included, cancels, so a double Enter
+can't confirm by accident. Other switches go straight through.
+
+Output BLE depends on the **active** profile. The keyboard only uses
+Bluetooth while that profile is connected, and falls back to USB otherwise.
+- **Active profile not connected:** the box says the keyboard stays on USB
+  for now. Keystrokes and Studio move once that profile's host connects.
+- **Active profile connected to another computer** (sofleii compares its
+  address with this computer's Bluetooth adapter): keystrokes and Studio go
+  to that computer, and sofleii loses the keyboard until the output is
+  switched back on the keyboard or from there. The box says so, in red.
+  To switch to BLE from here, first switch to this computer's profile.
+
+While a switch runs, the bottom edge shows a spinner
+(`⠋ switching to profile 1…`) and further switch keys are ignored. Then it
+shows the result, e.g. `✓ profile 1 active (verified over usb)`, for a few
+seconds; an error stays until you press a key. Both go to the log. When the
+switch moves the connection to the other transport, the corner follows it:
+`◌ ble connecting`, then `● ble …`.
 
 ### Link states
 
@@ -384,13 +421,12 @@ new transport.
 
 ## Roadmap
 
-Done: the CLI above, the live TUI dashboard, the BLE transport, both
+Done: the CLI above, the live TUI dashboard with profile and output
+switching, the BLE transport, both
 batteries ([#45](https://github.com/rdlu/sofleii/issues/45)), the build info
 ([#46](https://github.com/rdlu/sofleii/issues/46)) and the update check.
 Coming, roughly in this order (epic: [#44](https://github.com/rdlu/sofleii/issues/44)):
 
-- **TUI actions**: switch profile (`⏎`) and output (`o`) from the dashboard,
-  with a confirmation (in progress).
 - [#83](https://github.com/rdlu/sofleii/issues/83): the **first release**,
   `sofleii-v0.1.0`: CI, prebuilt binaries, install with mise or cargo, and
   `update check` checking the CLI too.

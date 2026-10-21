@@ -52,7 +52,7 @@ use crate::transport::TransportKind;
 pub use crate::error::ErrorView;
 pub use jobs::UpdateReport;
 pub use link::{Connect, ConnectedVia};
-pub use state::Snapshot;
+pub use state::{ActiveBle, Snapshot};
 pub use watch::{Probe, SystemProbe};
 
 /// Intervals and paths. The defaults are the #44 plan's; tests shrink them
@@ -165,10 +165,14 @@ pub enum Request {
 #[serde(rename_all = "snake_case")]
 pub enum Risk {
     None,
-    /// Studio RPC moves to the other transport (or the BLE connection drops):
-    /// confirm, then the session follows it.
+    /// Studio RPC moves to the other transport, or the BLE connection drops
+    /// (a profile switch over BLE, or to an empty slot, which also starts
+    /// pairing on it): confirm, then the session follows it.
     DropsCurrentLink,
-    /// Can't be undone (unpair: the host has to pair again). Always confirm.
+    /// Can't be undone from here: an unpair (the host has to pair again),
+    /// or output BLE while the active profile is another host's (Studio
+    /// answers there, and this host loses the keyboard until the output is
+    /// switched back on the keyboard or from that host). Always confirm.
     Destructive,
 }
 
@@ -194,14 +198,29 @@ impl Request {
                 let changes = p.active_profile != Some(n);
                 let hands_over =
                     kind == Some(TransportKind::Ble) || p.output_priority == Some("ble");
-                if changes && hands_over {
+                // A known-empty slot starts pairing on it, and the active
+                // profile's BLE connection (likely this host's) drops.
+                let empty = p.profiles.iter().any(|s| s.index == n && !s.bonded);
+                if changes && (hands_over || empty) {
                     Risk::DropsCurrentLink
                 } else {
                     Risk::None
                 }
             }
+            // BLE is only selected while the active profile is connected
+            // (else the firmware stays on USB), and then Studio answers on
+            // that profile's host: this one, or out of reach. Not connected
+            // still asks: the link moves as soon as that host connects.
             Request::SetOutput(target) => match kind {
-                Some(k) if k != target => Risk::DropsCurrentLink,
+                Some(k) if k != target => {
+                    if target == TransportKind::Ble
+                        && snap.active_ble() == Some(ActiveBle::OtherHost)
+                    {
+                        Risk::Destructive
+                    } else {
+                        Risk::DropsCurrentLink
+                    }
+                }
                 _ => Risk::None,
             },
             Request::Refresh(_)
@@ -325,6 +344,10 @@ pub enum Event {
     /// Once per (re)connect, and on [`Scope::Info`].
     Info(Reads<Info>),
     Battery(Reads<Reading>),
+    /// This host's Bluetooth adapter addresses (BlueZ `Adapter1.Address`),
+    /// when they change; empty if BlueZ can't say. Compared with the
+    /// profiles' peer addresses ([`Snapshot::active_ble`]).
+    Adapters(Vec<String>),
     Update(Reads<UpdateReport>),
     Done {
         ticket: Ticket,

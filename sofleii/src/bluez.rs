@@ -144,6 +144,9 @@ fn tree_from(managed: &Managed) -> Tree {
         let path = path.as_str().to_string();
         if let Some(p) = ifaces.get("org.bluez.Adapter1") {
             t.adapters_powered.push(boolean(p, "Powered"));
+            if let Some(a) = string(p, "Address") {
+                t.adapter_addresses.push(a);
+            }
         }
         if let Some(p) = ifaces.get("org.bluez.Device1") {
             t.devices.push(DeviceObj {

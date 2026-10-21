@@ -456,6 +456,192 @@ fn an_action_reports_done_then_refreshes() {
 }
 
 #[test]
+fn an_output_handover_is_verified_over_ble_and_the_link_follows() {
+    let s = start(
+        |c| c,
+        Kb {
+            host_profile: Some(0),
+            ..Kb::default()
+        },
+    );
+    let seen = s.until("status", status_ok);
+    assert_eq!(
+        links(&seen).last().and_then(LinkState::kind),
+        Some(TransportKind::Usb)
+    );
+    let t = s.h.send(Request::SetOutput(TransportKind::Ble));
+    let (seen, r) = s.done(t);
+    // The firmware switched before replying: silence over USB, then the
+    // read-back over BLE.
+    match r {
+        Ok(Outcome::Output(o)) => {
+            assert!(o.verified && !o.reply, "{o:?}");
+            assert_eq!(o.verified_over, Some(TransportKind::Ble));
+            assert_eq!(o.studio_transport, Some(TransportKind::Ble));
+        }
+        other => panic!("{other:?}"),
+    }
+    assert!(
+        links(&seen).is_empty(),
+        "no link event before Done: {seen:#?}"
+    );
+    // Then the session replans (USB is deaf now) and settles on BLE, with
+    // no Deaf/Lost/Searching on the way.
+    let seen = s.until("status", status_ok);
+    let got = links(&seen);
+    assert_eq!(
+        got,
+        [
+            LinkState::Connecting {
+                kind: Some(TransportKind::Ble)
+            },
+            got.last().cloned().unwrap()
+        ],
+        "{seen:#?}"
+    );
+    assert_eq!(got[1].kind(), Some(TransportKind::Ble));
+    let Some(Event::Status(Stamped { value: Ok(p), .. })) = seen.last() else {
+        unreachable!()
+    };
+    assert_eq!(p.output_priority, Some("ble"));
+}
+
+#[test]
+fn output_ble_with_the_active_profile_unconnected_stays_on_usb() {
+    // Profile 1 (another host) is active but not connected; 0 is this
+    // host, connected. The firmware's BLE priority falls back to USB, so
+    // the reply comes back here and the link doesn't move.
+    let s = start(
+        |c| c,
+        Kb {
+            active: 1,
+            connected: [true, false],
+            host_profile: Some(0),
+            ..Kb::default()
+        },
+    );
+    s.until("status", status_ok);
+    let t = s.h.send(Request::SetOutput(TransportKind::Ble));
+    let (seen, r) = s.done(t);
+    match r {
+        Ok(Outcome::Output(o)) => {
+            assert!(o.reply && o.verified, "{o:?}");
+            assert_eq!(o.verified_over, Some(TransportKind::Usb));
+            assert_eq!(o.studio_transport, Some(TransportKind::Usb));
+            assert!(o.note.unwrap().contains("isn't connected"));
+        }
+        other => panic!("{other:?}"),
+    }
+    let seen: Vec<_> = seen
+        .into_iter()
+        .chain(s.until("status", status_ok))
+        .collect();
+    assert!(links(&seen).is_empty(), "no link change: {seen:#?}");
+    assert!(
+        !seen
+            .iter()
+            .any(|e| matches!(e, Event::Log { msg, .. } if msg.contains("Studio moved"))),
+        "{seen:#?}"
+    );
+    let Some(Event::Status(Stamped { value: Ok(p), .. })) = seen.last() else {
+        unreachable!()
+    };
+    assert_eq!(p.output_priority, Some("ble"));
+    assert_eq!(s.kb.lock().selected(), Some(TransportKind::Usb));
+}
+
+#[test]
+fn output_ble_to_another_hosts_profile_loses_the_keyboard() {
+    // Profile 1 is active and connected, to another host: BLE is
+    // selected, Studio answers there, and neither of this host's links
+    // hears it.
+    let s = start(
+        |c| c,
+        Kb {
+            active: 1,
+            host_profile: Some(0),
+            ..Kb::default()
+        },
+    );
+    s.until("status", status_ok);
+    let t = s.h.send(Request::SetOutput(TransportKind::Ble));
+    let (_, r) = s.done(t);
+    match r {
+        Ok(Outcome::Output(o)) => {
+            assert!(!o.reply && !o.verified, "{o:?}");
+            assert!(o.note.unwrap().contains("not verified"));
+        }
+        other => panic!("{other:?}"),
+    }
+    // The session follows to BLE, which is open but deaf: steadily not
+    // answering, never Connected.
+    let seen = s.until("deaf", |e| matches!(e, Event::Link(LinkState::Deaf { .. })));
+    assert!(!seen.iter().any(connected), "{seen:#?}");
+}
+
+/// [`snapshot`] with profile 1 active, its `connected` flag, distinct
+/// addresses (0 is this host's), and this host's adapters/presence.
+fn active_one(connected: bool, adapters: &[&str], ble: Option<bool>) -> Snapshot {
+    let mut s = snapshot(Some(TransportKind::Usb), 1, "usb");
+    let p = s.status.value.as_mut().unwrap();
+    for (slot, addr) in p
+        .profiles
+        .iter_mut()
+        .zip(["84:9E:56:52:6A:D2", "AA:BB:CC:DD:EE:FF"])
+    {
+        slot.address = Some(addr.into());
+    }
+    p.profiles[1].connected = connected;
+    s.adapters = adapters.iter().map(|a| a.to_string()).collect();
+    s.presence = ble.map(|ble| Presence { usb: true, ble });
+    s
+}
+
+#[test]
+fn output_ble_risk_follows_who_the_active_profile_is() {
+    use TransportKind::Ble;
+    let ours = ["84:9e:56:52:6a:d2"];
+    // Not connected: the keyboard stays on USB for now, but asks.
+    let s = active_one(false, &ours, Some(true));
+    assert_eq!(s.active_ble(), Some(ActiveBle::NotConnected));
+    assert_eq!(Request::SetOutput(Ble).risk(&s), Risk::DropsCurrentLink);
+    // Connected to another host (by address, case-insensitive): out of
+    // reach from here.
+    let s = active_one(true, &ours, Some(true));
+    assert_eq!(s.active_ble(), Some(ActiveBle::OtherHost));
+    assert_eq!(Request::SetOutput(Ble).risk(&s), Risk::Destructive);
+    // To this host.
+    let s = active_one(true, &["AA:BB:CC:DD:EE:FF"], Some(true));
+    assert_eq!(s.active_ble(), Some(ActiveBle::ThisHost));
+    assert_eq!(Request::SetOutput(Ble).risk(&s), Risk::DropsCurrentLink);
+    // No adapter address: no BLE link from this host at all means another
+    // host's; with one, it can't be told.
+    let s = active_one(true, &[], Some(false));
+    assert_eq!(s.active_ble(), Some(ActiveBle::OtherHost));
+    assert_eq!(Request::SetOutput(Ble).risk(&s), Risk::Destructive);
+    let s = active_one(true, &[], Some(true));
+    assert_eq!(s.active_ble(), Some(ActiveBle::Unknown));
+    assert_eq!(Request::SetOutput(Ble).risk(&s), Risk::DropsCurrentLink);
+    // Back to USB is unaffected.
+    let mut s = active_one(true, &ours, Some(true));
+    s.link = snapshot(Some(Ble), 1, "ble").link;
+    assert_eq!(
+        Request::SetOutput(TransportKind::Usb).risk(&s),
+        Risk::DropsCurrentLink
+    );
+    assert_eq!(Snapshot::new(&Config::default()).active_ble(), None);
+}
+
+#[test]
+fn adapters_fold_into_the_snapshot() {
+    let mut s = Snapshot::new(&Config::default());
+    s.apply(&Event::Adapters(vec!["84:9E:56:52:6A:D2".into()]));
+    assert_eq!(s.adapters, ["84:9E:56:52:6A:D2"]);
+    let json = serde_json::to_value(&s).unwrap();
+    assert_eq!(json["adapters"][0], "84:9E:56:52:6A:D2");
+}
+
+#[test]
 fn a_bad_rename_fails_before_any_rpc() {
     let s = start(|c| c, Kb::default());
     // The split read ends the first batch.
@@ -553,6 +739,15 @@ fn risk_follows_the_handover_rules() {
         "no change"
     );
     assert_eq!(Request::SwitchProfile(1).risk(&unknown), Risk::None);
+    // An empty slot starts pairing and drops the BLE connection, even over
+    // USB with priority usb.
+    assert_eq!(Request::SwitchProfile(2).risk(&usb), Risk::DropsCurrentLink);
+    let on_empty = snapshot(Some(Usb), 2, "usb");
+    assert_eq!(
+        Request::SwitchProfile(2).risk(&on_empty),
+        Risk::None,
+        "already active"
+    );
 
     // Output: away from the transport in use.
     assert_eq!(Request::SetOutput(Ble).risk(&usb), Risk::DropsCurrentLink);

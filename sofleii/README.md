@@ -17,8 +17,8 @@ Status: **pre-release** (`0.1.0`, not tagged yet; release work in
 serial (left half) or BLE GATT through BlueZ; batteries over BLE GATT;
 update checks over the GitHub REST API; the reads and the profile and
 output-priority writes (confirmed against the keyboard on 2026-10-19); a
-live, read-only TUI dashboard. TUI actions (switch profile, output) are in
-progress.
+live TUI dashboard that also switches profile and output (with a
+confirmation when the link would drop).
 
 ## Build, run and test
 
@@ -138,7 +138,7 @@ in the right half looks like no USB at all. The JSON keeps the plain
 What the user sees (the screenshot, the keys, the link states) is on the
 [site](https://sofleii.dlu.one/docs/sofleii/#the-tui). How it works:
 
-- **Live, read-only.** The TUI runs the core's session (`src/session/`)
+- **Live.** The TUI runs the core's session (`src/session/`)
   with the global `--transport`, `--device`, `--bt-address` and `--timeout`
   (contradicting flags exit 3 before the screen opens), and renders a view
   derived from its `Snapshot`. Profiles, output priority and the split link
@@ -163,9 +163,36 @@ What the user sees (the screenshot, the keys, the link states) is on the
   once with `(×N)`. It shows info and up by default (`Log (info)`); `d`
   toggles the debug lines (`Log (debug)`). The CLI prints the same core records as
   `sofleii: warning: …` on stderr.
-- **Keys** are listed on the site and in `?`. `⏎` (switch profile) and `o`
-  (output) show there as coming soon. Quitting is instant: no thread is
-  joined.
+- **Keys** are listed on the site and in `?`. Quitting is instant: no
+  thread is joined.
+- **Writes** (`tui/actions.rs` words them, `App` runs the flow): `⏎`/`s`
+  sends `SwitchProfile(selected)` (the active slot only logs "already
+  active"), `o` sends `SetOutput(other)`. When `Request::risk` says
+  `DropsCurrentLink` or `Destructive` (output away from the transport in
+  use, a switch over BLE, with priority ble or to an empty slot; unpair),
+  a confirm modal opens first: **only `y` sends**; any other key, `⏎`
+  included, cancels, so a double Enter never confirms (Ctrl-C still
+  quits). The core never prompts. One write in flight (`App::action`):
+  the bottom edge shows a spinner and action keys are ignored until its
+  `Done`, then the result (5 s; an error until the next key) and log lines.
+  After a handover the session follows Studio (`◌ ble connecting`, then
+  `● ble …`).
+- **Output BLE and the active profile:** the firmware selects BLE only
+  while the *active* profile is connected and otherwise falls back to USB
+  (`get_selected_transport`, `zmk/app/src/endpoints.c`). Studio then
+  answers on that profile's host. `Snapshot::active_ble()` says which case
+  applies: it compares the active slot's peer address with this host's
+  adapter addresses (`Event::Adapters`, from BlueZ `Adapter1.Address` on
+  the watch thread). Without them it falls back to `connected` plus
+  presence.
+  - **Not connected:** `DropsCurrentLink`, with a "stays on USB" modal. The
+    reply comes back over USB, so there's no handover and no replan.
+  - **Another host's:** `Destructive`. This host loses Studio; the session
+    goes `Deaf` over BLE.
+  - **This host's or unknown:** as before.
+
+  The fake keyboard (`session/fake.rs`) models this with `host_profile`
+  and per-slot `connected`.
 - **Split** is polled with the profiles: `connected`, `disconnected (right
   half off or out of range)` or `unknown (firmware without the split-info
   fix)` (shorter below 70 columns). While it's disconnected the battery row
