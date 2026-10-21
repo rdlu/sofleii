@@ -184,7 +184,9 @@ fn get_split_info_reply_without_info_is_unknown() {
 }
 
 // Keymap reads (#76), captured live on 2026-10-21 over USB from the left
-// half (firmware build 2474a13) by `tests/keymap_capture.rs`, read-only:
+// half (firmware build 0858966 = v3.2.0's firmware; MYGAME, 10 layers) by
+// `tests/keymap_capture.rs`, read-only, with the `.keymap` it matches frozen
+// as `tests/fixtures/keymap_live.keymap`:
 // `tests/fixtures/keymap_live.hex` holds the requests sent and the replies,
 // unframed.
 
@@ -269,7 +271,8 @@ fn keymap_reply_decodes() {
     assert_eq!(
         names,
         [
-            "BASE", "NAV", "CODE", "MEDIA", "SYS|NUM", "GAME?", "MINECRFT", "GAME", "NOMANSKY"
+            "BASE", "NAV", "CODE", "MEDIA", "SYS|NUM", "GAME?", "MINECRFT", "GAME", "NOMANSKY",
+            "MYGAME"
         ]
     );
     assert!(km.layers.iter().all(|l| l.bindings.len() == 64));
@@ -292,7 +295,8 @@ fn keymap_reply_decodes() {
     assert_eq!((keys[58].x, keys[58].y), (750, 100));
     assert_eq!(keys[59].r, -2400);
 
-    let file = dts::parse(include_str!("../../config/eyelash_sofle.keymap")).unwrap();
+    // The .keymap frozen with the capture, not the live one.
+    let file = dts::parse(include_str!("fixtures/keymap_live.keymap")).unwrap();
     let labels = Labels::with_file(&file);
     let behaviors: std::collections::HashMap<u32, Behavior> = captured("get_behavior_details")
         .iter()

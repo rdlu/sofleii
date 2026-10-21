@@ -106,7 +106,8 @@ proto/           vendored .proto files (see proto/README.md for sources and lice
 tests/golden.rs  request bytes captured from the v3.0.0 firmware, plus the zmk__device_info call and
                  the cormoran_ble write payloads (worked out from the proto; confirmed by the 2026-10-19 live test),
                  and the keymap reads: requests and replies from tests/fixtures/keymap_live.hex
-tests/keymap_capture.rs  #[ignore]d: re-captures that fixture from the keyboard over USB (read-only)
+tests/keymap_capture.rs  #[ignore]d: re-captures that fixture from the keyboard over USB (read-only),
+                 and freezes the matching .keymap beside it as tests/fixtures/keymap_live.keymap
 tests/cli.rs     exit codes and error output with no keyboard (not found, usage; no network)
 tests/layering.rs  no eprintln! outside main.rs; transport/, client/, commands/, session/ never name the TUI
 tests/session_live.rs  #[ignore]d: a read-only session against the keyboard, printing its events for 10 s
@@ -305,8 +306,20 @@ parser's `notes[]`.
 The decode tests run on a real capture: `tests/fixtures/keymap_live.hex`
 holds every request sent and reply received (unframed, request ids from 1),
 recorded read-only by `tests/keymap_capture.rs`
-(`SOFLEII_CAPTURE=1 cargo test --test keymap_capture -- --ignored`). After a
-keymap or firmware change that the tests should follow, re-capture it.
+(`SOFLEII_CAPTURE=1 cargo test --test keymap_capture -- --ignored`). It
+writes `tests/fixtures/keymap_live.keymap` in the same run, a copy of
+`config/eyelash_sofle.keymap`, and the capture tests (`commands::keymap`,
+`tests/golden.rs`) diff the capture against **that copy**, never the live
+file, so a keymap edit never breaks them. Capture only from a keyboard
+flashed with the current file and without Studio edits (`sofleii keymap
+diff` says no drift), so the pair agrees. The live file is still covered:
+`keymap::dts`'s `the_repo_keymap_parses_cleanly` parses it with no notes,
+and `config/eyelash_sofle.keymap` is in `sofleii.yml`'s `paths:` so keymap
+PRs run the crate CI. Behaviour details are captured in ascending id
+order, as `keymap::read` asks for them: the firmware's list isn't sorted (a
+MYGAME build lists id 62 first), and a capture in list order made the
+replayed ids line up with the wrong behaviours. Re-capture after a firmware
+change the tests should follow.
 
 ## Transports
 
@@ -568,18 +581,47 @@ shared cache (below), else the GitHub REST API, without `gh`:
    Its own commits stay in `commits_ahead`, and `note` says `also has N
    commits not in v3.1.0 (unreleased changes)`. A 404 there means the commit isn't on GitHub (an unpushed
    local build): `unknown`.
-4. When the compare changes **no files**, the status is `up_to_date` even
-   though the counts aren't 0. That's a PR-branch build whose branch was
-   merged as is: the release only adds the merge commit, and the firmware
-   is the same. `note` says so.
+4. **Firmware inputs decide, not commits** (v0.1.1). If none of the
+   changed files is a firmware input, the status is `up_to_date` whatever
+   the counts say: a PR-branch build of a merged PR (live case: `0858966`
+   vs v3.2.0's merge commit `96f3a2d`, 8 commits and 35 files, all docs
+   and crate), or docs-only commits on `main`. The inputs are
+   `update::FIRMWARE_INPUTS`, exactly the `paths:` that trigger
+   `.github/workflows/build.yml` (`config/**`, `build.yaml`,
+   `zmk-rgb-layer/**`, and the workflow itself, which pins the build
+   container); a test reads the workflow and fails if the two drift. A
+   rename counts when either side is an input. GitHub's compare file list
+   runs **from the merge base to the head**, so which list covers what
+   depends on the status:
+   - `ahead` (keyboard behind): the merge base is the build, so the one
+     list is the whole diff. No extra request.
+   - `behind` (keyboard ahead): the list is empty by construction (the
+     merge base is the release), so the build's side comes from the
+     reverse compare `{latest}...{running}`. One extra request.
+   - `diverged`: both lists, the forward one and the reverse; changed on
+     either side counts. One extra request.
+
+   `files_changed` / `firmware_files_changed` carry the counts, and the
+   `note` says `built from 0858966; differs from v3.2.0 only outside the
+   firmware inputs (35 files)` (or `same source as v3.2.0: the commits in
+   between change no files`). **Can't prove it:** GitHub lists at most 300
+   files per compare, so a list of 300 (or one with no `files` key, or a
+   failed reverse compare, rate limiting included) leaves both counts
+   `null`, goes by the commits as before, and says so in the `note`
+   (`can't tell whether a firmware input changed: …; going by the
+   commits`). Before v0.1.1 the rule asked for no changed files at all,
+   so the live case above read `v3.2.0 available` and exited 1; and since
+   an `ahead` keyboard's list is always empty, every build ahead of the
+   release read as "same source".
 5. Then it names the **release the build is, or follows**
    (`running.release`). **The firmware can't report its own tag:** CI
    builds the merge commit before the release is tagged, from a shallow
    checkout with no tags, so every CI build reports a bare SHA. sofleii
    maps it back, cheapest way first (anonymous GitHub allows 60 requests an
    hour):
-   - `up_to_date`, same-tree rule included: the latest release, exact. No
-     extra request.
+   - `up_to_date` at the release's own commit: the latest release, exact.
+     By the firmware-inputs rule: exact with `equivalent: true`, shown as
+     `v3.2.0 (built from 0858966)`. No extra request.
    - `ahead`: the latest release, `commits_after` = `commits_ahead`. No
      extra request.
    - A local `git describe` string already names the tag and the count
@@ -587,9 +629,13 @@ shared cache (below), else the GitHub REST API, without `gh`:
      request; this also covers `unknown`.
    - `behind` with a bare SHA: the firmware releases from step 1's list
      (no extra request; the latest one skipped, since it was already
-     compared), newest first, `compare/{tag}...{running}` until one fits. `identical` or no
-     changed files gives exact, and the build being ahead gives
-     `commits_after` = `ahead_by`. At most 10 releases. If none fits, or
+     compared), newest first, `compare/{tag}...{running}` until one fits.
+     `identical` gives exact; the build being `ahead` of the tag gives
+     `equivalent` when no firmware input changed (the list is the whole
+     diff here), else `commits_after` = `ahead_by`. `behind` and
+     `diverged` never fit (their lists say nothing about the build's
+     side; before v0.1.1 an empty `behind` list read as "same tree"). At
+     most 10 releases. If none fits, or
      that lookup fails (e.g. rate limiting), `release` is `null` (with a
      `note` for a failure) and the verdict stands.
 6. The **sofleii part** compares `CARGO_PKG_VERSION` with the newest
@@ -600,32 +646,37 @@ shared cache (below), else the GitHub REST API, without `gh`:
 
 **Cache.** `update check` and the TUI share `session::jobs::Checker` and
 its file, `$XDG_CACHE_HOME/sofleii/update.json` (else
-`~/.cache/sofleii/`), honoured for 6 h. Schema 2 (#83) has a firmware part
+`~/.cache/sofleii/`), honoured for 6 h. Schema 3 (v0.1.1: the firmware-inputs
+rule, so a 0.1.0 "behind" isn't served again; schema 2, #83, split the
+parts) has a firmware part
 (keyed by the running `zmk_config_version` + dirty flag) and a sofleii part
 (the newest `sofleii-v*` release as listed; the verdict is worked out
 against the running binary when read, so two installed versions can share
 it), each with its own timestamp. A check is a cache hit only when every
 part asked for is cached and fresh; otherwise one list request renews the
 sofleii part too. `--refresh` skips the cache (and still stores the
-answer). A failed request never replaces a good entry; a schema-1 file is
-ignored and rewritten. The text output then ends with `checked 2h ago,
+answer). A failed request never replaces a good entry; a file of another
+schema is ignored and rewritten. The text output then ends with `checked 2h ago,
 cached (--refresh asks GitHub again)`; the JSON has `from_cache` and
 `checked_at_ms` (for a cached answer, the older part's time).
 
 The text leads with versions; the commit counts are in the JSON. A
 `-dirty` build is compared by its commit, with `running.dirty: true` and a
-note in the text output. Real output (2026-10-19; the left half runs a
-`main` CI build at `2474a13`, whose tree is v3.1.0's, and no sofleii
-release exists yet):
+note in the text output. Real output (2026-10-21; the left half runs PR
+#90's branch build `0858966`, and v3.2.0 is that PR's merge commit, which
+adds 35 files of docs and crate changes on top):
 
 ```
-$ sofleii update check
-up to date: v3.1.0 (2474a13)
-running         v3.1.0 (2474a13)
-latest          v3.1.0 5c53b30, published 2026-10-19T19:11:48Z
-note            same source as v3.1.0: the commits between 2474a13 and 5c53b30 change no files
-sofleii         no sofleii release yet (running v0.1.0)
+$ sofleii update check --refresh
+up to date: v3.2.0 (built from 0858966)
+running         v3.2.0 (built from 0858966)
+latest          v3.2.0 96f3a2d, published 2026-10-21T21:01:59Z
+note            built from 0858966; differs from v3.2.0 only outside the firmware inputs (35 files)
+sofleii         up to date: v0.1.0
 ```
+
+sofleii 0.1.0 said `v3.2.0 available, running v3.1.0+36 (0858966)` there
+and exited 1.
 
 The `sofleii` row reads `up to date: v0.1.0`, `v0.2.0 available, running
 v0.1.0` or `ahead of v0.1.0: running v0.2.0` otherwise. `--cli` prints that
@@ -640,20 +691,23 @@ version when no release precedes the build.
 {
   "schema": 1,
   "transport": { "kind": "usb", "device": "/dev/ttyACM0" },
-  "running": { "version": "f9a665f", "commit": "f9a665f", "dirty": false,
-               "release": { "tag": "v3.1.0", "exact": true, "commits_after": 0 } },
-  "latest": { "tag": "v3.1.0",
-              "commit": "5c53b30fce99031611442b1a3ccbbe7052327020",
-              "published_at": "2026-10-19T19:11:48Z" },
+  "running": { "version": "0858966", "commit": "0858966", "dirty": false,
+               "release": { "tag": "v3.2.0", "exact": true, "commits_after": 0,
+                            "equivalent": true } },
+  "latest": { "tag": "v3.2.0",
+              "commit": "96f3a2d54a4d912033ce296188b102771717632e",
+              "published_at": "2026-10-21T21:01:59Z" },
   "status": "up_to_date",
-  "commits_behind": 1,
+  "commits_behind": 8,
   "commits_ahead": 0,
-  "note": "same source as v3.1.0: the commits between f9a665f and 5c53b30 change no files",
-  "cli": { "version": "0.1.0", "latest": null, "tag": null, "published_at": null,
-           "status": "unknown",
-           "note": "no sofleii release yet (no sofleii-v* tag published)" },
-  "checked_at_ms": 1792452213616,
-  "from_cache": true
+  "files_changed": 35,
+  "firmware_files_changed": 0,
+  "note": "built from 0858966; differs from v3.2.0 only outside the firmware inputs (35 files)",
+  "cli": { "version": "0.1.0", "latest": "0.1.0", "tag": "sofleii-v0.1.0",
+           "published_at": "2026-10-21T21:05:43Z", "status": "up_to_date",
+           "note": null },
+  "checked_at_ms": 1792617374295,
+  "from_cache": false
 }
 ```
 
@@ -670,10 +724,18 @@ version when no release precedes the build.
 - `running.version` is the raw string, `-dirty` included. `running.commit`
   is the abbreviated SHA from it, or the full SHA an exact tag resolved to.
   `latest.commit` is always the full SHA.
-- `running.release`: `{"tag", "exact", "commits_after"}` (`commits_after`
-  is 0 when `exact`), or `null` when no release precedes the build.
-- `note` explains an `unknown` status, a same-source `up_to_date`, or a
-  failed release lookup; otherwise `null`.
+- `running.release`: `{"tag", "exact", "commits_after", "equivalent"}`
+  (`commits_after` is 0 when `exact`; `equivalent`, added in v0.1.1, is
+  true when it's exact by the firmware inputs only, not the same commit),
+  or `null` when no release precedes the build.
+- `files_changed` / `firmware_files_changed` (additive, v0.1.1): files
+  that differ between the build and the release (for `diverged`, on either
+  side since the merge base) and how many of those are firmware inputs; 0
+  and 0 for the release's own commit; `null` when `unknown`, or when the
+  file list couldn't be trusted (see step 4).
+- `note` explains an `unknown` status, an `up_to_date` from another
+  commit, a file list that couldn't decide, or a failed release lookup;
+  otherwise `null`.
 - **Exit codes:** 0 `up_to_date` or `ahead`; **1** if the firmware is
   `behind` or `unknown`, or sofleii is `behind` (the worse checked part
   wins; sofleii `unknown` counts as 0; usable as `sofleii update check ||
@@ -685,8 +747,9 @@ version when no release precedes the build.
   rate limiting).
 - **Token:** none needed for public releases. `GH_TOKEN`, else
   `GITHUB_TOKEN`, is sent as a bearer token if set, which lifts the
-  anonymous limit of 60 requests per hour (a check usually makes 2 to 3,
-  `--cli` alone 1, a cache hit 0; a bare SHA that's behind adds up to 10
+  anonymous limit of 60 requests per hour (a check usually makes 2 to 4,
+  `--cli` alone 1, a cache hit 0; the 4th is the reverse compare of a build
+  ahead of or diverged from the release; a bare SHA that's behind adds up to 10
   compares for the release lookup). A rate
   limit error says so. Requests send `User-Agent: sofleii/<version>` and
   time out after 10 s each.

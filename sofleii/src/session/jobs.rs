@@ -36,7 +36,9 @@ use crate::{Error, Result};
 pub const CACHE_FILE: &str = "update.json";
 /// Bumped when [`CacheFile`] changes shape; other schemas are ignored (and
 /// replaced by the next check). 2 (#83): separate firmware and CLI parts.
-const CACHE_SCHEMA: u32 = 2;
+/// 3 (v0.1.1): the firmware-inputs rule, so a cached false "behind" from
+/// 0.1.0 isn't served again.
+const CACHE_SCHEMA: u32 = 3;
 /// How long a cached check is honoured, by the TUI and `update check` alike.
 pub const UPDATE_TTL: Duration = Duration::from_secs(6 * 3600);
 

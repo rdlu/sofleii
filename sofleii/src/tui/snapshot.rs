@@ -152,6 +152,7 @@ fn running(s: &session::Snapshot) -> Option<String> {
         .as_ref()
         .and_then(|u| u.check.running.release.as_ref());
     match (version, release) {
+        (Some(v), Some(r)) if r.equivalent => Some(format!("{} (built from {v})", r.label())),
         (Some(v), Some(r)) if !v.starts_with(&r.tag) => Some(format!("{} ({v})", r.label())),
         (Some(v), _) => Some(v),
         (None, Some(r)) => Some(r.label()),
@@ -353,6 +354,7 @@ pub fn demo(now: SystemTime) -> session::Snapshot {
                             tag: "v3.1.0".into(),
                             exact: true,
                             commits_after: 0,
+                            equivalent: false,
                         }),
                     },
                     latest: Latest {
@@ -363,6 +365,8 @@ pub fn demo(now: SystemTime) -> session::Snapshot {
                     status: update::Status::UpToDate,
                     commits_behind: Some(0),
                     commits_ahead: Some(0),
+                    files_changed: Some(0),
+                    firmware_files_changed: Some(0),
                     note: None,
                 },
                 cli: update::cli_check(update::CLI_VERSION, None),

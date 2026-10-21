@@ -1,5 +1,9 @@
 //! Captures the keymap reads from the real keyboard into
-//! `tests/fixtures/keymap_live.hex`, which `tests/golden.rs` decodes.
+//! `tests/fixtures/keymap_live.hex`, which `tests/golden.rs` and
+//! `commands::keymap`'s tests decode, and freezes the `.keymap` it matches
+//! next to it as `tests/fixtures/keymap_live.keymap` (the two are always
+//! written together; the tests compare the capture with that copy, never
+//! with the live `config/eyelash_sofle.keymap`).
 //! Read-only: `get_keymap`, `get_physical_layouts`, `check_unsaved_changes`,
 //! `list_all_behaviors` and `get_behavior_details` for each behaviour;
 //! nothing is written.
@@ -75,8 +79,12 @@ fn capture_keymap_reads() {
     take("get_physical_layouts", &mut out);
     c.check_unsaved_changes().unwrap();
     take("check_unsaved_changes", &mut out);
-    let ids = c.list_all_behaviors().unwrap();
+    let mut ids = c.list_all_behaviors().unwrap();
     take("list_all_behaviors", &mut out);
+    // The firmware doesn't list them in order (a MYGAME build lists id 62
+    // first); `keymap::read` asks for details ascending, and the tests
+    // replay the details in file order.
+    ids.sort_unstable();
     for id in ids {
         c.get_behavior_details(id).unwrap();
         take("get_behavior_details", &mut out);
@@ -88,6 +96,20 @@ fn capture_keymap_reads() {
         );
         std::fs::write(path, &out).unwrap();
         println!("wrote {path}");
+        // The keymap this capture is checked against, frozen with it, so
+        // later keymap edits never break the crate's tests. Capture from a
+        // keyboard flashed with this file and no Studio edits (`sofleii
+        // keymap diff` says no drift).
+        let src = concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/../config/eyelash_sofle.keymap"
+        );
+        let dst = concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/tests/fixtures/keymap_live.keymap"
+        );
+        std::fs::copy(src, dst).unwrap();
+        println!("wrote {dst}");
     } else {
         print!("{out}");
     }
