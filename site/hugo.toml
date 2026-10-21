@@ -53,7 +53,7 @@ disableKinds = ["taxonomy", "term", "rss"]
   # The firmware release the site documents: the home page's hero badge and
   # the printable keymap's footer read it. Bump it with each release.
   [params.firmware]
-    version = "v3.1.0"
+    version = "v3.2.0"
     stack = "ZMK main · Zephyr 4.1"
 
   description = "Sofle Interactive Interface: ZMK firmware for the Eyelash Sofle split keyboard (home-row mods, nine layers, gaming mode, per-layer underglow, Studio over USB and Bluetooth) and a planned CLI/TUI to manage it."
