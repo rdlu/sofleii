@@ -125,6 +125,16 @@ starts pairing on it and drops this computer's Bluetooth connection). Only
 `y` confirms; any other key, `⏎` included, cancels, so a double Enter
 can't confirm by accident. Other switches go straight through.
 
+Output BLE depends on the **active** profile. The keyboard only uses
+Bluetooth while that profile is connected, and falls back to USB otherwise.
+- **Active profile not connected:** the box says the keyboard stays on USB
+  for now. Keystrokes and Studio move once that profile's host connects.
+- **Active profile connected to another computer** (sofleii compares its
+  address with this computer's Bluetooth adapter): keystrokes and Studio go
+  to that computer, and sofleii loses the keyboard until the output is
+  switched back on the keyboard or from there. The box says so, in red.
+  To switch to BLE from here, first switch to this computer's profile.
+
 While a switch runs, the bottom edge shows a spinner
 (`⠋ switching to profile 1…`) and further switch keys are ignored. Then it
 shows the result, e.g. `✓ profile 1 active (verified over usb)`, for a few

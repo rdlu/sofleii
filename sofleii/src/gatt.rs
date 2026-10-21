@@ -62,6 +62,9 @@ pub struct DescriptorObj {
 pub struct Tree {
     /// `Powered` of each `org.bluez.Adapter1`.
     pub adapters_powered: Vec<bool>,
+    /// `Address` of each `org.bluez.Adapter1`: this host's own addresses,
+    /// which a BLE profile's peer address is compared with.
+    pub adapter_addresses: Vec<String>,
     pub devices: Vec<DeviceObj>,
     pub services: Vec<ServiceObj>,
     pub characteristics: Vec<CharacteristicObj>,

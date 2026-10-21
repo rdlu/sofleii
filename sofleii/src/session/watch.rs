@@ -8,7 +8,8 @@
 //!   ([`Msg::SplitEdge`], from the link);
 //! - USB presence every [`Config::usb_every`]: the serial discover (sysfs,
 //!   no radio);
-//! - BLE `Device1.Connected` every [`Config::ble_every`].
+//! - BLE `Device1.Connected` every [`Config::ble_every`], and with it this
+//!   host's adapter addresses ([`Event::Adapters`], when they change).
 //!
 //! Presence changes go to the front end ([`Event::Presence`]) and to the
 //! link, which retries (or replans) at once.
@@ -31,6 +32,11 @@ pub trait Probe: Send {
     fn ble_connected(&mut self) -> bool;
     /// Both halves over GATT.
     fn battery(&mut self) -> Result<Reading>;
+    /// This host's Bluetooth adapter addresses, as of the last
+    /// [`ble_connected`](Self::ble_connected); empty if unknown.
+    fn adapters(&mut self) -> Vec<String> {
+        Vec::new()
+    }
 }
 
 /// sysfs for USB, the system D-Bus for BLE. The BlueZ connection is opened
@@ -39,6 +45,8 @@ pub struct SystemProbe {
     query: Query,
     timeout: Duration,
     bluez: Option<Bluez>,
+    /// From the last tree read.
+    adapters: Vec<String>,
 }
 
 impl SystemProbe {
@@ -49,6 +57,7 @@ impl SystemProbe {
             },
             timeout,
             bluez: None,
+            adapters: Vec::new(),
         }
     }
 
@@ -71,11 +80,22 @@ impl Probe for SystemProbe {
     }
 
     fn ble_connected(&mut self) -> bool {
-        self.with_bluez(|b, q| {
+        let r = self.with_bluez(|b, q| {
             let tree = b.managed_tree()?;
-            Ok(find_device(&tree, q, &mut Vec::new()).is_ok())
-        })
-        .unwrap_or(false)
+            let found = find_device(&tree, q, &mut Vec::new()).is_ok();
+            Ok((found, tree.adapter_addresses))
+        });
+        match r {
+            Ok((found, adapters)) => {
+                self.adapters = adapters;
+                found
+            }
+            Err(_) => false,
+        }
+    }
+
+    fn adapters(&mut self) -> Vec<String> {
+        self.adapters.clone()
     }
 
     fn battery(&mut self) -> Result<Reading> {
@@ -117,6 +137,7 @@ fn run(
     let (mut usb_due, mut ble_due, mut battery_due) = (now, now, now);
     let mut presence: Option<Presence> = None;
     let mut seen = Presence::default();
+    let mut adapters: Option<Vec<String>> = None;
     // The follow-up read after a split edge.
     let mut follow_up: Option<Instant> = None;
     loop {
@@ -137,6 +158,13 @@ fn run(
             }
             changed |= ble != seen.ble;
             seen.ble = ble;
+            let now_adapters = probe.adapters();
+            if adapters.as_ref() != Some(&now_adapters) {
+                adapters = Some(now_adapters.clone());
+                if events.send(Event::Adapters(now_adapters)).is_err() {
+                    return;
+                }
+            }
         }
         if changed || presence.is_none() {
             presence = Some(seen);

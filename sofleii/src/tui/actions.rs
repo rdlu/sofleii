@@ -10,7 +10,7 @@
 use std::time::SystemTime;
 
 use crate::commands::profiles::Profiles;
-use crate::session::{self, ErrorView, LogLevel, Outcome, Request, Risk};
+use crate::session::{self, ActiveBle, ErrorView, LogLevel, Outcome, Request, Risk};
 use crate::transport::TransportKind;
 
 /// A request waiting for `y` / `n`.
@@ -96,21 +96,9 @@ pub fn confirm(req: &Request, snap: &session::Snapshot) -> Option<Confirm> {
     if risk == Risk::None {
         return None;
     }
-    let kind = snap.link.kind();
     let profiles = snap.status.value.as_ref();
     let (title, text) = match *req {
-        Request::SetOutput(target) => {
-            let from = kind.unwrap_or(other(target));
-            (
-                "Switch output?".to_string(),
-                format!(
-                    "Switching output to {}: this {} link goes quiet; {}",
-                    kind_name(target),
-                    kind_name(from),
-                    continues(snap, from)
-                ),
-            )
-        }
+        Request::SetOutput(target) => ("Switch output?".to_string(), output_text(target, snap)),
         Request::SwitchProfile(n) => (
             "Switch profile?".to_string(),
             switch_text(n, snap, profiles),
@@ -131,6 +119,43 @@ pub fn confirm(req: &Request, snap: &session::Snapshot) -> Option<Confirm> {
         title,
         text,
     })
+}
+
+/// `profile 1`, or `profile 1 "laptop"`.
+fn slot(p: &crate::commands::profiles::Profile) -> String {
+    match &p.name {
+        Some(n) => format!("profile {} \"{n}\"", p.index),
+        None => format!("profile {}", p.index),
+    }
+}
+
+/// What output `target` does from here. BLE is only selected while the
+/// active profile is connected, and Studio then answers on that profile's
+/// host ([`session::Snapshot::active_ble`]).
+fn output_text(target: TransportKind, snap: &session::Snapshot) -> String {
+    let from = snap.link.kind().unwrap_or(other(target));
+    let active = snap.status.value.as_ref().and_then(|p| p.active());
+    match (target, snap.active_ble(), active) {
+        (TransportKind::Ble, Some(ActiveBle::NotConnected), Some(p)) => format!(
+            "Output priority becomes BLE, but the active {s} isn't connected, so the keyboard \
+             keeps using USB until a BLE host connects; sofleii stays on USB. Once {s}'s host \
+             connects, keystrokes and Studio move to it.",
+            s = slot(p)
+        ),
+        (TransportKind::Ble, Some(ActiveBle::OtherHost), Some(p)) => format!(
+            "The active {s} is connected to another host: keystrokes and Studio move there. \
+             This USB link goes quiet and this host isn't the active BLE profile, so sofleii \
+             loses the keyboard until the output is switched back on the keyboard or from \
+             that host.",
+            s = slot(p)
+        ),
+        _ => format!(
+            "Switching output to {}: this {} link goes quiet; {}",
+            kind_name(target),
+            kind_name(from),
+            continues(snap, from)
+        ),
+    }
 }
 
 fn switch_text(n: u32, snap: &session::Snapshot, profiles: Option<&Profiles>) -> String {
@@ -206,6 +231,19 @@ pub fn finished(req: &Request, result: &Result<Outcome, ErrorView>) -> (LogLevel
             (
                 level,
                 format!("{line}{}", verified(o.verified, o.verified_over)),
+                o.note.clone(),
+            )
+        }
+        // Priority BLE, but the reply came back over USB: no BLE host is
+        // connected, so the firmware kept USB.
+        Ok(Outcome::Output(o))
+            if o.reply
+                && o.output_priority == "ble"
+                && o.studio_transport == Some(TransportKind::Usb) =>
+        {
+            (
+                LogLevel::Info,
+                "output priority ble; still on USB until a BLE host connects".to_string(),
                 o.note.clone(),
             )
         }

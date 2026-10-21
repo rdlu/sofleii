@@ -177,6 +177,22 @@ What the user sees (the screenshot, the keys, the link states) is on the
   `Done`, then the result (5 s; an error until the next key) and log lines.
   After a handover the session follows Studio (`◌ ble connecting`, then
   `● ble …`).
+- **Output BLE and the active profile:** the firmware selects BLE only
+  while the *active* profile is connected and otherwise falls back to USB
+  (`get_selected_transport`, `zmk/app/src/endpoints.c`). Studio then
+  answers on that profile's host. `Snapshot::active_ble()` says which case
+  applies: it compares the active slot's peer address with this host's
+  adapter addresses (`Event::Adapters`, from BlueZ `Adapter1.Address` on
+  the watch thread). Without them it falls back to `connected` plus
+  presence.
+  - **Not connected:** `DropsCurrentLink`, with a "stays on USB" modal. The
+    reply comes back over USB, so there's no handover and no replan.
+  - **Another host's:** `Destructive`. This host loses Studio; the session
+    goes `Deaf` over BLE.
+  - **This host's or unknown:** as before.
+
+  The fake keyboard (`session/fake.rs`) models this with `host_profile`
+  and per-slot `connected`.
 - **Split** is polled with the profiles: `connected`, `disconnected (right
   half off or out of range)` or `unknown (firmware without the split-info
   fix)` (shorter below 70 columns). While it's disconnected the battery row

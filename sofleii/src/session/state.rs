@@ -17,6 +17,26 @@ use crate::commands::info::{Build, Device, Info};
 use crate::commands::profiles::Profiles;
 use crate::commands::split::Split;
 
+/// Who the active BLE profile is connected to ([`Snapshot::active_ble`]).
+/// It decides where output priority BLE sends keystrokes and Studio: the
+/// firmware selects BLE only while the active profile is connected, and
+/// falls back to USB otherwise (`get_selected_transport` in
+/// `zmk/app/src/endpoints.c`).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ActiveBle {
+    /// Not connected to any host: with priority BLE the keyboard stays on
+    /// USB until that host connects.
+    NotConnected,
+    /// Connected to this host: BLE RPC reaches it from here.
+    ThisHost,
+    /// Connected to another host: Studio over BLE answers there, out of
+    /// this host's reach.
+    OtherHost,
+    /// Connected, but to whom can't be told.
+    Unknown,
+}
+
 /// A value goes stale after this many refresh intervals without a good read.
 pub const STALE_AFTER: u32 = 3;
 
@@ -109,6 +129,8 @@ pub struct Snapshot {
     #[serde(rename = "rejoined_at_ms", serialize_with = "ser::opt_unix_ms")]
     pub rejoined_at: Option<SystemTime>,
     pub battery: Field<Reading>,
+    /// This host's Bluetooth adapter addresses; empty until known.
+    pub adapters: Vec<String>,
     pub update: Field<UpdateReport>,
     /// Oldest first, at most `log_capacity` lines.
     pub log: VecDeque<LogEntry>,
@@ -132,6 +154,7 @@ impl Snapshot {
             split: Field::default(),
             rejoined_at: None,
             battery: Field::default(),
+            adapters: Vec::new(),
             update: Field::default(),
             log: VecDeque::new(),
             focused: true,
@@ -171,6 +194,7 @@ impl Snapshot {
                     self.rejoined_at = None;
                 }
             }
+            Event::Adapters(a) => self.adapters = a.clone(),
             Event::Update(r) => self.update.apply(r),
             Event::Log { at, level, msg } => {
                 if self.log.len() >= self.log_capacity {
@@ -217,6 +241,33 @@ impl Snapshot {
             .as_ref()
             .is_some_and(|b| b.right.percent == Some(0));
         within && zero
+    }
+
+    /// Who the active BLE profile is connected to, from the profiles and
+    /// this host's adapter addresses. With the addresses known, the active
+    /// slot's peer address is compared with them; without, a connected
+    /// active profile is another host's only when this host has no BLE
+    /// link to the keyboard at all (presence), else unknown. `None` until
+    /// the profiles are read.
+    pub fn active_ble(&self) -> Option<ActiveBle> {
+        let p = self.status.value.as_ref()?.active()?;
+        if !p.connected {
+            return Some(ActiveBle::NotConnected);
+        }
+        if let Some(addr) = &p.address
+            && !self.adapters.is_empty()
+        {
+            let ours = self.adapters.iter().any(|a| a.eq_ignore_ascii_case(addr));
+            return Some(if ours {
+                ActiveBle::ThisHost
+            } else {
+                ActiveBle::OtherHost
+            });
+        }
+        Some(match self.presence {
+            Some(p) if !p.ble => ActiveBle::OtherHost,
+            _ => ActiveBle::Unknown,
+        })
     }
 
     /// The device name and serial, from `info`.

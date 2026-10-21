@@ -1200,3 +1200,102 @@ fn modal_renders_destructive() {
         ]
     );
 }
+
+/// `actions_app()` with profile 1 "laptop" active (another host's),
+/// `connected` or not, and profile 0 "desk" this host's (by adapter
+/// address).
+fn laptop_active(connected: bool) -> App {
+    let mut a = actions_app();
+    let p = a.session.status.value.as_mut().unwrap();
+    p.active_profile = Some(1);
+    for s in &mut p.profiles {
+        s.active = s.index == 1;
+    }
+    p.profiles[1].connected = connected;
+    a.apply(&Event::Adapters(vec!["DD:1F:23:76:6E:71".into()]), t0());
+    a
+}
+
+#[test]
+fn modal_renders_for_output_ble_with_the_active_profile_unconnected() {
+    let rec = Rec::default();
+    let mut a = laptop_active(false);
+    press(&mut a, &rec, KeyCode::Char('o'));
+    assert_eq!(a.confirm.as_ref().unwrap().risk, Risk::DropsCurrentLink);
+    assert_eq!(
+        modal(&a),
+        [
+            "┌─ Switch output? ─────────────────────────────────────────┐",
+            "│                                                          │",
+            "│ Output priority becomes BLE, but the active profile 1    │",
+            "│ \"laptop\" isn't connected, so the keyboard keeps using    │",
+            "│ USB until a BLE host connects; sofleii stays on USB.     │",
+            "│ Once profile 1 \"laptop\"'s host connects, keystrokes and  │",
+            "│ Studio move to it.                                       │",
+            "│                                                          │",
+            "│ Continue?                                                │",
+            "└ y confirm · n / Esc cancel ──────────────────────────────┘",
+        ]
+    );
+    press(&mut a, &rec, KeyCode::Char('n'));
+    assert!(sent(&rec).is_empty());
+}
+
+#[test]
+fn modal_renders_for_output_ble_to_another_hosts_profile() {
+    let rec = Rec::default();
+    let mut a = laptop_active(true);
+    press(&mut a, &rec, KeyCode::Char('o'));
+    assert_eq!(a.confirm.as_ref().unwrap().risk, Risk::Destructive);
+    assert_eq!(
+        modal(&a),
+        [
+            "┌─ Switch output? ─────────────────────────────────────────┐",
+            "│                                                          │",
+            "│ The active profile 1 \"laptop\" is connected to another    │",
+            "│ host: keystrokes and Studio move there. This USB link    │",
+            "│ goes quiet and this host isn't the active BLE profile,   │",
+            "│ so sofleii loses the keyboard until the output is        │",
+            "│ switched back on the keyboard or from that host.         │",
+            "│                                                          │",
+            "│ Continue?                                                │",
+            "└ y confirm · n / Esc cancel ──────────────────────────────┘",
+        ]
+    );
+    press(&mut a, &rec, KeyCode::Char('y'));
+    assert_eq!(sent(&rec), [Request::SetOutput(TransportKind::Ble)]);
+}
+
+#[test]
+fn output_ble_that_stays_on_usb_says_so() {
+    let rec = Rec::default();
+    let mut a = laptop_active(false);
+    press(&mut a, &rec, KeyCode::Char('o'));
+    press(&mut a, &rec, KeyCode::Char('y'));
+    let Outcome::Output(mut o) = output_done("ble", TransportKind::Usb) else {
+        unreachable!()
+    };
+    o.reply = true;
+    o.note = Some(
+        "priority is ble, but the active BLE profile isn't connected, so keystrokes and \
+         Studio stay on usb"
+            .into(),
+    );
+    a.apply(
+        &Event::Done {
+            ticket: Ticket(1),
+            result: Ok(Outcome::Output(o)),
+        },
+        t0(),
+    );
+    let s = screen(&a, 80, 24);
+    assert!(
+        s[23].starts_with("└ ✓ output priority ble; still on USB until a BLE host connects ─"),
+        "{}",
+        s[23]
+    );
+    assert!(
+        s.join("\n")
+            .contains("17:42:10 priority is ble, but the active BLE profile")
+    );
+}

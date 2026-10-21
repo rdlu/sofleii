@@ -54,8 +54,11 @@ pub struct Kb {
     pub steps: VecDeque<Step>,
     /// The serial port exists (presence, and whether USB opens).
     pub usb: bool,
-    /// This host has the keyboard connected over BLE (whether BLE opens).
-    pub ble: bool,
+    /// The slot bonded to this host, whose BLE connection is the one a
+    /// BLE transport opens; `None`: this host has no BLE link.
+    pub host_profile: Option<u32>,
+    /// Each slot's connection to its host.
+    pub connected: [bool; 2],
     /// USB opens tried.
     pub attempts: usize,
     pub opened: usize,
@@ -78,7 +81,8 @@ impl Default for Kb {
             modes: VecDeque::new(),
             steps: VecDeque::new(),
             usb: true,
-            ble: false,
+            host_profile: None,
+            connected: [true, true],
             attempts: 0,
             opened: 0,
             dropped: 0,
@@ -90,14 +94,40 @@ impl Default for Kb {
 }
 
 impl Kb {
-    /// Where Studio answers, as the firmware picks it: the priority's
-    /// transport when it's ready, else the other one.
-    pub fn selected(&self) -> TransportKind {
+    fn active_connected(&self) -> bool {
+        self.connected
+            .get(self.active as usize)
+            .copied()
+            .unwrap_or(false)
+    }
+
+    /// The selected endpoint, as `get_selected_transport` in
+    /// `zmk/app/src/endpoints.c` picks it: the priority's transport when
+    /// it's ready (BLE: the *active* profile connected), else the other
+    /// one, else none.
+    pub fn selected(&self) -> Option<TransportKind> {
+        let ble = self.active_connected();
         match self.priority {
-            bm::OutputPriority::Ble if self.ble => TransportKind::Ble,
-            _ if self.usb => TransportKind::Usb,
-            _ => TransportKind::Ble,
+            bm::OutputPriority::Ble if ble => Some(TransportKind::Ble),
+            _ if self.usb => Some(TransportKind::Usb),
+            _ if ble => Some(TransportKind::Ble),
+            _ => None,
         }
+    }
+
+    /// Whether Studio answers on this host's `kind` link: it's the
+    /// selected endpoint, and over BLE the active profile is this host's
+    /// (replies go to the active profile's connection).
+    pub fn reaches(&self, kind: TransportKind) -> bool {
+        self.selected() == Some(kind)
+            && (kind == TransportKind::Usb || self.host_profile == Some(self.active))
+    }
+
+    /// This host's BLE link to the keyboard is up (whatever profile is
+    /// active).
+    pub fn ble(&self) -> bool {
+        self.host_profile
+            .is_some_and(|h| self.connected.get(h as usize).copied().unwrap_or(false))
     }
 }
 
@@ -142,13 +172,13 @@ impl Transport for FakeTransport {
             }
             // Studio only listens on the selected endpoint, and a write
             // that moves it replies on the new one: silence here.
-            if kb.selected() != self.kind {
+            if !kb.reaches(self.kind) {
                 continue;
             }
             self.answered += 1;
             let r = req.subsystem.and_then(|s| answer(&mut kb, s));
             if let Some(r) = r
-                && kb.selected() == self.kind
+                && kb.reaches(self.kind)
             {
                 self.out
                     .push_back(framing::encode(&response(req.request_id, r)));
@@ -239,7 +269,7 @@ fn answer(kb: &mut Kb, sub: crate::client::RequestSubsystem) -> Option<ResponseS
                 .request_type?;
             use bm::response::ResponseType as R;
             let r = match req {
-                Ble::GetProfiles(_) => R::GetProfiles(profiles(kb.active)),
+                Ble::GetProfiles(_) => R::GetProfiles(profiles(kb.active, kb.connected)),
                 Ble::GetSplitInfo(_) => R::GetSplitInfo(bm::GetSplitInfoResponse {
                     info: kb.split.map(|c| bm::SplitInfo {
                         is_split: true,
@@ -267,25 +297,28 @@ fn answer(kb: &mut Kb, sub: crate::client::RequestSubsystem) -> Option<ResponseS
     }
 }
 
-/// Two bonded, connected slots.
-fn profiles(active: u32) -> bm::GetProfilesResponse {
+/// This host's adapter address, which slot 0 is bonded to.
+pub const HOST_ADDRESS: &str = "84:9E:56:52:6A:D2";
+
+/// Two bonded slots: 0 is [`HOST_ADDRESS`], 1 another host.
+fn profiles(active: u32, connected: [bool; 2]) -> bm::GetProfilesResponse {
     let slot = |index: u32, addr: &str| bm::ProfileInfo {
         index,
         name: String::new(),
         address: addr.into(),
-        is_connected: true,
+        is_connected: connected[index as usize],
         is_open: false,
         is_active: index == active,
     };
     bm::GetProfilesResponse {
         max_profiles: 2,
-        profiles: vec![slot(0, "84:9E:56:52:6A:D2"), slot(1, "AA:BB:CC:DD:EE:FF")],
+        profiles: vec![slot(0, HOST_ADDRESS), slot(1, "AA:BB:CC:DD:EE:FF")],
     }
 }
 
 /// The system side of [`connect::Connector`] over `kb`: USB is present when
-/// `kb.usb` says, BLE when `kb.ble` does; opening USB follows `kb.steps`
-/// and `kb.modes`.
+/// `kb.usb` says, BLE when [`Kb::ble`] does; opening USB follows
+/// `kb.steps` and `kb.modes`.
 #[derive(Clone)]
 pub struct FakeOpener(pub Shared);
 
@@ -297,7 +330,7 @@ impl Opener for FakeOpener {
     }
 
     fn ble_connected(&self, _: Option<&str>, _: Duration) -> std::result::Result<(), String> {
-        if self.0.lock().ble {
+        if self.0.lock().ble() {
             Ok(())
         } else {
             Err("fake: no BLE".into())
@@ -324,9 +357,9 @@ impl Opener for FakeOpener {
         }))
     }
 
-    /// Only when `kb.ble`; never deaf by [`Mode`] (those are USB's).
+    /// Only when [`Kb::ble`]; never deaf by [`Mode`] (those are USB's).
     fn open_ble(&self, _: Option<&str>, _: Duration) -> Result<Box<dyn Transport>> {
-        if !self.0.lock().ble {
+        if !self.0.lock().ble() {
             return Err(Error::NotFound("fake: no BLE".into()));
         }
         Ok(Box::new(FakeTransport {
