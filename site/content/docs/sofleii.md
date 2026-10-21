@@ -230,15 +230,22 @@ $ sofleii profiles
 
 ```console
 $ sofleii update check
-up to date: v3.1.0 (f9a665f)
-running         v3.1.0 (f9a665f)
-latest          v3.1.0 5c53b30, published 2026-10-19T19:11:48Z
-sofleii         no sofleii release yet (running v0.1.0)
+up to date: v3.2.0 (built from 0858966)
+running         v3.2.0 (built from 0858966)
+latest          v3.2.0 96f3a2d, published 2026-10-21T21:01:59Z
+note            built from 0858966; differs from v3.2.0 only outside the firmware inputs (35 files)
+sofleii         up to date: v0.1.1
 ```
 
 `update check` compares the firmware with the newest `vX.Y.Z` release and
 sofleii itself with the newest `sofleii-vX.Y.Z` release (drafts and
-prereleases don't count), from one GitHub request. `--firmware` or `--cli`
+prereleases don't count), from one GitHub request. Only the **firmware
+inputs** count, the same paths that trigger a firmware build (`config/`,
+`build.yaml`, `zmk-rgb-layer/` and the build workflow): a build from
+another commit that differs from the release only elsewhere (a PR branch
+before its merge, docs-only commits) is up to date, shown as `v3.2.0
+(built from 0858966)`. When GitHub's file list can't settle it (it stops at
+300 files), the commits decide and a `note` says so. `--firmware` or `--cli`
 checks just one; `--cli` doesn't need the keyboard. Answers come from the
 6-hour cache the TUI shares (`~/.cache/sofleii/update.json`), with a
 `checked … ago, cached` line; `--refresh` asks GitHub anyway. With no

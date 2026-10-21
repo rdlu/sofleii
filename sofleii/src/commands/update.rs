@@ -10,6 +10,7 @@
 //! on canned JSON.
 
 use std::cmp::Ordering;
+use std::collections::BTreeSet;
 
 use serde::{Deserialize, Serialize};
 
@@ -65,10 +66,17 @@ pub struct Running {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Release {
     pub tag: String,
-    /// The build is that release (same commit, or the same source tree).
+    /// The build is that release: the same commit, or (`equivalent`) one
+    /// whose firmware inputs are the same.
     pub exact: bool,
     /// Commits on top of `tag`; 0 when `exact`. Shown as `tag+N`.
     pub commits_after: u32,
+    /// `exact` by the firmware inputs only: the build's commit isn't the
+    /// tag's, but nothing under [`FIRMWARE_INPUTS`] differs (a PR-branch
+    /// build of a merged PR, a docs-only commit). Text shows it as
+    /// `v3.2.0 (built from 0858966)`.
+    #[serde(default)]
+    pub equivalent: bool,
 }
 
 impl Release {
@@ -77,6 +85,14 @@ impl Release {
             tag: tag.into(),
             exact: true,
             commits_after: 0,
+            equivalent: false,
+        }
+    }
+
+    fn equivalent(tag: &str) -> Self {
+        Release {
+            equivalent: true,
+            ..Release::exact(tag)
         }
     }
 
@@ -85,6 +101,7 @@ impl Release {
             tag: tag.into(),
             exact: n == 0,
             commits_after: n,
+            equivalent: false,
         }
     }
 
@@ -97,6 +114,30 @@ impl Release {
         }
     }
 }
+
+/// The paths a firmware build reads: exactly the `paths:` that trigger
+/// `.github/workflows/build.yml` (keep the two in sync). A directory ends
+/// in `/`; anything else is one file. The workflow lists itself too, and
+/// it stays here: it pins the reusable ZMK workflow, hence the build
+/// container and toolchain.
+pub const FIRMWARE_INPUTS: &[&str] = &[
+    "config/",
+    "build.yaml",
+    "zmk-rgb-layer/",
+    ".github/workflows/build.yml",
+];
+
+/// Whether a repo path is one of the [`FIRMWARE_INPUTS`].
+pub fn is_firmware_input(path: &str) -> bool {
+    FIRMWARE_INPUTS.iter().any(|p| match p.strip_suffix('/') {
+        Some(dir) => path.strip_prefix(dir).is_some_and(|r| r.starts_with('/')),
+        None => path == *p,
+    })
+}
+
+/// GitHub's compare lists at most this many changed files. A list this
+/// long may be cut short, so it can't prove that no firmware input changed.
+pub const COMPARE_FILE_CAP: usize = 300;
 
 /// How many older releases a `behind` bare SHA may compare against.
 pub const RELEASE_SCAN: u32 = 10;
@@ -400,9 +441,29 @@ pub struct Check {
     pub commits_behind: Option<u32>,
     /// Commits on the keyboard that the release lacks; `null` when unknown.
     pub commits_ahead: Option<u32>,
-    /// Why the status is `unknown`, why a same-tree build counts as up to
-    /// date, or why `running.release` couldn't be looked up; else `null`.
+    /// Files that differ between the build's commit and the release's
+    /// (for a diverged build: changed on either side since the merge base);
+    /// 0 for the same commit, `null` when not compared (`unknown`) or when
+    /// GitHub's file list was missing or possibly cut short.
+    #[serde(default)]
+    pub files_changed: Option<u32>,
+    /// How many of those are [`FIRMWARE_INPUTS`]: 0 means the running
+    /// firmware is the release's, whatever the commits say. `null` as above.
+    #[serde(default)]
+    pub firmware_files_changed: Option<u32>,
+    /// Why the status is `unknown`, why a build from another commit counts
+    /// as up to date, why the file list couldn't decide, or why
+    /// `running.release` couldn't be looked up; else `null`.
     pub note: Option<String>,
+}
+
+impl Check {
+    fn add_note(&mut self, n: String) {
+        self.note = Some(match self.note.take() {
+            Some(prev) => format!("{prev}; {n}"),
+            None => n,
+        });
+    }
 }
 
 /// What a `git describe --dirty --always --tags` string names.
@@ -506,8 +567,56 @@ struct CompareJson {
     status: String,
     ahead_by: u32,
     behind_by: u32,
-    /// Changed files (on the first page only); empty = the same source tree.
-    files: Option<Vec<serde::de::IgnoredAny>>,
+    /// Changed files from the merge base to the head (first page only, at
+    /// most [`COMPARE_FILE_CAP`]); `[]` = the head adds no file changes.
+    files: Option<Vec<FileJson>>,
+}
+
+#[derive(Deserialize)]
+struct FileJson {
+    filename: String,
+    /// Set on a rename: the path it came from.
+    previous_filename: Option<String>,
+}
+
+fn touches_firmware(f: &FileJson) -> bool {
+    is_firmware_input(&f.filename)
+        || f.previous_filename
+            .as_deref()
+            .is_some_and(is_firmware_input)
+}
+
+/// The changed files GitHub listed, or why the list can't be trusted to
+/// be complete.
+fn complete_files(files: Option<Vec<FileJson>>) -> std::result::Result<Vec<FileJson>, String> {
+    match files {
+        None => Err("GitHub's compare listed no files".into()),
+        Some(f) if f.len() >= COMPARE_FILE_CAP => Err(format!(
+            "GitHub lists at most {COMPARE_FILE_CAP} files per compare and this one has {}, \
+             so the list may be cut short",
+            f.len()
+        )),
+        Some(f) => Ok(f),
+    }
+}
+
+/// Changed paths, and which of them touch a firmware input (a rename
+/// counts when either side does).
+#[derive(Default)]
+struct Changed {
+    files: BTreeSet<String>,
+    firmware: BTreeSet<String>,
+}
+
+impl Changed {
+    fn add(&mut self, files: Vec<FileJson>) {
+        for f in files {
+            if touches_firmware(&f) {
+                self.firmware.insert(f.filename.clone());
+            }
+            self.files.insert(f.filename);
+        }
+    }
 }
 
 /// [`list_releases`], then [`check_with`].
@@ -531,7 +640,12 @@ pub fn check_with<H: Http + ?Sized>(
     let described = c.running.version.as_deref().and_then(describe_release);
     let tag = &c.latest.tag;
     c.running.release = match c.status {
-        Status::UpToDate => Some(Release::exact(tag)),
+        // The same commit; else a build that differs only outside the
+        // firmware inputs (the compare counted commits).
+        Status::UpToDate if c.commits_behind == Some(0) && c.commits_ahead == Some(0) => {
+            Some(Release::exact(tag))
+        }
+        Status::UpToDate => Some(Release::equivalent(tag)),
         Status::Ahead => Some(Release::after(tag, c.commits_ahead.unwrap_or(0))),
         Status::Unknown => described,
         Status::Behind => match (described, c.running.commit.clone()) {
@@ -539,11 +653,7 @@ pub fn check_with<H: Http + ?Sized>(
             (None, Some(commit)) => match scan_releases(http, repo, releases, tag, &commit) {
                 Ok(r) => r,
                 Err(e) => {
-                    let n = format!("couldn't map {} to a release: {e}", short(&commit));
-                    c.note = Some(match c.note.take() {
-                        Some(prev) => format!("{prev}; {n}"),
-                        None => n,
-                    });
+                    c.add_note(format!("couldn't map {} to a release: {e}", short(&commit)));
                     None
                 }
             },
@@ -553,10 +663,13 @@ pub fn check_with<H: Http + ?Sized>(
     Ok(c)
 }
 
-/// The newest older firmware release that `commit` is (same commit or
-/// tree) or comes after: takes up to [`RELEASE_SCAN`] of `releases` other
-/// than `latest_tag` (already compared), and compares each
-/// `{tag}...{commit}` newest-first until one fits.
+/// The newest older firmware release that `commit` is (same commit, or
+/// the same firmware inputs) or comes after: takes up to [`RELEASE_SCAN`]
+/// of `releases` other than `latest_tag` (already compared), and compares
+/// each `{tag}...{commit}` newest-first until one fits. Only GitHub's
+/// `ahead` fits: then the merge base is the tag, so the file list is the
+/// whole tag-to-build diff (a `behind` or `diverged` list says nothing
+/// about the build's side).
 fn scan_releases<H: Http + ?Sized>(
     http: &mut H,
     repo: &str,
@@ -578,11 +691,17 @@ fn scan_releases<H: Http + ?Sized>(
         }
         let cmp: CompareJson = parse(&ok(r, "compare")?, "compare")?;
         // Here the build is the head: GitHub's `ahead` = commits after the tag.
-        let same_tree = cmp.files.is_some_and(|f| f.is_empty());
         match cmp.status.as_str() {
             "identical" => return Ok(Some(Release::exact(&rel.tag))),
-            _ if same_tree => return Ok(Some(Release::exact(&rel.tag))),
-            "ahead" => return Ok(Some(Release::after(&rel.tag, cmp.ahead_by))),
+            "ahead" => {
+                let firmware_same =
+                    complete_files(cmp.files).is_ok_and(|f| !f.iter().any(touches_firmware));
+                return Ok(Some(if firmware_same {
+                    Release::equivalent(&rel.tag)
+                } else {
+                    Release::after(&rel.tag, cmp.ahead_by)
+                }));
+            }
             _ => {}
         }
     }
@@ -637,6 +756,8 @@ fn compare_latest<H: Http + ?Sized>(
             status: Status::UpToDate,
             commits_behind: Some(0),
             commits_ahead: Some(0),
+            files_changed: Some(0),
+            firmware_files_changed: Some(0),
             note: None,
         });
     }
@@ -650,37 +771,106 @@ fn compare_latest<H: Http + ?Sized>(
         return Ok(unknown(running, latest, Some(note)));
     }
     let cmp: CompareJson = parse(&ok(r, "compare")?, "compare")?;
-    let (mut status, behind, ahead) = from_compare(&cmp.status, cmp.ahead_by, cmp.behind_by)?;
-    let mut note = None;
-    // A PR-branch build merged without changes differs from the release
-    // only by the merge commit: same files, so nothing to flash.
-    if status != Status::UpToDate && cmp.files.is_some_and(|f| f.is_empty()) {
-        status = Status::UpToDate;
-        note = Some(format!(
-            "same source as {tag}: the commits between {} and {} change no files",
-            short(&commit),
-            short(&latest_sha)
-        ));
-    }
-    // GitHub's `diverged`, folded into behind: say what the release lacks.
-    if status == Status::Behind && ahead > 0 {
-        note = Some(format!(
-            "also has {} not in {tag} (unreleased changes)",
-            if ahead == 1 {
-                "1 commit".to_string()
-            } else {
-                format!("{ahead} commits")
-            }
-        ));
-    }
-    Ok(Check {
+    let (status, behind, ahead) = from_compare(&cmp.status, cmp.ahead_by, cmp.behind_by)?;
+    let mut c = Check {
         running,
         latest,
         status,
         commits_behind: Some(behind),
         commits_ahead: Some(ahead),
-        note,
-    })
+        files_changed: None,
+        firmware_files_changed: None,
+        note: None,
+    };
+    if cmp.status == "identical" {
+        (c.files_changed, c.firmware_files_changed) = (Some(0), Some(0));
+        return Ok(c);
+    }
+    // GitHub lists the files from the merge base to the head. That is the
+    // release's side, empty when the keyboard is ahead (the merge base is
+    // the release). The build's side needs the reverse compare, except when
+    // the keyboard is behind (the merge base is the build).
+    let mut changed = Changed::default();
+    let mut undecided = None;
+    if matches!(cmp.status.as_str(), "ahead" | "diverged") {
+        match complete_files(cmp.files) {
+            Ok(f) => changed.add(f),
+            Err(why) => undecided = Some(why),
+        }
+    }
+    if undecided.is_none() && matches!(cmp.status.as_str(), "behind" | "diverged") {
+        match build_side_files(http, repo, &c.latest.commit, &commit) {
+            Ok(f) => changed.add(f),
+            Err(why) => undecided = Some(why),
+        }
+    }
+    match undecided {
+        None => {
+            let n = changed.files.len();
+            c.files_changed = Some(n as u32);
+            c.firmware_files_changed = Some(changed.firmware.len() as u32);
+            // A PR-branch build of a merged PR, or docs-only commits: the
+            // firmware is the release's, so there's nothing to flash.
+            if changed.firmware.is_empty() {
+                c.status = Status::UpToDate;
+                let (built, tag) = (short(&commit), &c.latest.tag);
+                c.note = Some(if n == 0 {
+                    format!(
+                        "built from {built}; same source as {tag}: the commits in between change no files"
+                    )
+                } else {
+                    format!(
+                        "built from {built}; differs from {tag} only outside the firmware inputs ({})",
+                        plural(n, "file")
+                    )
+                });
+            }
+        }
+        Some(why) => {
+            c.note = Some(format!(
+                "can't tell whether a firmware input changed: {why}; going by the commits"
+            ));
+        }
+    }
+    // GitHub's `diverged`, folded into behind: say what the release lacks.
+    if c.status == Status::Behind && ahead > 0 {
+        let n = format!(
+            "also has {} not in {} (unreleased changes)",
+            plural(ahead as usize, "commit"),
+            c.latest.tag
+        );
+        c.add_note(n);
+    }
+    Ok(c)
+}
+
+/// `1 file`, `35 files`.
+fn plural(n: usize, what: &str) -> String {
+    if n == 1 {
+        format!("1 {what}")
+    } else {
+        format!("{n} {what}s")
+    }
+}
+
+/// The files the build's own commits change since its merge base with the
+/// release: the reverse compare `latest...commit`. A failure (rate limit
+/// included) is a reason, not an error: the verdict then goes by commits.
+fn build_side_files<H: Http + ?Sized>(
+    http: &mut H,
+    repo: &str,
+    latest_sha: &str,
+    commit: &str,
+) -> std::result::Result<Vec<FileJson>, String> {
+    let r = http
+        .get(
+            &format!("/repos/{repo}/compare/{latest_sha}...{commit}?per_page=1"),
+            ACCEPT_JSON,
+        )
+        .map_err(|e| e.to_string())?;
+    let body = ok(r, "reverse compare").map_err(|e| e.to_string())?;
+    let cmp: CompareJson = parse(&body, "reverse compare").map_err(|e| e.to_string())?;
+    complete_files(cmp.files)
 }
 
 /// GitHub's compare of `base=running...head=latest`, seen from the keyboard.
@@ -714,6 +904,8 @@ fn unknown(running: Running, latest: Latest, note: Option<String>) -> Check {
         status: Status::Unknown,
         commits_behind: None,
         commits_ahead: None,
+        files_changed: None,
+        firmware_files_changed: None,
         note,
     }
 }
@@ -827,13 +1019,56 @@ pub(crate) mod tests {
             );
         }
 
+        /// `base...latest` (and the reverse, which a `behind` or
+        /// `diverged` verdict also asks for), both changing the keymap.
         fn compare(&mut self, base: &str, status: &str, ahead_by: u32, behind_by: u32) {
+            self.compare_files(
+                base,
+                status,
+                ahead_by,
+                behind_by,
+                &["config/eyelash_sofle.keymap"],
+            );
+        }
+
+        /// Like [`compare`](Self::compare), with these changed files on
+        /// both sides.
+        fn compare_files(
+            &mut self,
+            base: &str,
+            status: &str,
+            ahead_by: u32,
+            behind_by: u32,
+            files: &[&str],
+        ) {
+            let files = files_json(files);
             self.reply(
                 &format!("/repos/rdlu/sofleii/compare/{base}...{RELEASE_SHA}?per_page=1"),
                 200,
-                &format!(r#"{{"status":"{status}","ahead_by":{ahead_by},"behind_by":{behind_by},"total_commits":{ahead_by},"commits":[],"files":[{{"filename":"config/eyelash_sofle.keymap"}}]}}"#),
+                &format!(r#"{{"status":"{status}","ahead_by":{ahead_by},"behind_by":{behind_by},"total_commits":{ahead_by},"commits":[],"files":{files}}}"#),
+            );
+            let rev = match status {
+                "ahead" => "behind",
+                "behind" => "ahead",
+                s => s,
+            };
+            self.reply(
+                &format!("/repos/rdlu/sofleii/compare/{RELEASE_SHA}...{base}?per_page=1"),
+                200,
+                &format!(r#"{{"status":"{rev}","ahead_by":{behind_by},"behind_by":{ahead_by},"commits":[],"files":{files}}}"#),
             );
         }
+    }
+
+    /// A compare's `files` array with these filenames.
+    fn files_json(names: &[&str]) -> String {
+        let items: Vec<String> = names
+            .iter()
+            .map(|n| {
+                format!(r#"{{"filename":"{n}","status":"modified","additions":1,"deletions":0}}"#)
+            })
+            .collect();
+        format!("[{}]", items.join(","))
     }
 
     impl Http for FakeHttp {
@@ -1096,6 +1331,8 @@ pub(crate) mod tests {
                 "status": "unknown",
                 "commits_behind": null,
                 "commits_ahead": null,
+                "files_changed": null,
+                "firmware_files_changed": null,
                 "note": "the firmware reports no zmk_config_version"
             })
         );
@@ -1151,6 +1388,17 @@ pub(crate) mod tests {
             tag: tag.into(),
             exact,
             commits_after,
+            equivalent: false,
+        })
+    }
+
+    /// The release by its firmware inputs (`built from …`).
+    fn equiv(tag: &str) -> Option<Release> {
+        Some(Release {
+            tag: tag.into(),
+            exact: true,
+            commits_after: 0,
+            equivalent: true,
         })
     }
 
@@ -1188,7 +1436,8 @@ pub(crate) mod tests {
         assert_eq!(c.running.release, rel("v3.1.0", true, 0));
         assert_eq!(http.requested.len(), 2);
 
-        // Same tree (the live f9a665f case): exact, compare only.
+        // Same tree (the live f9a665f case): the release by its inputs,
+        // compare only.
         let mut http = FakeHttp::released();
         http.reply(
             &format!("/repos/rdlu/sofleii/compare/f9a665f...{RELEASE_SHA}?per_page=1"),
@@ -1196,15 +1445,24 @@ pub(crate) mod tests {
             r#"{"status":"ahead","ahead_by":1,"behind_by":0,"files":[]}"#,
         );
         let c = check(&mut http, DEFAULT_REPO, running("f9a665f")).unwrap();
-        assert_eq!(c.running.release, rel("v3.1.0", true, 0));
+        assert_eq!(c.running.release, equiv("v3.1.0"));
         assert_eq!(http.requested.len(), 3);
 
+        // Ahead: GitHub's list is the release's side (empty), so the
+        // build's own files take the reverse compare.
         let mut http = FakeHttp::released();
         http.compare("abc1234", "behind", 0, 3);
         let c = check(&mut http, DEFAULT_REPO, running("abc1234")).unwrap();
         assert_eq!(c.status, Status::Ahead);
         assert_eq!(c.running.release, rel("v3.1.0", false, 3));
-        assert_eq!(http.requested.len(), 3);
+        assert_eq!(c.firmware_files_changed, Some(1));
+        assert_eq!(
+            extra(&http),
+            vec![
+                format!("/repos/rdlu/sofleii/compare/abc1234...{RELEASE_SHA}?per_page=1").as_str(),
+                format!("/repos/rdlu/sofleii/compare/{RELEASE_SHA}...abc1234?per_page=1").as_str(),
+            ]
+        );
     }
 
     #[test]
@@ -1254,7 +1512,7 @@ pub(crate) mod tests {
         http.reply(
             "/repos/rdlu/sofleii/compare/v3.0.0...1a2b3c4?per_page=1",
             200,
-            r#"{"status":"ahead","ahead_by":12,"behind_by":0,"files":[{"filename":"x"}]}"#,
+            r#"{"status":"ahead","ahead_by":12,"behind_by":0,"files":[{"filename":"config/eyelash_sofle.keymap"}]}"#,
         );
         let c = check(&mut http, DEFAULT_REPO, running("1a2b3c4")).unwrap();
         assert_eq!(c.status, Status::Behind);
@@ -1286,7 +1544,7 @@ pub(crate) mod tests {
             c.note.as_deref(),
             Some("also has 1 commit not in v3.1.0 (unreleased changes)")
         );
-        assert_eq!(c.running.release, rel("v3.0.0", true, 0));
+        assert_eq!(c.running.release, equiv("v3.0.0"));
     }
 
     #[test]
@@ -1306,11 +1564,11 @@ pub(crate) mod tests {
         }
         let c = check(&mut http, DEFAULT_REPO, running("1a2b3c4")).unwrap();
         assert_eq!(c.running.release, None);
-        // compare with latest + 10 compares, not 12.
-        assert_eq!(extra(&http).len(), 11, "{:?}", http.requested);
+        // compare with latest both ways + 10 compares, not 12.
+        assert_eq!(extra(&http).len(), 12, "{:?}", http.requested);
         // Newest first by semver: v2.11.0 before v2.9.0.
         assert!(
-            extra(&http)[1].contains("/v2.11.0..."),
+            extra(&http)[2].contains("/v2.11.0..."),
             "{:?}",
             http.requested
         );
@@ -1450,5 +1708,348 @@ pub(crate) mod tests {
                 "published_at": null, "status": "unknown", "note": NO_CLI_RELEASE
             })
         );
+    }
+
+    #[test]
+    fn firmware_inputs_match_the_build_workflow_paths() {
+        for p in [
+            "config/eyelash_sofle.keymap",
+            "config/boards/shields/eyelash_sofle/eyelash_sofle.overlay",
+            "build.yaml",
+            "zmk-rgb-layer/src/rgb_layer.c",
+            ".github/workflows/build.yml",
+        ] {
+            assert!(is_firmware_input(p), "{p}");
+        }
+        for p in [
+            "configs/x",
+            "config",
+            "build.yaml.bak",
+            "sub/config/x",
+            "zmk-rgb-layer-old/x",
+            ".github/workflows/sofleii.yml",
+            "sofleii/src/commands/update.rs",
+            "CLAUDE.md",
+        ] {
+            assert!(!is_firmware_input(p), "{p}");
+        }
+        // The constant mirrors the workflow's `paths:` filter exactly.
+        let wf = include_str!("../../../.github/workflows/build.yml");
+        let paths: Vec<&str> = wf
+            .split_once("paths:")
+            .unwrap()
+            .1
+            .lines()
+            .skip(1)
+            .map_while(|l| l.trim().strip_prefix("- "))
+            .map(|l| l.trim_matches('"'))
+            .collect();
+        let ours: Vec<String> = FIRMWARE_INPUTS
+            .iter()
+            .map(|p| match p.strip_suffix('/') {
+                Some(d) => format!("{d}/**"),
+                None => p.to_string(),
+            })
+            .collect();
+        assert_eq!(paths, ours);
+    }
+
+    /// The 35 files of `compare/0858966...96f3a2d` (2026-10-21).
+    const LIVE_35: &[&str] = &[
+        ".github/scripts/package-sofleii.sh",
+        ".github/workflows/sofleii-release.yml",
+        ".github/workflows/sofleii.yml",
+        "CLAUDE.md",
+        "site/content/docs/reference/troubleshooting.md",
+        "site/content/docs/sofleii.md",
+        "site/content/docs/studio.md",
+        "sofleii/README.md",
+        "sofleii/build.rs",
+        "sofleii/scripts/zmk_keys_table.py",
+        "sofleii/src/client/mod.rs",
+        "sofleii/src/client/rpc.rs",
+        "sofleii/src/commands/keymap.rs",
+        "sofleii/src/commands/mod.rs",
+        "sofleii/src/commands/update.rs",
+        "sofleii/src/keymap/diff.rs",
+        "sofleii/src/keymap/dts.rs",
+        "sofleii/src/keymap/expr.rs",
+        "sofleii/src/keymap/keys.rs",
+        "sofleii/src/keymap/keys_table.rs",
+        "sofleii/src/keymap/mod.rs",
+        "sofleii/src/keymap/render.rs",
+        "sofleii/src/lib.rs",
+        "sofleii/src/main.rs",
+        "sofleii/src/output.rs",
+        "sofleii/src/session/jobs.rs",
+        "sofleii/src/session/mod.rs",
+        // Spelt in two parts: tests/layering.rs keeps the front end's
+        // module name out of the core.
+        concat!("sofleii/src/t", "ui/snapshot.rs"),
+        concat!("sofleii/src/t", "ui/tests.rs"),
+        concat!("sofleii/src/t", "ui/view.rs"),
+        "sofleii/src/version.rs",
+        "sofleii/tests/cli.rs",
+        "sofleii/tests/fixtures/keymap_live.hex",
+        "sofleii/tests/golden.rs",
+        "sofleii/tests/keymap_capture.rs",
+    ];
+
+    #[test]
+    fn live_pr_branch_build_differing_only_outside_firmware_is_up_to_date() {
+        // The #90 PR head 0858966 against release v3.2.0 (its merge commit):
+        // GitHub says ahead by 8 with 35 files, none a firmware input.
+        assert_eq!(LIVE_35.len(), 35);
+        let mut http = FakeHttp::released();
+        http.compare_files("0858966", "ahead", 8, 0, LIVE_35);
+        let c = check(&mut http, DEFAULT_REPO, running("0858966")).unwrap();
+        assert_eq!(c.status, Status::UpToDate);
+        assert_eq!(c.status.exit_code(), 0);
+        assert_eq!((c.commits_behind, c.commits_ahead), (Some(8), Some(0)));
+        assert_eq!(
+            (c.files_changed, c.firmware_files_changed),
+            (Some(35), Some(0))
+        );
+        assert_eq!(
+            c.note.as_deref(),
+            Some(
+                "built from 0858966; differs from v3.1.0 only outside the firmware inputs (35 files)"
+            )
+        );
+        assert_eq!(c.running.release, equiv("v3.1.0"));
+        // Keyboard behind: the merge base is the build, one compare does it.
+        assert_eq!(extra(&http).len(), 1, "{:?}", http.requested);
+        let checked = Checked {
+            firmware: Some(c.clone()),
+            cli: None,
+            checked_at: std::time::SystemTime::UNIX_EPOCH,
+            from_cache: false,
+        };
+        assert_eq!(checked.exit_code(), 0);
+        assert_eq!(
+            crate::output::update_headline(&c),
+            "up to date: v3.1.0 (built from 0858966)"
+        );
+    }
+
+    #[test]
+    fn one_firmware_input_among_the_changes_is_behind() {
+        for fw in [
+            "config/eyelash_sofle.keymap",
+            "build.yaml",
+            "zmk-rgb-layer/src/rgb_layer.c",
+            ".github/workflows/build.yml",
+        ] {
+            let mut files = LIVE_35.to_vec();
+            files.push(fw);
+            let mut http = FakeHttp::released();
+            http.compare_files("0858966", "ahead", 9, 0, &files);
+            let c = check(&mut http, DEFAULT_REPO, running("0858966")).unwrap();
+            assert_eq!(c.status, Status::Behind, "{fw}");
+            assert_eq!(c.status.exit_code(), 1, "{fw}");
+            assert_eq!(
+                (c.files_changed, c.firmware_files_changed),
+                (Some(36), Some(1)),
+                "{fw}"
+            );
+            assert_eq!(c.note, None, "{fw}");
+            assert_eq!(c.running.release, None, "{fw}");
+        }
+    }
+
+    #[test]
+    fn a_rename_out_of_config_is_a_firmware_change() {
+        let mut http = FakeHttp::released();
+        http.reply(
+            &format!("/repos/rdlu/sofleii/compare/0858966...{RELEASE_SHA}?per_page=1"),
+            200,
+            r#"{"status":"ahead","ahead_by":1,"behind_by":0,"files":[
+                {"filename":"old/eyelash_sofle.conf","previous_filename":"config/eyelash_sofle.conf"}]}"#,
+        );
+        let c = check(&mut http, DEFAULT_REPO, running("0858966")).unwrap();
+        assert_eq!(c.status, Status::Behind);
+        assert_eq!(c.firmware_files_changed, Some(1));
+    }
+
+    #[test]
+    fn a_truncated_or_missing_file_list_goes_by_the_commits() {
+        let many: Vec<String> = (0..COMPARE_FILE_CAP)
+            .map(|i| format!("docs/{i}.md"))
+            .collect();
+        let many: Vec<&str> = many.iter().map(String::as_str).collect();
+        let mut http = FakeHttp::released();
+        http.compare_files("0858966", "ahead", 8, 0, &many);
+        let c = check(&mut http, DEFAULT_REPO, running("0858966")).unwrap();
+        assert_eq!(c.status, Status::Behind);
+        assert_eq!(c.status.exit_code(), 1);
+        assert_eq!((c.files_changed, c.firmware_files_changed), (None, None));
+        let note = c.note.unwrap();
+        assert!(
+            note.starts_with("can't tell whether a firmware input changed"),
+            "{note}"
+        );
+        assert!(note.contains("at most 300 files"), "{note}");
+
+        // No `files` key at all.
+        let mut http = FakeHttp::released();
+        http.reply(
+            &format!("/repos/rdlu/sofleii/compare/0858966...{RELEASE_SHA}?per_page=1"),
+            200,
+            r#"{"status":"ahead","ahead_by":8,"behind_by":0}"#,
+        );
+        let c = check(&mut http, DEFAULT_REPO, running("0858966")).unwrap();
+        assert_eq!(c.status, Status::Behind);
+        assert_eq!(c.files_changed, None);
+        assert!(c.note.unwrap().contains("listed no files"));
+    }
+
+    #[test]
+    fn diverged_without_a_firmware_change_is_up_to_date() {
+        let mut http = FakeHttp::released();
+        http.compare_files("1a2b3c4", "diverged", 4, 2, &["README.md", "site/x.md"]);
+        let c = check(&mut http, DEFAULT_REPO, running("1a2b3c4")).unwrap();
+        assert_eq!(c.status, Status::UpToDate);
+        assert_eq!(c.status.exit_code(), 0);
+        assert_eq!((c.commits_behind, c.commits_ahead), (Some(4), Some(2)));
+        // Both sides list the same two paths: counted once.
+        assert_eq!(
+            (c.files_changed, c.firmware_files_changed),
+            (Some(2), Some(0))
+        );
+        assert_eq!(c.running.release, equiv("v3.1.0"));
+        assert!(
+            c.note
+                .unwrap()
+                .contains("only outside the firmware inputs (2 files)")
+        );
+        // Both directions asked, no scan.
+        assert_eq!(extra(&http).len(), 2, "{:?}", http.requested);
+    }
+
+    #[test]
+    fn diverged_with_a_firmware_change_on_the_build_side_is_behind() {
+        // The release's side is docs only; the branch build changed the keymap.
+        let mut http = FakeHttp::released();
+        http.reply(
+            &format!("/repos/rdlu/sofleii/compare/1a2b3c4...{RELEASE_SHA}?per_page=1"),
+            200,
+            r#"{"status":"diverged","ahead_by":4,"behind_by":1,"files":[{"filename":"README.md"}]}"#,
+        );
+        http.reply(
+            &format!("/repos/rdlu/sofleii/compare/{RELEASE_SHA}...1a2b3c4?per_page=1"),
+            200,
+            r#"{"status":"diverged","ahead_by":1,"behind_by":4,"files":[{"filename":"config/eyelash_sofle.keymap"}]}"#,
+        );
+        let c = check(&mut http, DEFAULT_REPO, running("1a2b3c4")).unwrap();
+        assert_eq!(c.status, Status::Behind);
+        assert_eq!(
+            (c.files_changed, c.firmware_files_changed),
+            (Some(2), Some(1))
+        );
+        assert_eq!(
+            c.note.as_deref(),
+            Some("also has 1 commit not in v3.1.0 (unreleased changes)")
+        );
+    }
+
+    #[test]
+    fn diverged_reverse_compare_failure_goes_by_the_commits() {
+        let mut http = FakeHttp::released();
+        http.reply(
+            &format!("/repos/rdlu/sofleii/compare/1a2b3c4...{RELEASE_SHA}?per_page=1"),
+            200,
+            r#"{"status":"diverged","ahead_by":4,"behind_by":1,"files":[]}"#,
+        );
+        let c = check(&mut http, DEFAULT_REPO, running("1a2b3c4")).unwrap();
+        assert_eq!(c.status, Status::Behind);
+        assert_eq!(c.files_changed, None);
+        let note = c.note.unwrap();
+        assert!(note.contains("reverse compare: HTTP 404"), "{note}");
+        assert!(
+            note.ends_with("also has 1 commit not in v3.1.0 (unreleased changes)"),
+            "{note}"
+        );
+    }
+
+    #[test]
+    fn ahead_with_docs_only_commits_is_the_release() {
+        let mut http = FakeHttp::released();
+        http.compare_files("abc1234", "behind", 0, 3, &["sofleii/README.md"]);
+        let c = check(&mut http, DEFAULT_REPO, running("abc1234")).unwrap();
+        assert_eq!(c.status, Status::UpToDate);
+        assert_eq!(c.running.release, equiv("v3.1.0"));
+        assert_eq!((c.commits_behind, c.commits_ahead), (Some(0), Some(3)));
+    }
+
+    #[test]
+    fn scan_maps_an_older_equivalent_build_and_skips_behind() {
+        let mut http = FakeHttp::with_releases(&[
+            ("v3.1.0", false, false),
+            ("v3.0.0", false, false),
+            ("v2.8.0", false, false),
+        ]);
+        http.compare("1a2b3c4", "ahead", 30, 0);
+        // Older than v3.0.0: GitHub's list there is always empty, which
+        // used to read as "same tree".
+        http.reply(
+            "/repos/rdlu/sofleii/compare/v3.0.0...1a2b3c4?per_page=1",
+            200,
+            r#"{"status":"behind","ahead_by":0,"behind_by":5,"files":[]}"#,
+        );
+        http.reply(
+            "/repos/rdlu/sofleii/compare/v2.8.0...1a2b3c4?per_page=1",
+            200,
+            r#"{"status":"ahead","ahead_by":3,"behind_by":0,"files":[{"filename":"site/a.md"}]}"#,
+        );
+        let c = check(&mut http, DEFAULT_REPO, running("1a2b3c4")).unwrap();
+        assert_eq!(c.status, Status::Behind);
+        assert_eq!(c.running.release, equiv("v2.8.0"));
+        assert!(
+            crate::output::update_headline(&c)
+                .starts_with("v3.1.0 available, running v2.8.0 (built from 1a2b3c4)"),
+        );
+
+        // A firmware change after the tag: `tag+N`.
+        let mut http =
+            FakeHttp::with_releases(&[("v3.1.0", false, false), ("v3.0.0", false, false)]);
+        http.compare("1a2b3c4", "ahead", 30, 0);
+        http.reply(
+            "/repos/rdlu/sofleii/compare/v3.0.0...1a2b3c4?per_page=1",
+            200,
+            r#"{"status":"ahead","ahead_by":3,"behind_by":0,"files":[{"filename":"config/x.conf"}]}"#,
+        );
+        let c = check(&mut http, DEFAULT_REPO, running("1a2b3c4")).unwrap();
+        assert_eq!(c.running.release, rel("v3.0.0", false, 3));
+    }
+
+    #[test]
+    fn json_of_an_equivalent_build() {
+        let mut http = FakeHttp::released();
+        http.compare_files("0858966", "ahead", 8, 0, LIVE_35);
+        let c = check(&mut http, DEFAULT_REPO, running("0858966")).unwrap();
+        assert_eq!(
+            serde_json::to_value(&c).unwrap(),
+            serde_json::json!({
+                "running": {"version": "0858966", "commit": "0858966", "dirty": false,
+                            "release": {"tag": "v3.1.0", "exact": true, "commits_after": 0,
+                                        "equivalent": true}},
+                "latest": {"tag": "v3.1.0", "commit": RELEASE_SHA,
+                           "published_at": "2026-10-19T19:20:31Z"},
+                "status": "up_to_date",
+                "commits_behind": 8,
+                "commits_ahead": 0,
+                "files_changed": 35,
+                "firmware_files_changed": 0,
+                "note": "built from 0858966; differs from v3.1.0 only outside the firmware inputs (35 files)"
+            })
+        );
+        // A Check cached by 0.1.0 (no new fields) still reads.
+        let old = r#"{"running":{"version":"x","commit":null,"dirty":false,
+            "release":{"tag":"v3.1.0","exact":true,"commits_after":0}},
+            "latest":{"tag":"v3.1.0","commit":"c","published_at":null},
+            "status":"up_to_date","commits_behind":0,"commits_ahead":0,"note":null}"#;
+        let c: Check = serde_json::from_str(old).unwrap();
+        assert_eq!(c.files_changed, None);
+        assert!(!c.running.release.unwrap().equivalent);
     }
 }

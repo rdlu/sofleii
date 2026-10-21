@@ -438,7 +438,9 @@ pub fn info(style: Style, transport: &TransportInfo, i: &Info) -> String {
 }
 
 /// The running build as a version: `v3.1.0 (f9a665f)`, `v3.0.0+68
-/// (f9a665f)`, or just the commit (or raw version) with no release.
+/// (f9a665f)`, `v3.2.0 (built from 0858966)` for a build that differs from
+/// the release only outside the firmware inputs, or just the commit (or
+/// raw version) with no release.
 fn running_version(r: &update::Running) -> String {
     let id = match (&r.commit, &r.version) {
         (Some(c), _) => short(c).to_string(),
@@ -447,6 +449,7 @@ fn running_version(r: &update::Running) -> String {
         (None, None) => "-".into(),
     };
     match &r.release {
+        Some(rel) if rel.equivalent => format!("{} (built from {id})", rel.label()),
         Some(rel) => format!("{} ({id})", rel.label()),
         None => id,
     }
@@ -482,6 +485,8 @@ struct UpdateJson<'a> {
     status: Option<update::Status>,
     commits_behind: Option<u32>,
     commits_ahead: Option<u32>,
+    files_changed: Option<u32>,
+    firmware_files_changed: Option<u32>,
     note: Option<&'a str>,
     cli: Option<&'a update::CliCheck>,
     /// When GitHub was asked (by whoever filled the cache, when cached).
@@ -535,6 +540,8 @@ pub fn update_check(
             status: fw.map(|f| f.status),
             commits_behind: fw.and_then(|f| f.commits_behind),
             commits_ahead: fw.and_then(|f| f.commits_ahead),
+            files_changed: fw.and_then(|f| f.files_changed),
+            firmware_files_changed: fw.and_then(|f| f.firmware_files_changed),
             note: fw.and_then(|f| f.note.as_deref()),
             cli: c.cli.as_ref(),
             checked_at_ms: c
@@ -1393,6 +1400,7 @@ mod tests {
                     tag: tag.into(),
                     exact: n == 0,
                     commits_after: n,
+                    equivalent: false,
                 }),
             },
             latest: update::Latest {
@@ -1403,6 +1411,8 @@ mod tests {
             status,
             commits_behind: known.then_some(behind),
             commits_ahead: known.then_some(ahead),
+            files_changed: known.then_some(0),
+            firmware_files_changed: known.then_some(0),
             note: None,
         }
     }
@@ -1501,13 +1511,16 @@ mod tests {
                 "schema": 1,
                 "transport": {"kind": "usb", "device": "/dev/ttyACM1"},
                 "running": {"version": "5c53b30", "commit": "5c53b30", "dirty": false,
-                            "release": {"tag": "v3.1.0", "exact": true, "commits_after": 0}},
+                            "release": {"tag": "v3.1.0", "exact": true, "commits_after": 0,
+                                        "equivalent": false}},
                 "latest": {"tag": "v3.1.0",
                            "commit": "5c53b30fce99031611442b1a3ccbbe7052327020",
                            "published_at": "2026-10-19T19:20:31Z"},
                 "status": "up_to_date",
                 "commits_behind": 0,
                 "commits_ahead": 0,
+                "files_changed": 0,
+                "firmware_files_changed": 0,
                 "note": null,
                 "cli": {"version": "0.1.0", "latest": "0.2.0", "tag": "sofleii-v0.2.0",
                         "published_at": "2026-10-20T12:00:00Z", "status": "behind",
@@ -1529,7 +1542,8 @@ mod tests {
             v,
             serde_json::json!({
                 "schema": 1, "transport": null, "running": null, "latest": null,
-                "status": null, "commits_behind": null, "commits_ahead": null, "note": null,
+                "status": null, "commits_behind": null, "commits_ahead": null,
+                "files_changed": null, "firmware_files_changed": null, "note": null,
                 "cli": {"version": "0.1.0", "latest": null, "tag": null, "published_at": null,
                         "status": "unknown", "note": update::NO_CLI_RELEASE},
                 "checked_at_ms": 1_800_000_000_000u64 - 2 * 3_600_000,
