@@ -1,0 +1,40 @@
+# Dependabot version updates: weekly, one grouped PR per ecosystem for
+# minor/patch, majors on their own PR.
+#
+# Not covered here (Dependabot has no ecosystem for them): the west projects
+# in config/west.yml (`mise run deps-check`), keymap-drawer (.mise.toml +
+# draw.yml `install_version`, bump together), hugo (site/.hugo-version) and
+# the vendored Hextra/FlexSearch under site/.
+version: 2
+updates:
+  - package-ecosystem: cargo
+    directory: /sofleii
+    schedule:
+      interval: weekly
+    assignees: [rdlu]
+    labels: [dependencies, sofleii]
+    commit-message:
+      prefix: "chore(sofleii)"
+    groups:
+      crates:
+        update-types: [minor, patch]
+
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+    assignees: [rdlu]
+    labels: [dependencies]
+    commit-message:
+      prefix: "ci"
+    groups:
+      actions:
+        update-types: [minor, patch]
+    ignore:
+      # Pinned to a ZMK-main SHA (`# track: main`) because it picks the build
+      # container, which must match Zephyr 4.1; Dependabot would move it to
+      # the newest tag (the v0.3 line).
+      - dependency-name: zmkfirmware/zmk
+      # Its SHA goes with keymap-drawer's version in .mise.toml and draw.yml's
+      # `install_version`; bumped by hand, all three together.
+      - dependency-name: caksoylar/keymap-drawer

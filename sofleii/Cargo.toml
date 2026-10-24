@@ -36,12 +36,12 @@ signal-hook = "0.4.5"
 # lookup. No gzip/json features (serde_json is already here). Costs about
 # 1.26 MB of release binary (1.69 -> 2.95 MB, measured 2026-10-19; the
 # roots are ~65 KB of that, the rest is rustls + ring).
-ureq = { version = "3.4.2", default-features = false, features = ["rustls"] }
+ureq = { version = "3.5.0", default-features = false, features = ["rustls"] }
 # BlueZ over the system D-Bus for `battery` and the BLE transport. Pure Rust
 # (no libdbus). zbus 6 has no blocking API: `bluez::call` wraps each call in
 # `zbus::block_on`, on zbus's own runtime (`default-rt`, no tokio; bluer
 # would need it).
-zbus = { version = "6.0.0", default-features = false, features = ["default-rt"] }
+zbus = { version = "6.1.0", default-features = false, features = ["default-rt"] }
 
 [build-dependencies]
 prost-build = "0.14"
