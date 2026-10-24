@@ -1,0 +1,125 @@
+# git-cliff config for both changelogs. One template; what differs per file
+# (tag pattern, paths, output, start of history) lives in
+# scripts/changelog.sh, which every caller goes through:
+#
+#   CHANGELOG.md          firmware, tags vX.Y.Z, everything but sofleii/**
+#   sofleii/CHANGELOG.md  the crate, tags sofleii-vX.Y.Z, only sofleii/**
+#
+# The script sets CHANGELOG_COMPONENT=firmware|sofleii for the template
+# (title, version header, which scopes a file keeps, footer).
+#
+# Regenerate with `mise run changelog`; `mise run changelog-check` (and CI)
+# fails when either file is stale. Release notes are `--latest` of the same.
+
+[changelog]
+header = """
+{%- set component = get_env(name="CHANGELOG_COMPONENT", default="firmware") -%}
+# Changelog{% if component == "sofleii" %}: sofleii CLI/TUI{% endif %}
+
+{% if component == "sofleii" -%}
+All notable changes to the `sofleii` crate (the CLI and TUI in this
+directory), released as `sofleii-vX.Y.Z` tags. The firmware has its own
+changelog in [`../CHANGELOG.md`](../CHANGELOG.md).
+{%- else -%}
+All notable changes to the Eyelash Sofle firmware and keymap, released as
+`vX.Y.Z` tags. The `sofleii` CLI/TUI has its own changelog in
+[`sofleii/CHANGELOG.md`](sofleii/CHANGELOG.md).
+{%- endif %}
+
+The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
+and the project uses [Semantic Versioning](https://semver.org/). Generated
+by [git-cliff](https://git-cliff.org) from the commit history: edit
+`cliff.toml`, not this file.
+"""
+
+body = """
+{%- set component = get_env(name="CHANGELOG_COMPONENT", default="firmware") -%}
+{%- set repo = "https://github.com/rdlu/sofleii" -%}
+{#- The sofleii file shows no "sofleii:" scope: every entry has it. -#}
+{%- if component == "sofleii" %}{% set own_scope = "sofleii" %}{% else %}{% set own_scope = "" %}{% endif -%}
+{#- Scopes: the firmware file drops the crate's own commits (scope sofleii);
+    the crate's file keeps its own, unscoped and deps commits and drops
+    commits scoped to another part (firmware, keymap, site...) that happen
+    to touch sofleii/ too, e.g. a proto bump that follows a firmware pin. -#}
+{%- set_global kept = [] -%}
+{%- for commit in commits -%}
+  {%- if component == "sofleii" -%}
+    {%- if not commit.scope or commit.scope == "sofleii" or commit.scope == "deps" -%}
+      {%- set_global kept = kept | concat(with=commit) -%}
+    {%- endif -%}
+  {%- elif commit.scope != "sofleii" -%}
+    {%- set_global kept = kept | concat(with=commit) -%}
+  {%- endif -%}
+{%- endfor -%}
+{%- if kept | length > 0 or not version %}
+{% if version -%}
+  {%- if component == "sofleii" -%}
+    {%- set number = version | trim_start_matches(pat="sofleii-v") -%}
+    {%- set title = "sofleii v" ~ number -%}
+  {%- else -%}
+    {%- set title = version -%}
+  {%- endif -%}
+  {%- if previous and previous.version -%}
+## [{{ title }}]({{ repo }}/compare/{{ previous.version }}...{{ version }}) - {{ timestamp | date(format="%Y-%m-%d", timezone="America/Sao_Paulo") }}
+  {%- else -%}
+## [{{ title }}]({{ repo }}/releases/tag/{{ version }}) - {{ timestamp | date(format="%Y-%m-%d", timezone="America/Sao_Paulo") }}
+  {%- endif %}
+{% else -%}
+## [Unreleased]
+{% endif -%}
+{%- if kept | length == 0 %}
+Nothing yet.
+{% endif -%}
+{%- for group, group_commits in kept | group_by(attribute="group") %}
+### {{ group | striptags | trim }}
+{% for commit in group_commits %}
+- {% if commit.scope and commit.scope != "deps" and commit.scope != own_scope %}**{{ commit.scope }}:** {% endif %}{% if commit.breaking %}**BREAKING** {% endif %}{{ commit.message }} ([{{ commit.id | truncate(length=7, end="") }}]({{ repo }}/commit/{{ commit.id }}))
+{%- endfor %}
+{% endfor -%}
+{%- endif -%}
+"""
+
+footer = """
+{%- set component = get_env(name="CHANGELOG_COMPONENT", default="firmware") -%}
+{%- if component != "sofleii" %}
+## Earlier releases
+
+Releases before v3.0.0 (v1.0.0 to v2.8.0: the ZMK v0.3 / Zephyr 3.5 base,
+gaming mode, ZMK Studio, the zmk-rgb-layer module, the No Man's Sky layer)
+predate this changelog. Their notes are on the
+[GitHub releases page](https://github.com/rdlu/sofleii/releases).
+{% endif -%}
+"""
+
+trim = true
+render_always = true
+
+[git]
+conventional_commits = true
+filter_unconventional = true
+split_commits = false
+# PR and issue references: #NN -> a link (GitHub redirects /pull/NN to the
+# issue when NN is one).
+commit_preprocessors = [
+  { pattern = '#([0-9]+)', replace = "[#${1}](https://github.com/rdlu/sofleii/pull/${1})" },
+]
+# First match wins. The HTML comments order the sections; the template strips
+# them. Anything that matches no parser (refactor, revert...) is dropped.
+commit_parsers = [
+  { message = '^\[Draw\]', skip = true },
+  { message = '^Merge ', skip = true },
+  { message = '^feat', group = "<!-- 0 -->Features" },
+  { message = '^fix', group = "<!-- 1 -->Fixes" },
+  { message = '^perf', group = "<!-- 2 -->Performance" },
+  { message = '^docs', group = "<!-- 3 -->Docs" },
+  { message = '^ci', group = "<!-- 4 -->CI" },
+  { message = '^build', group = "<!-- 5 -->Build" },
+  { message = '^chore\(deps\)', group = "<!-- 6 -->Dependencies" },
+  { message = '^chore', skip = true },
+  { message = '^test', skip = true },
+  { message = '^style', skip = true },
+]
+filter_commits = true
+protect_breaking_commits = false
+topo_order = false
+sort_commits = "oldest"
