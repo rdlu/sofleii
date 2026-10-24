@@ -9,6 +9,7 @@ on:
       - "config/**"
       - "build.yaml"
       - "zmk-rgb-layer/**"
+      - "zmk-sofleii-id/**"
       - ".github/workflows/build.yml"
 
 env:

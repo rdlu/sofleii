@@ -14,7 +14,7 @@ use crate::commands::{
     status::{BatteryLevel, Split, Status, effective_output},
     update::{self, short},
 };
-use crate::commands::{keymap as keymap_cmd, output as output_cmd, profile};
+use crate::commands::{flash as flash_cmd, keymap as keymap_cmd, output as output_cmd, profile};
 use crate::error::{Error, ErrorView};
 use crate::keymap::render::LEGEND_WIDTH;
 use crate::transport::{TransportInfo, TransportKind};
@@ -255,6 +255,64 @@ pub fn battery(style: Style, r: &Reading, t: Thresholds) -> String {
             line("left", r.left.percent) + &line("right", r.right.percent)
         }
     }
+}
+
+/// `flash identify`: whose chip the mounted bootloader drive is. No
+/// `transport` in the JSON: nothing talks to the keyboard.
+pub fn flash_identify(style: Style, r: &flash_cmd::Identified) -> String {
+    use crate::flash::Firmware;
+    if style.format == Format::Json {
+        #[derive(Serialize)]
+        struct Env<'a> {
+            schema: u32,
+            #[serde(flatten)]
+            r: &'a flash_cmd::Identified,
+        }
+        return serde_json::to_string_pretty(&Env { schema: SCHEMA, r })
+            .expect("serialising plain data cannot fail");
+    }
+    let label = |s: &str| style.dim(&format!("{s:<11}"));
+    let b = &r.bootloader;
+    let bootloader = match (&b.version, &b.model) {
+        (Some(v), Some(m)) => format!("{m}, {v}"),
+        (v, m) => or_dash(m.as_deref().or(v.as_deref())).to_string(),
+    };
+    let firmware = match r.identity.firmware {
+        Firmware::Sofleii => "sofleii (identity record)",
+        Firmware::Legacy => "legacy (no identity record; told by its strings)",
+        Firmware::SettingsReset => "settings_reset",
+        Firmware::Unknown => "unknown",
+    };
+    let mut out = String::new();
+    for (k, v) in [
+        ("drive", r.mount.display().to_string()),
+        ("bootloader", bootloader),
+        ("firmware", firmware.to_string()),
+        (
+            "keyboard",
+            or_dash(r.identity.keyboard.as_deref()).to_string(),
+        ),
+        (
+            "half",
+            or_dash(r.identity.half.map(|h| h.as_str())).to_string(),
+        ),
+    ] {
+        out.push_str(&format!("{} {v}\n", label(k)));
+    }
+    let verdict = match r.verdict {
+        flash_cmd::Verdict::Match => style.green("match"),
+        flash_cmd::Verdict::Mismatch => style.paint("31", "MISMATCH: do not flash"),
+        flash_cmd::Verdict::Unknown => style.paint("33", "unknown: not safe to flash"),
+    };
+    let against = r.expected.map_or_else(
+        || "this keyboard".to_string(),
+        |h| format!("{} half", h.as_str()),
+    );
+    out.push_str(&format!("{} {against}: {verdict}\n", label("expected")));
+    for n in &r.identity.notes {
+        out.push_str(&format!("{} {n}\n", label("note")));
+    }
+    out
 }
 
 /// Why output priority usb over a BLE link means no USB: only the central

@@ -1,0 +1,4 @@
+name: zmk-sofleii-id
+build:
+  cmake: .
+  kconfig: Kconfig

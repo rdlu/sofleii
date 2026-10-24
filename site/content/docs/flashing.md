@@ -1,7 +1,7 @@
 ---
 title: Flashing
 description: Flash the Eyelash Sofle with mise run flash-release, by dragging .uf2 files onto the NICENANO drive, or with settings_reset.uf2 to clear the Studio overlay and Bluetooth bonds.
-keywords: [flash, uf2, NICENANO, double-tap reset, settings_reset, flash-release, bootloader]
+keywords: [flash, uf2, NICENANO, double-tap reset, settings_reset, flash-release, bootloader, CURRENT.UF2, flash identify, wrong half]
 weight: 3
 ---
 
@@ -38,7 +38,8 @@ mise run flash-release
 ```
 
 It prompts you to double-tap reset on the **left** half, waits up to 60
-seconds for `NICENANO` to mount, copies and syncs, waits for the drive to go
+seconds for `NICENANO` to mount, [checks that it is the left
+half](#which-half-is-this), copies and syncs, waits for the drive to go
 away, then does the same for the **right** half. It needs
 [mise](https://mise.jdx.dev/) and an authenticated [`gh`](https://cli.github.com/).
 
@@ -90,6 +91,38 @@ After a [local build](../building/), `mise run flash-left`, `flash-right` and
 `flash-reset` copy the matching file the same way, and `mise run build-flash`
 builds both halves, flashes them one after the other and prints the memory
 budget at the end.
+
+## Which half is this?
+
+Every nice!nano mounts as the same `NICENANO` drive, both halves included,
+and its `INFO_UF2.TXT` only describes the bootloader. So every mise flash
+task (`flash-release`, `flash-release-reset`, `flash-left`, `flash-right`,
+`flash-reset`, `build-flash`) first runs
+[`sofleii flash identify`](../sofleii/#flash-identify), which reads the
+firmware **on the chip** from the drive's `CURRENT.UF2`, and refuses to copy
+when it is the other half or not this keyboard:
+
+```text
+drive       /run/media/rdlu/NICENANO
+bootloader  nice!nano, UF2 Bootloader 0.6.0 lib/nrfx (v2.0.0) …
+firmware    sofleii (identity record)
+keyboard    eyelash_sofle
+half        right
+expected    left half: MISMATCH: do not flash
+```
+
+- Firmware built since [#98](https://github.com/rdlu/sofleii/issues/98)
+  carries an **identity record** naming the keyboard and the half.
+- Older builds (v3.2.0 and before) are recognised by their strings, as
+  `legacy`.
+- After a **settings reset** the half is still recognised: the reset firmware
+  is small, and the end of the firmware it replaced is still in flash.
+- An erased chip, another keyboard or contradictory leftovers come out
+  **unknown**, and nothing is flashed. If you are sure, `FORCE=1 mise run
+  flash-left` (or any of the tasks) skips the check.
+
+The check builds sofleii from this repo, so it needs Rust; dragging the file
+by hand checks nothing.
 
 If the `NICENANO` drive never appears, or the half doesn't boot after the
 copy, see [Troubleshooting](../reference/troubleshooting/#flashing).

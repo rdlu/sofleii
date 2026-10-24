@@ -211,6 +211,7 @@ Every subcommand prints text by default and the [JSON contract](#json) with
 | `sofleii profile rename <n> <name>` | **Write.** Name a bonded profile (at most 31 bytes; `""` clears it) |
 | `sofleii profile unpair <n>` | **Write, destructive.** Remove the profile's bond; asks first unless `--yes` |
 | `sofleii output usb\|ble` | **Write.** Set the output priority |
+| `sofleii flash identify [--expect left\|right]` | Which keyboard and half the mounted `NICENANO` bootloader drive is, before you flash it |
 
 Profile numbers are **0-based**, as `sofleii profiles` lists them and as
 `&bt BT_SEL n` counts.
@@ -260,7 +261,7 @@ shows plain versions (`v3.2.0`); the JSON has the full tags. Since 0.2.0
 only these tag names count (they were `vX.Y.Z` and `sofleii-vX.Y.Z` until
 2026-10-24), so an older sofleii finds no releases: update it. Only the **firmware
 inputs** count, the same paths that trigger a firmware build (`config/`,
-`build.yaml`, `zmk-rgb-layer/` and the build workflow): a build from
+`build.yaml`, `zmk-rgb-layer/`, `zmk-sofleii-id/` and the build workflow): a build from
 another commit that differs from the release only elsewhere (a PR branch
 before its merge, docs-only commits) is up to date, shown as `v3.2.0
 (built from 0858966)`. When GitHub's file list can't settle it (it stops at
@@ -330,6 +331,34 @@ drift: 1 key(s) differ on 1 layer(s), 1 layer change(s)
 Custom behaviours get their labels (`hml`, `M_PIPE`) from that file; without
 it, `show` uses the names the firmware reports (`PIPE_OP`, the macro's
 `label`). What the parser can't evaluate is a note on stderr, not a failure.
+
+### Flash identify
+
+`flash identify` looks at a half in bootloader mode (double-tap reset) and
+says whose chip it is, from the firmware still on it: it reads the drive's
+`CURRENT.UF2`, which the bootloader generates from the chip's flash. It
+needs no keyboard connection and writes nothing. The mise flash tasks run it
+before every copy; see [Flashing](../flashing/#which-half-is-this) for what
+it recognises.
+
+```console
+$ sofleii flash identify --expect left
+drive       /run/media/rdlu/NICENANO
+bootloader  nice!nano, UF2 Bootloader 0.6.0 lib/nrfx (v2.0.0) …
+firmware    settings_reset
+keyboard    eyelash_sofle
+half        left
+expected    left half: match
+note        the chip holds settings_reset; keyboard and half come from the remains of the firmware it replaced
+```
+
+The drive is found by its `INFO_UF2.TXT` among the mounted filesystems, not
+by its label; `--mount <dir>` picks one when several are mounted. It exits 0
+when the drive is this keyboard (and the `--expect` half), 1 when it's
+another keyboard, the other half or can't be told: don't flash on 1.
+`firmware` is `sofleii` (identity record), `legacy` (an older build, by its
+strings), `settings_reset` or `unknown`; `verdict` in the JSON is `match`,
+`mismatch` or `unknown`.
 
 ### Global options
 
@@ -402,9 +431,9 @@ field by field in the [crate README](https://github.com/rdlu/sofleii/blob/main/s
 | Code | Meaning |
 |---|---|
 | 0 | OK |
-| 1 | Attention needed: `update check` with the firmware or sofleii behind (or a firmware build it can't place), `battery --warn-below` with a half below it, `keymap diff` with drift |
-| 2 | Keyboard not found or not connected |
-| 3 | Usage error: a bad or contradicting flag, a profile out of range, a name too long, `unpair` not confirmed, no layer by that name, a missing or unparseable `.keymap` |
+| 1 | Attention needed: `update check` with the firmware or sofleii behind (or a firmware build it can't place), `battery --warn-below` with a half below it, `keymap diff` with drift, `flash identify` without a match |
+| 2 | Keyboard not found or not connected; for `flash identify`, no bootloader drive mounted |
+| 3 | Usage error: a bad or contradicting flag, a profile out of range, a name too long, `unpair` not confirmed, no layer by that name, a missing or unparseable `.keymap`, several bootloader drives without `--mount` |
 | 4 | Transport or protocol error: timeout, a busy port, an RPC error, a BlueZ or GitHub failure |
 
 So checks need no parsing:
