@@ -97,9 +97,13 @@ impl Sys {
 /// Writes `bytes` as `name` on the drive at `mount`, 64 KiB at a time,
 /// calling `progress` with the bytes written so far, then fsyncs.
 ///
-/// The bootloader resets as soon as it has the last block, and the drive
-/// can vanish while the write is still being flushed: an error after every
-/// byte was handed over, with the drive gone, is success.
+/// The bootloader resets as soon as it has the last block, so the flush
+/// after the last byte routinely fails with EIO: the device is gone while
+/// its mount point (and the cached `INFO_UF2.TXT`) lingers a moment longer,
+/// so the drive can't be asked. Once every byte is handed over, a failing
+/// flush is success here; the caller confirms by waiting for the drive to
+/// go away (seen live 2026-10-24: EIO on the left half, which had taken
+/// the whole image).
 pub fn write_uf2(
     mount: &Path,
     name: &str,
@@ -115,11 +119,8 @@ pub fn write_uf2(
         done += chunk.len();
         progress(done);
     }
-    match f.flush().and_then(|()| f.sync_all()) {
-        Ok(()) => Ok(()),
-        Err(_) if !mount.join(INFO_FILE).exists() => Ok(()),
-        Err(e) => Err(Error::io(ctx(), e)),
-    }
+    let _ = f.flush().and_then(|()| f.sync_all());
+    Ok(())
 }
 
 #[cfg(test)]
