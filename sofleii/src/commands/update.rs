@@ -127,6 +127,7 @@ pub const FIRMWARE_INPUTS: &[&str] = &[
     "config/",
     "build.yaml",
     "zmk-rgb-layer/",
+    "zmk-sofleii-id/",
     ".github/workflows/build.yml",
 ];
 

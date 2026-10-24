@@ -405,7 +405,7 @@ description = "Build left half firmware (ZMK Studio enabled)"
 run = """
 west build -s zmk/app -b nice_nano//zmk --pristine -- \
   -DZMK_CONFIG="$(pwd)/config" \
-  -DZMK_EXTRA_MODULES="$(pwd)/zmk-rgb-layer" \
+  -DZMK_EXTRA_MODULES="$(pwd)/zmk-rgb-layer;$(pwd)/zmk-sofleii-id" \
   -DSHIELD="eyelash_sofle_left nice_view" \
   -DCONFIG_ZMK_STUDIO=y \
   -DCONFIG_ZMK_STUDIO_LOCKING=n \
@@ -418,7 +418,7 @@ description = "Build right half firmware"
 run = """
 west build -s zmk/app -b nice_nano//zmk --pristine -- \
   -DZMK_CONFIG="$(pwd)/config" \
-  -DZMK_EXTRA_MODULES="$(pwd)/zmk-rgb-layer" \
+  -DZMK_EXTRA_MODULES="$(pwd)/zmk-rgb-layer;$(pwd)/zmk-sofleii-id" \
   -DSHIELD="eyelash_sofle_right nice_view"
 cp build/zephyr/zmk.uf2 eyelash_sofle_right.uf2
 """
@@ -433,51 +433,28 @@ cp build/zephyr/zmk.uf2 settings_reset.uf2
 """
 
 [tasks.flash-left]
-description = "Flash locally-built left half — waits up to 60s for NICENANO mount"
+description = "Flash locally-built left half — waits up to 60s for NICENANO, checks it is the left half first (FORCE=1 skips)"
 run = """
 set -euo pipefail
-MOUNT="/run/media/$USER/NICENANO"
-UF2="eyelash_sofle_left.uf2"
-[ -f "$UF2" ] || { echo "ERROR: $UF2 not found — run 'mise run build-left' first"; exit 1; }
-echo ">> Double-tap RESET on the LEFT half now"
-for _ in $(seq 1 60); do [ -d "$MOUNT" ] && break; sleep 1; done
-[ -d "$MOUNT" ] || { echo "ERROR: NICENANO not detected within 60s"; exit 1; }
-sleep 1
-cp "$UF2" "$MOUNT/"
-sync
-echo "✅ Left half flashed."
+[ -f eyelash_sofle_left.uf2 ] || { echo "ERROR: eyelash_sofle_left.uf2 not found — run 'mise run build-left' first"; exit 1; }
+scripts/flash-uf2.sh eyelash_sofle_left.uf2 left
 """
 
 [tasks.flash-right]
-description = "Flash locally-built right half — waits up to 60s for NICENANO mount"
+description = "Flash locally-built right half — waits up to 60s for NICENANO, checks it is the right half first (FORCE=1 skips)"
 run = """
 set -euo pipefail
-MOUNT="/run/media/$USER/NICENANO"
-UF2="eyelash_sofle_right.uf2"
-[ -f "$UF2" ] || { echo "ERROR: $UF2 not found — run 'mise run build-right' first"; exit 1; }
-echo ">> Double-tap RESET on the RIGHT half now"
-for _ in $(seq 1 60); do [ -d "$MOUNT" ] && break; sleep 1; done
-[ -d "$MOUNT" ] || { echo "ERROR: NICENANO not detected within 60s"; exit 1; }
-sleep 1
-cp "$UF2" "$MOUNT/"
-sync
-echo "✅ Right half flashed."
+[ -f eyelash_sofle_right.uf2 ] || { echo "ERROR: eyelash_sofle_right.uf2 not found — run 'mise run build-right' first"; exit 1; }
+scripts/flash-uf2.sh eyelash_sofle_right.uf2 right
 """
 
 [tasks.flash-reset]
-description = "Flash locally-built settings_reset — waits up to 60s for NICENANO mount"
+description = "Flash locally-built settings_reset — waits up to 60s for NICENANO, checks it is this keyboard first (FORCE=1 skips)"
 run = """
 set -euo pipefail
-MOUNT="/run/media/$USER/NICENANO"
-UF2="settings_reset.uf2"
-[ -f "$UF2" ] || { echo "ERROR: $UF2 not found — run 'mise run build-reset' first"; exit 1; }
-echo ">> Double-tap RESET on the half to clear now"
-for _ in $(seq 1 60); do [ -d "$MOUNT" ] && break; sleep 1; done
-[ -d "$MOUNT" ] || { echo "ERROR: NICENANO not detected within 60s"; exit 1; }
-sleep 1
-cp "$UF2" "$MOUNT/"
-sync
-echo "✅ settings_reset flashed. Now flash the normal firmware on top."
+[ -f settings_reset.uf2 ] || { echo "ERROR: settings_reset.uf2 not found — run 'mise run build-reset' first"; exit 1; }
+scripts/flash-uf2.sh settings_reset.uf2 any "the half to clear"
+echo "Now flash the normal firmware on top (the half is still recognised after the reset)."
 """
 
 [tasks.build-flash]
@@ -502,23 +479,6 @@ mise run build-right 2>&1 | tee "$RIGHT_LOG"
 [ -f "$LEFT_UF2" ]  || { echo "ERROR: $LEFT_UF2 missing after build";  exit 1; }
 [ -f "$RIGHT_UF2" ] || { echo "ERROR: $RIGHT_UF2 missing after build"; exit 1; }
 
-wait_for_mount() {
-  local label="$1"
-  echo ""
-  echo "==============================================="
-  echo ">> Double-tap RESET on the $label half now"
-  echo "==============================================="
-  for _ in $(seq 1 60); do
-    if [ -d "$MOUNT" ]; then
-      sleep 1  # give udisks a moment to finish mounting
-      return 0
-    fi
-    sleep 1
-  done
-  echo "ERROR: NICENANO not detected within 60s"
-  return 1
-}
-
 wait_for_unmount() {
   for _ in $(seq 1 30); do
     [ ! -d "$MOUNT" ] && return 0
@@ -526,18 +486,11 @@ wait_for_unmount() {
   done
 }
 
-wait_for_mount "LEFT"
-echo ">> Flashing left..."
-cp "$LEFT_UF2" "$MOUNT/"
-sync
-echo ">> Left flashed. Waiting for device to reset..."
+# Each step checks the drive is the half it names before copying (#98).
+scripts/flash-uf2.sh "$LEFT_UF2" left
+echo ">> Waiting for the left half to reset..."
 wait_for_unmount
-
-wait_for_mount "RIGHT"
-echo ">> Flashing right..."
-cp "$RIGHT_UF2" "$MOUNT/"
-sync
-echo ">> Right flashed."
+scripts/flash-uf2.sh "$RIGHT_UF2" right
 
 # Print memory budget summary captured from the build logs
 print_budget() {
@@ -577,7 +530,7 @@ echo "SVG written to keymap-drawer/eyelash_sofle.svg"
 """
 
 [tasks.flash-release]
-description = "Download latest main firmware from GH Actions and flash BOTH halves interactively"
+description = "Download latest main firmware from GH Actions and flash BOTH halves interactively, checking each half first (FORCE=1 skips)"
 run = """
 set -euo pipefail
 
@@ -613,23 +566,6 @@ done
 mv "$GH_LEFT" "$LEFT_UF2"
 mv "$GH_RIGHT" "$RIGHT_UF2"
 
-wait_for_mount() {
-  local label="$1"
-  echo ""
-  echo "==============================================="
-  echo ">> Double-tap RESET on the $label half now"
-  echo "==============================================="
-  for _ in $(seq 1 60); do
-    if [ -d "$MOUNT" ]; then
-      sleep 1  # give udisks a moment to finish mounting
-      return 0
-    fi
-    sleep 1
-  done
-  echo "ERROR: NICENANO not detected within 60s"
-  return 1
-}
-
 wait_for_unmount() {
   for _ in $(seq 1 30); do
     [ ! -d "$MOUNT" ] && return 0
@@ -637,32 +573,22 @@ wait_for_unmount() {
   done
 }
 
-# LEFT
-wait_for_mount "LEFT"
-echo ">> Flashing left..."
-cp "$LEFT_UF2" "$MOUNT/"
-sync
-echo ">> Left flashed. Waiting for device to reset..."
+# Each step checks the drive is the half it names before copying (#98).
+scripts/flash-uf2.sh "$LEFT_UF2" left
+echo ">> Waiting for the left half to reset..."
 wait_for_unmount
-
-# RIGHT
-wait_for_mount "RIGHT"
-echo ">> Flashing right..."
-cp "$RIGHT_UF2" "$MOUNT/"
-sync
-echo ">> Right flashed."
+scripts/flash-uf2.sh "$RIGHT_UF2" right
 
 echo ""
 echo "✅ Both halves flashed. They will auto-reset and re-pair over BT."
 """
 
 [tasks.flash-release-reset]
-description = "Download latest main firmware and flash settings_reset on whichever half is mounted"
+description = "Download latest main firmware and flash settings_reset on whichever half is mounted (checks it is this keyboard; FORCE=1 skips)"
 run = """
 set -euo pipefail
 
 REPO="rdlu/sofleii"
-MOUNT="/run/media/$USER/NICENANO"
 WORK=$(mktemp -d)
 trap 'rm -rf "$WORK"' EXIT
 
@@ -675,20 +601,8 @@ gh run download "$RUN_ID" --repo "$REPO" --dir "$WORK" >/dev/null
 RESET_UF2="$WORK/firmware/settings_reset.uf2"
 [ -f "$RESET_UF2" ] || { echo "ERROR: $RESET_UF2 missing"; exit 1; }
 
-echo ""
-echo "==============================================="
-echo ">> Double-tap RESET on the half to clear now"
-echo "==============================================="
-for _ in $(seq 1 60); do
-  [ -d "$MOUNT" ] && break
-  sleep 1
-done
-[ -d "$MOUNT" ] || { echo "ERROR: NICENANO not detected"; exit 1; }
-sleep 1
-
-cp "$RESET_UF2" "$MOUNT/"
-sync
-echo "✅ settings_reset flashed. Now flash the normal firmware on top."
+scripts/flash-uf2.sh "$RESET_UF2" any "the half to clear"
+echo "Now flash the normal firmware on top (the half is still recognised after the reset)."
 """
 
 [tasks.docs]

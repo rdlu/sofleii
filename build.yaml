@@ -8,6 +8,10 @@
 # (which would auto-set ZMK_EXTRA_MODULES) because the local west workspace keeps
 # the Zephyr RTOS at ./zephyr — a root marker would collide with it.
 #
+# zmk-sofleii-id (the identity record sofleii checks before flashing, #98)
+# rides along the same way: ZMK_EXTRA_MODULES is a CMake list, quoted so bash
+# does not split the run line at the ';'.
+#
 # The left half also loads config/ci-git-safe-directory.cmake: the build runs as
 # root in ZMK's container on a runner-owned checkout, so git would refuse the repo
 # ("dubious ownership") and zmk-feature-device-info (#46) would embed an empty
@@ -16,11 +20,11 @@ include:
   - board: nice_nano//zmk
     shield: eyelash_sofle_left nice_view
     snippet: studio-rpc-usb-uart
-    cmake-args: -DCONFIG_ZMK_STUDIO=y -DCONFIG_ZMK_STUDIO_LOCKING=n -DZMK_EXTRA_MODULES=${GITHUB_WORKSPACE}/zmk-rgb-layer -DCMAKE_PROJECT_INCLUDE_BEFORE=${GITHUB_WORKSPACE}/config/ci-git-safe-directory.cmake
+    cmake-args: -DCONFIG_ZMK_STUDIO=y -DCONFIG_ZMK_STUDIO_LOCKING=n -DZMK_EXTRA_MODULES="${GITHUB_WORKSPACE}/zmk-rgb-layer;${GITHUB_WORKSPACE}/zmk-sofleii-id" -DCMAKE_PROJECT_INCLUDE_BEFORE=${GITHUB_WORKSPACE}/config/ci-git-safe-directory.cmake
     artifact-name: eyelash_sofle_studio_left
   - board: nice_nano//zmk
     shield: eyelash_sofle_right nice_view
-    cmake-args: -DZMK_EXTRA_MODULES=${GITHUB_WORKSPACE}/zmk-rgb-layer
+    cmake-args: -DZMK_EXTRA_MODULES="${GITHUB_WORKSPACE}/zmk-rgb-layer;${GITHUB_WORKSPACE}/zmk-sofleii-id"
     artifact-name: nice_view-eyelash_sofle_right-zmk
   - board: nice_nano//zmk
     shield: settings_reset

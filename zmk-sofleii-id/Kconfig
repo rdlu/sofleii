@@ -1,0 +1,17 @@
+config SOFLEII_ID
+    bool "sofleii identity record (keyboard + half) in the flash image"
+    help
+      Compiles a small record, found by its "SOFLEII-ID/1" magic, naming the
+      keyboard and the half. sofleii reads it from the bootloader drive's
+      CURRENT.UF2 to refuse flashing the wrong half or another nice!nano.
+      The shield sets the defaults below.
+
+if SOFLEII_ID
+
+config SOFLEII_ID_KEYBOARD
+    string "Keyboard id in the record (at most 15 bytes)"
+
+config SOFLEII_ID_HALF
+    string "Half in the record: left or right"
+
+endif # SOFLEII_ID

@@ -16,6 +16,9 @@
 //! [`commands::update::Http`] the same way for `update check`.
 //! `keymap` is the keymap model, pure (rendering bindings, the `.keymap`
 //! parser, the drift diff); `commands::keymap` feeds it the reads.
+//! `flash` is the UF2 bootloader drive's model, pure (UF2 blocks back into
+//! a flash image, whose keyboard and half that is); `commands::flash`
+//! finds the drive and reads it.
 //! `session` is the long-running core over `commands` (the link, watch and
 //! jobs threads, the `Event` stream and the `Snapshot` reducer) that the
 //! TUI and a later GUI share; like the rest of the core, it has no UI code.
@@ -25,6 +28,7 @@ pub mod client;
 pub mod commands;
 pub mod connect;
 pub mod error;
+pub mod flash;
 pub mod framing;
 pub mod gatt;
 pub mod github;

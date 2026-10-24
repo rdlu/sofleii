@@ -11,6 +11,7 @@ use sofleii::commands::battery::{DEFAULT_CRITICAL_BELOW, DEFAULT_WARN_BELOW, Thr
 use sofleii::commands::update::DEFAULT_REPO;
 use sofleii::connect::{self, Connected, Connector, STATUS_BATTERY_TIMEOUT, read_battery};
 use sofleii::error::exit;
+use sofleii::flash::Half;
 use sofleii::github::GitHub;
 use sofleii::output::{self, Format, Style};
 use sofleii::session::jobs::{Checker, UPDATE_TTL, default_cache_dir};
@@ -117,6 +118,12 @@ enum Command {
         #[command(subcommand)]
         command: UpdateCommand,
     },
+    /// The UF2 bootloader drive of a half in bootloader mode (double-tap
+    /// reset). Read-only.
+    Flash {
+        #[command(subcommand)]
+        command: FlashCommand,
+    },
     /// Switch, rename or unpair a BLE profile. <N> is 0-based, as
     /// `sofleii profiles` lists it (and as `&bt BT_SEL n` counts).
     Profile {
@@ -204,6 +211,32 @@ enum KeymapCommand {
         #[arg(long)]
         json: bool,
     },
+}
+
+#[derive(Subcommand, Debug)]
+enum FlashCommand {
+    /// Which keyboard and half the mounted bootloader drive belongs to,
+    /// read from the firmware on the chip (its CURRENT.UF2). Exit 0 when it
+    /// is this keyboard (and the --expect half), 1 when it isn't or can't
+    /// be told: don't flash on 1.
+    Identify {
+        /// The drive's mount point (default: the one mounted drive with an
+        /// INFO_UF2.TXT).
+        #[arg(long, value_name = "DIR")]
+        mount: Option<std::path::PathBuf>,
+        /// The half you mean to flash; anything else exits 1.
+        #[arg(long, value_enum)]
+        expect: Option<HalfArg>,
+        /// Print the versioned JSON contract instead of text.
+        #[arg(long)]
+        json: bool,
+    },
+}
+
+#[derive(Copy, Clone, Debug, PartialEq, Eq, ValueEnum)]
+enum HalfArg {
+    Left,
+    Right,
 }
 
 #[derive(Subcommand, Debug)]
@@ -309,6 +342,9 @@ fn main() -> ExitCode {
             command: UpdateCommand::Check { json, .. },
         }
         | Command::Output { json, .. }
+        | Command::Flash {
+            command: FlashCommand::Identify { json, .. },
+        }
         | Command::Keymap {
             command: KeymapCommand::Show { json, .. } | KeymapCommand::Diff { json, .. },
         }
@@ -497,6 +533,18 @@ fn run(cli: &Cli, command: &Command, style: Style) -> Result<(String, u8)> {
         return update_check(cli, style, repo, want_fw, want_cli, *refresh);
     }
 
+    if let Command::Flash {
+        command: FlashCommand::Identify { mount, expect, .. },
+    } = command
+    {
+        let expect = expect.map(|h| match h {
+            HalfArg::Left => Half::Left,
+            HalfArg::Right => Half::Right,
+        });
+        let r = commands::flash::identify(mount.as_deref(), expect)?;
+        return Ok((output::flash_identify(style, &r), r.exit_code()));
+    }
+
     // Usage errors that need no keyboard come before connecting; so does
     // reading the .keymap.
     let keymap_file = match command {
@@ -594,7 +642,9 @@ fn run(cli: &Cli, command: &Command, style: Style) -> Result<(String, u8)> {
             };
             output::profile_action(style, &info, &o)
         }
-        Command::Battery { .. } | Command::Update { .. } => unreachable!("handled above"),
+        Command::Battery { .. } | Command::Update { .. } | Command::Flash { .. } => {
+            unreachable!("handled above")
+        }
     };
     let n = client.notifications().len();
     if n > 0 {
