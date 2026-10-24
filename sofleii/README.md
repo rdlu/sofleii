@@ -788,8 +788,8 @@ On failure with `--json`, stdout carries an error object instead:
 ## Flash identify
 
 `sofleii flash identify [--mount DIR] [--expect left|right]` (#98) is the
-safety check in front of flashing; `scripts/flash-uf2.sh` (every mise flash
-task) runs it before copying, and the planned `sofleii flash` will too.
+read-only view of the check `sofleii flash` makes before every copy (see
+"Flash job" below for the chip serial, which outranks it there).
 
 - **Finding the drive:** every mount in `/proc/self/mounts` with an
   `INFO_UF2.TXT` (not the `NICENANO` label, which every nice!nano shares).
@@ -844,12 +844,22 @@ task) runs it before copying, and the planned `sofleii flash` will too.
 empty for a plain record match. `serial` is the chip's USB serial from sysfs
 (`null` if sysfs doesn't say); `chip` is what the chip memory holds for it
 (`null` for a chip never flashed through sofleii). The `verdict` stays the
-firmware-only one of #98, so `scripts/flash-uf2.sh` behaves as before.
+firmware-only one of #98.
 
 ## Flash job
 
-The core of `sofleii flash` (#100); the CLI and the TUI Flash mode are front
-ends over it and come in later PRs.
+`sofleii flash left|right|both [--reset]` and `flash reset left|right|both`
+(#100) run this job; the TUI Flash mode will too. The CLI side lives in
+`main.rs`: `CliUi` prints the commentary to stderr through `output::flash_*`
+(the final report goes to stdout, `--json` included), never asks for a
+confirmation (the double-tap prompts are instructions, so it runs without a
+TTY), and asks for the typed half only for a bare `--adopt` on a terminal
+(`--adopt <half>` must name a half being flashed). After the job, a flashed
+left half is read back over Studio (`update::read_running`, retried 20 s
+while it boots) into that step's `running`; a failed read-back is a note.
+`flash chips` / `flash forget <serial>` read and edit the chip memory. Every
+mise flash task (`flash-left|right|reset`, `build-flash`, `flash-release`,
+`flash-release-reset`, `flash-ci`) is a thin call of it.
 
 - **Sources** (`commands::flash::source`, over a `Fetch` trait = `Http` +
   binary downloads): the newest `sofleii-fw-v*` release (default; the same
@@ -1105,9 +1115,9 @@ and parsers:
 | Code | Meaning |
 |---|---|
 | 0 | OK |
-| 1 | Check failed / attention needed: `battery --warn-below` with a half below it; `update check` behind or unknown; `keymap diff` with drift; `flash identify` verdict `mismatch` or `unknown` |
-| 2 | Keyboard not found / not connected (`flash identify`: no bootloader drive mounted, or `--mount` without an `INFO_UF2.TXT`; a `--device` path that does not exist; `auto` with neither USB nor BLE; over BLE or for `battery`, not connected or BlueZ/D-Bus unavailable) |
-| 3 | Usage error (bad flag; `--device`/`--bt-address`/`--transport` contradicting each other; a profile out of range; a rename too long or on an empty slot; `unpair` without a terminal or `--yes`, or not confirmed; `keymap show --layer` naming no layer; `keymap diff` with no `.keymap` found, or an explicit `--keymap` that can't be read or has no keymap node; `flash identify` with several bootloader drives and no `--mount`) |
+| 1 | Check failed / attention needed: `battery --warn-below` with a half below it; `update check` behind or unknown; `keymap diff` with drift; `flash identify` verdict `mismatch` or `unknown`; `flash` refused or stopped at a step |
+| 2 | Keyboard not found / not connected (`flash identify`: no bootloader drive mounted, or `--mount` without an `INFO_UF2.TXT`; `flash`: none within `--wait`; a `--device` path that does not exist; `auto` with neither USB nor BLE; over BLE or for `battery`, not connected or BlueZ/D-Bus unavailable) |
+| 3 | Usage error (bad flag; `--device`/`--bt-address`/`--transport` contradicting each other; a profile out of range; a rename too long or on an empty slot; `unpair` without a terminal or `--yes`, or not confirmed; `keymap show --layer` naming no layer; `keymap diff` with no `.keymap` found, or an explicit `--keymap` that can't be read or has no keymap node; `flash identify` with several bootloader drives and no `--mount`; `flash` with several drives at once, `--ci`/`--run` without a token, a bare `--adopt` without a terminal, `--adopt` naming a half not flashed, a source missing a needed file, `flash forget` of an unknown serial) |
 | 4 | Transport or protocol error: a busy serial port (another sofleii has it), timeout (over BLE, usually USB being the selected output; not after an [endpoint handover](#endpoint-handover)), bad frame, RPC error (including a failing `zmk__device_info` call, and a write's `error` or `success: false` reply), D-Bus/GATT error, GitHub API failure (`update check`). A firmware *without* `zmk__device_info` is not an error for `info` (exit 0, `build.available: false`), but is for `update check` |
 
 ## Protos

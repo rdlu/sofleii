@@ -25,8 +25,7 @@ pairings.
 With mise:
 
 ```sh
-mise run flash-release-reset   # once per half
-mise run flash-release         # left, then right
+mise run flash-release-reset   # settings reset + firmware, left then right
 ```
 
 The settings reset also clears any keymap edits you saved from Studio. If

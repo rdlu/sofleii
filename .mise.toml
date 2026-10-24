@@ -433,28 +433,33 @@ cp build/zephyr/zmk.uf2 settings_reset.uf2
 """
 
 [tasks.flash-left]
-description = "Flash locally-built left half — waits up to 60s for NICENANO, checks it is the left half first (FORCE=1 skips)"
+description = "Flash the locally-built left half (sofleii flash: waits for the drive, checks the chip is the left half)"
 run = """
 set -euo pipefail
 [ -f eyelash_sofle_left.uf2 ] || { echo "ERROR: eyelash_sofle_left.uf2 not found — run 'mise run build-left' first"; exit 1; }
-scripts/flash-uf2.sh eyelash_sofle_left.uf2 left
+cargo build -q --release --manifest-path sofleii/Cargo.toml
+S=sofleii/target/release/sofleii
+"$S" flash left --file eyelash_sofle_left.uf2
 """
 
 [tasks.flash-right]
-description = "Flash locally-built right half — waits up to 60s for NICENANO, checks it is the right half first (FORCE=1 skips)"
+description = "Flash the locally-built right half (sofleii flash: waits for the drive, checks the chip is the right half)"
 run = """
 set -euo pipefail
 [ -f eyelash_sofle_right.uf2 ] || { echo "ERROR: eyelash_sofle_right.uf2 not found — run 'mise run build-right' first"; exit 1; }
-scripts/flash-uf2.sh eyelash_sofle_right.uf2 right
+cargo build -q --release --manifest-path sofleii/Cargo.toml
+S=sofleii/target/release/sofleii
+"$S" flash right --file eyelash_sofle_right.uf2
 """
 
 [tasks.flash-reset]
-description = "Flash locally-built settings_reset — waits up to 60s for NICENANO, checks it is this keyboard first (FORCE=1 skips)"
+description = "Flash the locally-built settings_reset on both halves (sofleii flash reset both); the firmware goes back on with flash-left/-right"
 run = """
 set -euo pipefail
 [ -f settings_reset.uf2 ] || { echo "ERROR: settings_reset.uf2 not found — run 'mise run build-reset' first"; exit 1; }
-scripts/flash-uf2.sh settings_reset.uf2 any "the half to clear"
-echo "Now flash the normal firmware on top (the half is still recognised after the reset)."
+cargo build -q --release --manifest-path sofleii/Cargo.toml
+S=sofleii/target/release/sofleii
+"$S" flash reset both --file settings_reset.uf2
 """
 
 [tasks.build-flash]
@@ -462,7 +467,6 @@ description = "Build both halves locally, flash interactively, print memory budg
 run = """
 set -euo pipefail
 
-MOUNT="/run/media/$USER/NICENANO"
 LEFT_UF2="eyelash_sofle_left.uf2"
 RIGHT_UF2="eyelash_sofle_right.uf2"
 LEFT_LOG=$(mktemp)
@@ -479,18 +483,11 @@ mise run build-right 2>&1 | tee "$RIGHT_LOG"
 [ -f "$LEFT_UF2" ]  || { echo "ERROR: $LEFT_UF2 missing after build";  exit 1; }
 [ -f "$RIGHT_UF2" ] || { echo "ERROR: $RIGHT_UF2 missing after build"; exit 1; }
 
-wait_for_unmount() {
-  for _ in $(seq 1 30); do
-    [ ! -d "$MOUNT" ] && return 0
-    sleep 1
-  done
-}
-
-# Each step checks the drive is the half it names before copying (#98).
-scripts/flash-uf2.sh "$LEFT_UF2" left
-echo ">> Waiting for the left half to reset..."
-wait_for_unmount
-scripts/flash-uf2.sh "$RIGHT_UF2" right
+# sofleii flash checks each chip is the half it names before copying (#98,
+# #100), waits for the left half to reboot, then asks for the right one.
+cargo build -q --release --manifest-path sofleii/Cargo.toml
+S=sofleii/target/release/sofleii
+"$S" flash both --file "$LEFT_UF2" --file "$RIGHT_UF2"
 
 # Print memory budget summary captured from the build logs
 print_budget() {
@@ -530,79 +527,30 @@ echo "SVG written to keymap-drawer/eyelash_sofle.svg"
 """
 
 [tasks.flash-release]
-description = "Download latest main firmware from GH Actions and flash BOTH halves interactively, checking each half first (FORCE=1 skips)"
+description = "Flash the newest sofleii-fw release onto BOTH halves (sofleii flash both; no token needed)"
 run = """
 set -euo pipefail
+cargo build -q --release --manifest-path sofleii/Cargo.toml
+S=sofleii/target/release/sofleii
+"$S" flash both
+"""
 
-REPO="rdlu/sofleii"
-MOUNT="/run/media/$USER/NICENANO"
-WORK=$(mktemp -d)
-trap 'rm -rf "$WORK"' EXIT
-
-echo ">> Fetching latest successful main build from GitHub Actions..."
-RUN_ID=$(gh run list --repo "$REPO" --workflow "Build ZMK firmware" --branch main --status success --limit 1 --json databaseId --jq '.[0].databaseId')
-if [ -z "$RUN_ID" ]; then
-  echo "ERROR: no successful main build found on $REPO"
-  exit 1
-fi
-echo "   run $RUN_ID"
-
-gh run download "$RUN_ID" --repo "$REPO" --dir "$WORK" >/dev/null
-
-# Upstream ZMK workflow names artifacts inconsistently. Rename to canonical
-# filenames so local and release flows use the same names everywhere.
-GH_LEFT="$WORK/firmware/eyelash_sofle_studio_left.uf2"
-GH_RIGHT="$WORK/firmware/nice_view-eyelash_sofle_right-zmk.uf2"
-LEFT_UF2="$WORK/firmware/eyelash_sofle_left.uf2"
-RIGHT_UF2="$WORK/firmware/eyelash_sofle_right.uf2"
-
-for f in "$GH_LEFT" "$GH_RIGHT"; do
-  if [ ! -f "$f" ]; then
-    echo "ERROR: expected artifact missing: $f"
-    exit 1
-  fi
-done
-
-mv "$GH_LEFT" "$LEFT_UF2"
-mv "$GH_RIGHT" "$RIGHT_UF2"
-
-wait_for_unmount() {
-  for _ in $(seq 1 30); do
-    [ ! -d "$MOUNT" ] && return 0
-    sleep 1
-  done
-}
-
-# Each step checks the drive is the half it names before copying (#98).
-scripts/flash-uf2.sh "$LEFT_UF2" left
-echo ">> Waiting for the left half to reset..."
-wait_for_unmount
-scripts/flash-uf2.sh "$RIGHT_UF2" right
-
-echo ""
-echo "✅ Both halves flashed. They will auto-reset and re-pair over BT."
+[tasks.flash-ci]
+description = "Flash the newest green main CI build onto BOTH halves (sofleii flash both --ci; token from gh)"
+run = """
+set -euo pipefail
+cargo build -q --release --manifest-path sofleii/Cargo.toml
+S=sofleii/target/release/sofleii
+GH_TOKEN="${GH_TOKEN:-${GITHUB_TOKEN:-$(gh auth token)}}" "$S" flash both --ci main
 """
 
 [tasks.flash-release-reset]
-description = "Download latest main firmware and flash settings_reset on whichever half is mounted (checks it is this keyboard; FORCE=1 skips)"
+description = "Flash the newest release onto BOTH halves with a settings reset first (sofleii flash both --reset: reset + firmware per half, four double-taps)"
 run = """
 set -euo pipefail
-
-REPO="rdlu/sofleii"
-WORK=$(mktemp -d)
-trap 'rm -rf "$WORK"' EXIT
-
-echo ">> Fetching latest successful main build..."
-RUN_ID=$(gh run list --repo "$REPO" --workflow "Build ZMK firmware" --branch main --status success --limit 1 --json databaseId --jq '.[0].databaseId')
-gh run download "$RUN_ID" --repo "$REPO" --dir "$WORK" >/dev/null
-
-# build.yaml gives settings_reset an explicit artifact-name, so this no longer
-# depends on how the upstream workflow spells the board.
-RESET_UF2="$WORK/firmware/settings_reset.uf2"
-[ -f "$RESET_UF2" ] || { echo "ERROR: $RESET_UF2 missing"; exit 1; }
-
-scripts/flash-uf2.sh "$RESET_UF2" any "the half to clear"
-echo "Now flash the normal firmware on top (the half is still recognised after the reset)."
+cargo build -q --release --manifest-path sofleii/Cargo.toml
+S=sofleii/target/release/sofleii
+"$S" flash both --reset
 """
 
 [tasks.docs]

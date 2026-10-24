@@ -65,4 +65,4 @@ Install its [GitHub App](https://github.com/apps/keymap-editor) on the repo
 once, sign in, and pick the repo; it finds the `.keymap` and `.json` in
 `config/`. A save that lands on `main` starts the firmware build and the
 keymap render in GitHub Actions; flash the new build with
-`mise run flash-release` (see [Flashing](../flashing/)).
+`mise run flash-ci` (see [Flashing](../flashing/)).

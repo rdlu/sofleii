@@ -47,7 +47,7 @@ mise run flash-left
 - **Local loop**: rapid experimentation, timing tweaks, trying out a layout before committing to it. Nothing is pushed; nothing is tracked.
 - **PR loop**: once the change is settled and you want it in the repo, commit + push + PR (with assignee + labels) as described above. GH Actions produces the release artifacts.
 
-**⚠️ ZMK Studio overlay gotcha:** if the user has ever used ZMK Studio to edit the keymap live, the stored overlay will override any firmware you flash locally. Symptom: you flash new firmware and the behavior is still the old one. Fix — two-step on the left half: `mise run flash-reset` (or `mise run flash-release-reset` for the GH Actions variant) to wipe the settings partition, then immediately `mise run flash-left` to install the new firmware on top.
+**⚠️ ZMK Studio overlay gotcha:** if the user has ever used ZMK Studio to edit the keymap live, the stored overlay will override any firmware you flash locally. Symptom: you flash new firmware and the behavior is still the old one. Fix — two-step on the left half: `mise run flash-reset` to wipe the settings partition, then immediately `mise run flash-left` to install the new firmware on top (or in one go: `sofleii flash left --reset --file settings_reset.uf2 --file eyelash_sofle_left.uf2`; `--ci` instead of the files for the latest main build).
 
 ## Layer index, key positions, hold-tap behaviors
 

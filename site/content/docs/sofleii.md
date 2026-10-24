@@ -211,6 +211,9 @@ Every subcommand prints text by default and the [JSON contract](#json) with
 | `sofleii profile rename <n> <name>` | **Write.** Name a bonded profile (at most 31 bytes; `""` clears it) |
 | `sofleii profile unpair <n>` | **Write, destructive.** Remove the profile's bond; asks first unless `--yes` |
 | `sofleii output usb\|ble` | **Write.** Set the output priority |
+| `sofleii flash left\|right\|both` | **Write.** Flash firmware (the newest release by default), checking each half before copying |
+| `sofleii flash reset left\|right\|both` | **Write, destructive.** Flash only `settings_reset` (clears settings and Bluetooth bonds) |
+| `sofleii flash chips` / `flash forget <serial>` | The chips sofleii remembers by serial number; forget one |
 | `sofleii flash identify [--expect left\|right]` | Which keyboard and half the mounted `NICENANO` bootloader drive is, before you flash it |
 
 Profile numbers are **0-based**, as `sofleii profiles` lists them and as
@@ -332,13 +335,61 @@ Custom behaviours get their labels (`hml`, `M_PIPE`) from that file; without
 it, `show` uses the names the firmware reports (`PIPE_OP`, the macro's
 `label`). What the parser can't evaluate is a note on stderr, not a failure.
 
+### Flash
+
+`flash` writes firmware through the nice!nano's UF2 bootloader, one half at
+a time, and checks each half before it copies anything (see
+[Flashing](../flashing/#which-half-is-this)). It needs no Studio connection
+to flash; the left half's version is read back over Studio at the end when
+it answers.
+
+```sh
+sofleii flash both                     # newest sofleii-fw release, left then right
+sofleii flash left --reset             # settings_reset, then the firmware
+sofleii flash right --release sofleii-fw-v3.2.0
+GH_TOKEN=$(gh auth token) sofleii flash both --ci          # newest green main build
+GH_TOKEN=$(gh auth token) sofleii flash left --ci feat/x   # a branch build
+sofleii flash both --file eyelash_sofle_left.uf2 --file eyelash_sofle_right.uf2
+sofleii flash left --adopt left        # a chip nothing vouches for yet
+```
+
+| Option | Does |
+|---|---|
+| `--release <tag>` | A release by tag instead of the newest one |
+| `--ci [branch]` | The newest successful CI build of `branch` (default `main`). GitHub only serves build artifacts to a signed-in request: set `GH_TOKEN` or `GITHUB_TOKEN`. A branch only has a build if one was started for it (`gh workflow run build.yml --ref <branch>`) |
+| `--run <id>` | One CI build run (token as for `--ci`) |
+| `--file <path>` | Local `.uf2` files, repeatable. Each is identified by its content (left, right or `settings_reset`), so names and order don't matter |
+| `--reset` | `settings_reset` before the firmware, on each half flashed |
+| `--adopt [left\|right]` | Flash a chip nothing vouches for (a first flash, other or erased firmware), or whose firmware says it is the other half. Bare `--adopt` asks you to type the half |
+| `--wait <s>` | How long to wait for each bootloader drive (default 60) |
+
+The double-tap prompts are instructions, not questions, so `flash` runs
+without a terminal too. For each half it:
+
+1. asks for the double-tap and waits for **one** bootloader drive (two at
+   once is an error: unplug the one you don't mean);
+2. reads the chip's **serial number** and the firmware on it, and decides:
+   a chip it remembers is flashed as its half (even over the wrong firmware)
+   and refused as the other one; a new chip is flashed when its firmware
+   says it is that half, refused when it says the other half or another
+   keyboard, and otherwise needs `--adopt`;
+3. copies the file with a progress bar, remembers the chip, and waits for
+   the drive to go away (the half rebooting).
+
+A refusal stops the job, with a hint. The chips it knows live in
+`~/.local/state/sofleii/chips.json` (`$XDG_STATE_HOME`); `flash chips` lists
+them and `flash forget <serial>` drops one, e.g. a controller moved to
+another keyboard. `--json` prints the result (one entry per step: file, chip
+serial, what the chip held, the decision, the outcome, whether it rebooted,
+and the left half's `running` version); the commentary stays on stderr.
+
 ### Flash identify
 
 `flash identify` looks at a half in bootloader mode (double-tap reset) and
 says whose chip it is, from the firmware still on it: it reads the drive's
 `CURRENT.UF2`, which the bootloader generates from the chip's flash. It
-needs no keyboard connection and writes nothing. The mise flash tasks run it
-before every copy; see [Flashing](../flashing/#which-half-is-this) for what
+needs no keyboard connection and writes nothing. `flash` makes the same
+check before every copy; see [Flashing](../flashing/#which-half-is-this) for what
 it recognises.
 
 ```console
@@ -361,7 +412,7 @@ another keyboard, the other half or can't be told: don't flash on 1.
 strings), `settings_reset` or `unknown`; `verdict` in the JSON is `match`,
 `mismatch` or `unknown`. `chip` is the chip's USB serial (its nRF52840 ID,
 the same in bootloader and keyboard mode) and what sofleii remembers about
-it; a chip is remembered once `sofleii flash` (coming next) has flashed it.
+it; a chip is remembered once `sofleii flash` has flashed it.
 The verdict itself only looks at the firmware.
 
 ### Global options
@@ -435,9 +486,9 @@ field by field in the [crate README](https://github.com/rdlu/sofleii/blob/main/s
 | Code | Meaning |
 |---|---|
 | 0 | OK |
-| 1 | Attention needed: `update check` with the firmware or sofleii behind (or a firmware build it can't place), `battery --warn-below` with a half below it, `keymap diff` with drift, `flash identify` without a match |
-| 2 | Keyboard not found or not connected; for `flash identify`, no bootloader drive mounted |
-| 3 | Usage error: a bad or contradicting flag, a profile out of range, a name too long, `unpair` not confirmed, no layer by that name, a missing or unparseable `.keymap`, several bootloader drives without `--mount` |
+| 1 | Attention needed: `update check` with the firmware or sofleii behind (or a firmware build it can't place), `battery --warn-below` with a half below it, `keymap diff` with drift, `flash identify` without a match, `flash` refused or stopped at a chip |
+| 2 | Keyboard not found or not connected; for `flash identify`, no bootloader drive mounted; for `flash`, none within `--wait` |
+| 3 | Usage error: a bad or contradicting flag, a profile out of range, a name too long, `unpair` not confirmed, no layer by that name, a missing or unparseable `.keymap`, several bootloader drives without `--mount` (or at once for `flash`), `--ci` without a token, `--adopt` naming a half not flashed |
 | 4 | Transport or protocol error: timeout, a busy port, an RPC error, a BlueZ or GitHub failure |
 
 So checks need no parsing:
@@ -564,7 +615,8 @@ Coming, roughly in this order (epic: [#44](https://github.com/rdlu/sofleii/issue
   on the game picker, with sofleii game presets.
 - [#80](https://github.com/rdlu/sofleii/issues/80): **bake** live changes
   into the firmware: write them into the `.keymap`, draw, PR, flash.
-- Later: flashing from the tool ([#47](https://github.com/rdlu/sofleii/issues/47))
-  and the repo's mise routines as commands ([#48](https://github.com/rdlu/sofleii/issues/48)).
+- [#100](https://github.com/rdlu/sofleii/issues/100): `sofleii flash` is in;
+  a guided **Flash mode in the TUI** comes next.
+- Later: the repo's mise routines as commands ([#48](https://github.com/rdlu/sofleii/issues/48)).
 
 Until editing lands, use [Studio](../studio/) for live keymap edits.

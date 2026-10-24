@@ -46,6 +46,19 @@ pub fn plan(halves: &[Half], reset: bool) -> Vec<Step> {
     steps
 }
 
+/// settings_reset alone on each of `halves` (left first): `flash reset`.
+pub fn plan_reset(halves: &[Half]) -> Vec<Step> {
+    let mut hs = halves.to_vec();
+    hs.sort();
+    hs.dedup();
+    hs.into_iter()
+        .map(|half| Step {
+            half,
+            role: Role::SettingsReset,
+        })
+        .collect()
+}
+
 /// The system side of a flash.
 pub trait Drives {
     /// Mounted bootloader drives.
@@ -207,6 +220,10 @@ pub struct StepReport {
     pub outcome: Outcome,
     /// The drive went away after the write; `null` when nothing was written.
     pub rebooted: Option<bool>,
+    /// What the half reports running afterwards (`zmk_config_version`,
+    /// read over Studio; left half only, filled in by the front end).
+    /// `null` when not read.
+    pub running: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
@@ -367,6 +384,7 @@ fn run_step(
         decision,
         outcome,
         rebooted,
+        running: None,
     };
     // A closure can't tie its returned borrow to its argument's lifetime.
     macro_rules! prompt {
@@ -659,6 +677,19 @@ mod tests {
                 half: Right,
                 role: Role::Right
             }]
+        );
+        assert_eq!(
+            plan_reset(&[Right, Left]),
+            [
+                Step {
+                    half: Left,
+                    role: Role::SettingsReset
+                },
+                Step {
+                    half: Right,
+                    role: Role::SettingsReset
+                },
+            ]
         );
     }
 
