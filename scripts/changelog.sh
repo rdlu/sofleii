@@ -27,6 +27,8 @@ set -euo pipefail
 root=$(cd "$(dirname "$0")/.." && pwd)
 cd "$root"
 
+# Tags: firmware sofleii-fw-vX.Y.Z, the crate sofleii-tui-vX.Y.Z (renamed on
+# 2026-10-24 from vX.Y.Z / sofleii-vX.Y.Z; the patterns ignore old names).
 # Firmware history starts at v3.0.0: v2.8.0 is only the lower bound of the
 # range, so v3.0.0 is the first section and older releases are the template's
 # "Earlier releases" footer. The crate's history starts with the crate.
@@ -34,19 +36,20 @@ flags_for() {
   case $1 in
     firmware)
       out=CHANGELOG.md
-      range=(v2.8.0..HEAD)
-      flags=(--tag-pattern '^v[0-9]+\.[0-9]+\.[0-9]+$' --exclude-path 'sofleii/**')
-      tag=$(sed -n 's/^ *version = "\(v[0-9][0-9.]*\)"$/\1/p' site/hugo.toml | head -n1)
+      range=(sofleii-fw-v2.8.0..HEAD)
+      flags=(--tag-pattern '^sofleii-fw-v[0-9]+\.[0-9]+\.[0-9]+$' --exclude-path 'sofleii/**')
+      # hugo.toml keeps the plain version (v3.2.0) for display.
+      tag=sofleii-fw-$(sed -n 's/^ *version = "\(v[0-9][0-9.]*\)"$/\1/p' site/hugo.toml | head -n1)
       ;;
     sofleii)
       out=sofleii/CHANGELOG.md
-      range=(v3.0.0..HEAD)
-      flags=(--tag-pattern '^sofleii-v[0-9]+\.[0-9]+\.[0-9]+$')
-      tag=sofleii-v$(sed -n 's/^version = "\(.*\)"$/\1/p' sofleii/Cargo.toml | head -n1)
+      range=(sofleii-fw-v3.0.0..HEAD)
+      flags=(--tag-pattern '^sofleii-tui-v[0-9]+\.[0-9]+\.[0-9]+$')
+      tag=sofleii-tui-v$(sed -n 's/^version = "\(.*\)"$/\1/p' sofleii/Cargo.toml | head -n1)
       # Only commits that touch sofleii/**, but not via --include-path:
       # git-cliff drops path-filtered commits before it assigns tags, so a
-      # sofleii tag on a merge that touches nothing in sofleii/ (sofleii-v0.1.0
-      # is on the v3.2.0 release merge) would vanish, and its commits would
+      # sofleii tag on a merge that touches nothing in sofleii/ (sofleii-tui-v0.1.0
+      # is on the sofleii-fw-v3.2.0 release merge) would vanish, and its commits would
       # land in the next version. --skip-commit keeps the tag.
       local c
       while read -r c; do

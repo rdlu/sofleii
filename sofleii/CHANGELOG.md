@@ -1,7 +1,7 @@
 # Changelog: sofleii CLI/TUI
 
 All notable changes to the `sofleii` crate (the CLI and TUI in this
-directory), released as `sofleii-vX.Y.Z` tags. The firmware has its own
+directory), released as `sofleii-tui-vX.Y.Z` tags. The firmware has its own
 changelog in [`../CHANGELOG.md`](../CHANGELOG.md).
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
@@ -9,19 +9,23 @@ and the project uses [Semantic Versioning](https://semver.org/). Generated
 by [git-cliff](https://git-cliff.org) from the commit history: edit
 `cliff.toml`, not this file.
 
-## [Unreleased]
+## [sofleii-tui v0.2.0](https://github.com/rdlu/sofleii/compare/sofleii-tui-v0.1.1...sofleii-tui-v0.2.0) - 2026-10-24
+
+### Features
+
+- **BREAKING** read sofleii-fw-v* and sofleii-tui-v* release tags ([e1e0c27](https://github.com/rdlu/sofleii/commit/e1e0c273c4d85aa7cfc30dc7f60997f42bdb54e6))
 
 ### Dependencies
 
 - bump crates and rust-cache, add Dependabot ([33f5066](https://github.com/rdlu/sofleii/commit/33f50666758dfcbd4db6a5d0ee4acc804795c229))
 
-## [sofleii v0.1.1](https://github.com/rdlu/sofleii/compare/sofleii-v0.1.0...sofleii-v0.1.1) - 2026-10-21
+## [sofleii-tui v0.1.1](https://github.com/rdlu/sofleii/compare/sofleii-tui-v0.1.0...sofleii-tui-v0.1.1) - 2026-10-21
 
 ### Fixes
 
 - update check judges firmware by its inputs, not commits ([e2548c9](https://github.com/rdlu/sofleii/commit/e2548c900428ee588455355a5c76d99054865a61))
 
-## [sofleii v0.1.0](https://github.com/rdlu/sofleii/releases/tag/sofleii-v0.1.0) - 2026-10-21
+## [sofleii-tui v0.1.0](https://github.com/rdlu/sofleii/releases/tag/sofleii-tui-v0.1.0) - 2026-10-21
 
 ### Features
 

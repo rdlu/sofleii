@@ -2,8 +2,11 @@
 # (tag pattern, paths, output, start of history) lives in
 # scripts/changelog.sh, which every caller goes through:
 #
-#   CHANGELOG.md          firmware, tags vX.Y.Z, everything but sofleii/**
-#   sofleii/CHANGELOG.md  the crate, tags sofleii-vX.Y.Z, only sofleii/**
+#   CHANGELOG.md          firmware, tags sofleii-fw-vX.Y.Z, everything but sofleii/**
+#   sofleii/CHANGELOG.md  the crate, tags sofleii-tui-vX.Y.Z, only sofleii/**
+#
+# Version headers read like the GitHub release titles: `sofleii-fw vX.Y.Z`
+# and `sofleii-tui vX.Y.Z`; the links use the full tags.
 #
 # The script sets CHANGELOG_COMPONENT=firmware|sofleii for the template
 # (title, version header, which scopes a file keeps, footer).
@@ -18,11 +21,11 @@ header = """
 
 {% if component == "sofleii" -%}
 All notable changes to the `sofleii` crate (the CLI and TUI in this
-directory), released as `sofleii-vX.Y.Z` tags. The firmware has its own
+directory), released as `sofleii-tui-vX.Y.Z` tags. The firmware has its own
 changelog in [`../CHANGELOG.md`](../CHANGELOG.md).
 {%- else -%}
 All notable changes to the Eyelash Sofle firmware and keymap, released as
-`vX.Y.Z` tags. The `sofleii` CLI/TUI has its own changelog in
+`sofleii-fw-vX.Y.Z` tags. The `sofleii` CLI/TUI has its own changelog in
 [`sofleii/CHANGELOG.md`](sofleii/CHANGELOG.md).
 {%- endif %}
 
@@ -54,10 +57,11 @@ body = """
 {%- if kept | length > 0 or not version %}
 {% if version -%}
   {%- if component == "sofleii" -%}
-    {%- set number = version | trim_start_matches(pat="sofleii-v") -%}
-    {%- set title = "sofleii v" ~ number -%}
+    {%- set number = version | trim_start_matches(pat="sofleii-tui-v") -%}
+    {%- set title = "sofleii-tui v" ~ number -%}
   {%- else -%}
-    {%- set title = version -%}
+    {%- set number = version | trim_start_matches(pat="sofleii-fw-v") -%}
+    {%- set title = "sofleii-fw v" ~ number -%}
   {%- endif -%}
   {%- if previous and previous.version -%}
 ## [{{ title }}]({{ repo }}/compare/{{ previous.version }}...{{ version }}) - {{ timestamp | date(format="%Y-%m-%d", timezone="America/Sao_Paulo") }}

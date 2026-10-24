@@ -12,8 +12,8 @@ exit codes, the waybar modules, the transport gotchas and the write safety
 rules. This README is for working on the crate: the layout, how each piece
 works, the full JSON field reference, testing and the vendored protos.
 
-Status: **pre-release** (`0.1.0`, not tagged yet; release work in
-[#83](https://github.com/rdlu/sofleii/issues/83)). Studio RPC over USB
+Status: **pre-release** (`0.x`, released as `sofleii-tui-vX.Y.Z` tags;
+release work in [#83](https://github.com/rdlu/sofleii/issues/83)). Studio RPC over USB
 serial (left half) or BLE GATT through BlueZ; batteries over BLE GATT;
 update checks over the GitHub REST API; the reads and the profile and
 output-priority writes (confirmed against the keyboard on 2026-10-19); a
@@ -520,8 +520,9 @@ subsystems
 ```
 
 - `firmware` (`zmk_config_version`) is `git describe --dirty --always --tags`
-  of **this repo** when the build was configured: `v3.0.0-65-g1e468b7` from a
-  local build, the bare short hash (e.g. `1e468b7`) from CI, whose checkout is
+  of **this repo** when the build was configured: `sofleii-fw-v3.0.0-65-g1e468b7`
+  from a local build (or `sofleii-tui-v0.1.1-3-g…` when a crate tag is the
+  nearest one: describe takes any tag), the bare short hash (e.g. `1e468b7`) from CI, whose checkout is
   shallow and has no tags. Exactly on a tag, a local build gives just the
   tag. A `-dirty` build had uncommitted changes; the human output shows it as
   `(dirty)`. The other `*_version` fields are the same `git describe` of ZMK
@@ -565,13 +566,18 @@ shared cache (below), else the GitHub REST API, without `gh`:
    (never `releases/latest`: sofleii's own releases are published with
    `--latest=false`, but a manual release could still steal "latest").
    Drafts and prereleases are dropped, then the tags split into two
-   families, each sorted newest first by semver: **firmware** `vX.Y.Z`
-   and **sofleii** `sofleii-vX.Y.Z`. Anything else (`canary-zephyr-4.1`,
-   a non-semver tag) is ignored. The newest firmware release is
+   families, each sorted newest first by semver: **firmware**
+   `sofleii-fw-vX.Y.Z` and **sofleii** `sofleii-tui-vX.Y.Z` (renamed from
+   `vX.Y.Z` / `sofleii-vX.Y.Z` on 2026-10-24; 0.2.0 reads only the new
+   names). Anything else (`sofleii-fw-canary-zephyr-4.1`, an old-style
+   tag, a non-semver tag) is ignored. Text shows a firmware tag as its
+   plain version (`v3.2.0`); the JSON, URLs and compares use the tag. The newest firmware release is
    `latest`; `GET /repos/{repo}/commits/{tag}` gives its commit.
 2. The running commit comes from the version string: the SHA in
-   `v3.0.0-68-gf9a665f`, a bare `5c53b30` (CI builds), or, exactly on a tag
-   (`v3.1.0`), that tag resolved through the API. An empty version (CI
+   `sofleii-fw-v3.0.0-68-gf9a665f` (or `sofleii-tui-v0.1.1-3-gabc1234`: the
+   `-g<sha>` decides, whatever the tag), a bare `5c53b30` (CI builds), or,
+   exactly on a tag (`sofleii-fw-v3.1.0`), that tag resolved through the
+   API. An empty version (CI
    builds before the v3.1.0 fix) or a tag GitHub doesn't know is `unknown`.
 3. If the running SHA is a prefix of the release's, it's **up to date**.
    Otherwise `GET /repos/{repo}/compare/{running}...{latest}`: the release
@@ -625,8 +631,10 @@ shared cache (below), else the GitHub REST API, without `gh`:
    - `ahead`: the latest release, `commits_after` = `commits_ahead`. No
      extra request.
    - A local `git describe` string already names the tag and the count
-     (`v3.0.0-68-gf9a665f` = `v3.0.0+68`; `v3.1.0` = exact). No extra
-     request; this also covers `unknown`.
+     (`sofleii-fw-v3.0.0-68-gf9a665f` = `v3.0.0+68`; `sofleii-fw-v3.1.0` =
+     exact). No extra request; this also covers `unknown`. Only a
+     `sofleii-fw-v` semver tag counts: a describe from a `sofleii-tui-v*`
+     tag names no firmware release, so it's mapped like a bare SHA.
    - `behind` with a bare SHA: the firmware releases from step 1's list
      (no extra request; the latest one skipped, since it was already
      compared), newest first, `compare/{tag}...{running}` until one fits.
@@ -639,18 +647,19 @@ shared cache (below), else the GitHub REST API, without `gh`:
      that lookup fails (e.g. rate limiting), `release` is `null` (with a
      `note` for a failure) and the verdict stands.
 6. The **sofleii part** compares `CARGO_PKG_VERSION` with the newest
-   `sofleii-v*` release by semver (a pre-release such as `0.2.0-dev` sorts
+   `sofleii-tui-v*` release by semver (a pre-release such as `0.2.0-dev` sorts
    before `0.2.0`): `up_to_date`, `behind`, `ahead` (a newer dev build), or
    `unknown` with a `note` when there is no sofleii release yet. Unknown
    **never** makes the exit code 1.
 
 **Cache.** `update check` and the TUI share `session::jobs::Checker` and
 its file, `$XDG_CACHE_HOME/sofleii/update.json` (else
-`~/.cache/sofleii/`), honoured for 6 h. Schema 3 (v0.1.1: the firmware-inputs
-rule, so a 0.1.0 "behind" isn't served again; schema 2, #83, split the
-parts) has a firmware part
+`~/.cache/sofleii/`), honoured for 6 h. Schema 4 (v0.2.0: the
+`sofleii-fw-v*` / `sofleii-tui-v*` tag rename, so entries naming the old
+tags aren't trusted; schema 3, v0.1.1, the firmware-inputs rule; schema 2,
+#83, split the parts) has a firmware part
 (keyed by the running `zmk_config_version` + dirty flag) and a sofleii part
-(the newest `sofleii-v*` release as listed; the verdict is worked out
+(the newest `sofleii-tui-v*` release as listed; the verdict is worked out
 against the running binary when read, so two installed versions can share
 it), each with its own timestamp. A check is a cache hit only when every
 part asked for is cached and fresh; otherwise one list request renews the
@@ -692,9 +701,9 @@ version when no release precedes the build.
   "schema": 1,
   "transport": { "kind": "usb", "device": "/dev/ttyACM0" },
   "running": { "version": "0858966", "commit": "0858966", "dirty": false,
-               "release": { "tag": "v3.2.0", "exact": true, "commits_after": 0,
+               "release": { "tag": "sofleii-fw-v3.2.0", "exact": true, "commits_after": 0,
                             "equivalent": true } },
-  "latest": { "tag": "v3.2.0",
+  "latest": { "tag": "sofleii-fw-v3.2.0",
               "commit": "96f3a2d54a4d912033ce296188b102771717632e",
               "published_at": "2026-10-21T21:01:59Z" },
   "status": "up_to_date",
@@ -703,7 +712,7 @@ version when no release precedes the build.
   "files_changed": 35,
   "firmware_files_changed": 0,
   "note": "built from 0858966; differs from v3.2.0 only outside the firmware inputs (35 files)",
-  "cli": { "version": "0.1.0", "latest": "0.1.0", "tag": "sofleii-v0.1.0",
+  "cli": { "version": "0.1.0", "latest": "0.1.0", "tag": "sofleii-tui-v0.1.0",
            "published_at": "2026-10-21T21:05:43Z", "status": "up_to_date",
            "note": null },
   "checked_at_ms": 1792617374295,
@@ -712,7 +721,7 @@ version when no release precedes the build.
 ```
 
 - `cli` (additive, schema stays 1): `version` is this binary's,
-  `latest`/`tag`/`published_at` the newest `sofleii-v*` release's (`null`
+  `latest`/`tag`/`published_at` the newest `sofleii-tui-v*` release's (`null`
   without one), `status` as below, `note` set for `unknown`. It is `null`
   under `--firmware`. Under `--cli`, `transport` and every firmware field
   (`running` … `note`) are `null`.
@@ -1005,13 +1014,14 @@ keep the table's shape when bumping.
 distro `protoc`), and a release build that must run `--version` and answer
 `battery` with "not found" on a runner with no system bus.
 
-`.github/workflows/sofleii-release.yml` runs on a `sofleii-vX.Y.Z` tag: it
+`.github/workflows/sofleii-release.yml` runs on a `sofleii-tui-vX.Y.Z` tag: it
 checks the tag against `Cargo.toml`'s `version` and that the commit is on
 main, builds `x86_64-unknown-linux-gnu` and `aarch64-unknown-linux-gnu`
 (native arm64 runner), packages
 `sofleii-<version>-<target>.tar.gz` (+ `.sha256`) with
 `.github/scripts/package-sofleii.sh`, attests them, and creates the
-release with `--latest=false` (the firmware stays "latest"). The release
+release, titled `sofleii-tui vX.Y.Z`, with `--latest=false` (the firmware's
+`sofleii-fw-v*` release stays "latest"). The release
 notes are that version's section of [`CHANGELOG.md`](CHANGELOG.md), which
 git-cliff generates from the conventional commits that touch `sofleii/`
 (`cliff.toml` + `scripts/changelog.sh` at the repo root; `mise run

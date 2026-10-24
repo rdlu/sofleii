@@ -143,7 +143,8 @@ fn kind(s: &str) -> Option<TransportKind> {
 
 /// `v3.1.0 (f9a665f)` when the update check mapped the build to a release
 /// its version string doesn't name (a CI build reports a bare SHA), else
-/// the version as the firmware reports it.
+/// the version as the firmware reports it, with the firmware tag prefix
+/// shown as a plain `v`.
 fn running(s: &session::Snapshot) -> Option<String> {
     let version = s.build().and_then(|b| b.zmk_config_version.clone());
     let release = s
@@ -154,7 +155,13 @@ fn running(s: &session::Snapshot) -> Option<String> {
     match (version, release) {
         (Some(v), Some(r)) if r.equivalent => Some(format!("{} (built from {v})", r.label())),
         (Some(v), Some(r)) if !v.starts_with(&r.tag) => Some(format!("{} ({v})", r.label())),
-        (Some(v), _) => Some(v),
+        // A describe string that names the release: shown with the plain
+        // version (`v3.0.0-68-gf9a665f`), like the rest of the text.
+        (Some(v), Some(_)) => Some(match v.strip_prefix(update::FIRMWARE_TAG_PREFIX) {
+            Some(rest) => format!("v{rest}"),
+            None => v,
+        }),
+        (Some(v), None) => Some(v),
         (None, Some(r)) => Some(r.label()),
         (None, None) => None,
     }
@@ -219,7 +226,7 @@ impl Snapshot {
                     info: Health::of(&s.info, now),
                     update: s.update.value.as_ref().map(|u| UpdateState {
                         status: u.check.status,
-                        latest: u.check.latest.tag.clone(),
+                        latest: u.check.latest.label(),
                         age: now.duration_since(u.checked_at).unwrap_or(Duration::ZERO),
                         cli_available: (u.cli.status == update::Status::Behind)
                             .then(|| u.cli.latest.clone())
@@ -351,14 +358,14 @@ pub fn demo(now: SystemTime) -> session::Snapshot {
                         commit: Some("f9a665f".into()),
                         dirty: false,
                         release: Some(Release {
-                            tag: "v3.1.0".into(),
+                            tag: "sofleii-fw-v3.1.0".into(),
                             exact: true,
                             commits_after: 0,
                             equivalent: false,
                         }),
                     },
                     latest: Latest {
-                        tag: "v3.1.0".into(),
+                        tag: "sofleii-fw-v3.1.0".into(),
                         commit: "f9a665f0c1d2e3b4a5968778695a4b3c2d1e0f9a".into(),
                         published_at: None,
                     },

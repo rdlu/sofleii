@@ -38,6 +38,8 @@ fn only_main_uses_eprintln() {
 /// A lowercase `tui` word (`crate::tui`, `mod tui`) or `ratatui`; prose
 /// saying "TUI" is fine.
 fn mentions_tui(text: &str) -> bool {
+    // `sofleii-tui-v*` is the crate's release tag, not the front end.
+    let text = text.replace("sofleii-tui", "");
     text.contains("ratatui")
         || text
             .split(|c: char| !(c.is_ascii_alphanumeric() || c == '_'))
@@ -48,6 +50,7 @@ fn mentions_tui(text: &str) -> bool {
 fn core_never_depends_on_the_tui() {
     assert!(mentions_tui("use crate::tui::App;") && mentions_tui("ratatui::Frame"));
     assert!(!mentions_tui("front ends (CLI and TUI); intuitive"));
+    assert!(!mentions_tui("the newest `sofleii-tui-v*` release"));
     for dir in ["commands", "client", "transport", "session"] {
         let mut files = Vec::new();
         rust_files(&src().join(dir), &mut files);
