@@ -1011,9 +1011,15 @@ main, builds `x86_64-unknown-linux-gnu` and `aarch64-unknown-linux-gnu`
 (native arm64 runner), packages
 `sofleii-<version>-<target>.tar.gz` (+ `.sha256`) with
 `.github/scripts/package-sofleii.sh`, attests them, and creates the
-release with `--latest=false` (the firmware stays "latest"). Its
-`workflow_dispatch` is a dry run: build and package only, as workflow
-artifacts. The procedure is in the root `CLAUDE.md`.
+release with `--latest=false` (the firmware stays "latest"). The release
+notes are that version's section of [`CHANGELOG.md`](CHANGELOG.md), which
+git-cliff generates from the conventional commits that touch `sofleii/`
+(`cliff.toml` + `scripts/changelog.sh` at the repo root; `mise run
+changelog` regenerates it, and the version bump's PR must carry the
+regenerated file, which `.github/workflows/changelog.yml` checks). Its
+`workflow_dispatch` is a dry run: it prints the notes, then builds and
+packages only, as workflow artifacts. The procedure is in the root
+`CLAUDE.md`.
 
 License: MIT (see the repository's `LICENSE`). The vendored protos keep
 their own MIT licenses, listed in `proto/README.md`.

@@ -746,3 +746,24 @@ run = [
   "cargo clippy --all-targets -- -D warnings",
   "cargo fmt --check",
 ]
+
+[tasks.changelog]
+description = "Regenerate CHANGELOG.md (firmware) and sofleii/CHANGELOG.md with git-cliff"
+# One cliff.toml; the per-file flags live in scripts/changelog.sh, which CI
+# and the sofleii release workflow call too. git-cliff comes from pacman; CI
+# installs the version pinned in .github/scripts/install-git-cliff.sh. In a
+# release PR (version bumped in site/hugo.toml or sofleii/Cargo.toml, no tag
+# yet) the unreleased commits become that version's section.
+run = """
+want=$(sed -n 's/^version=//p' .github/scripts/install-git-cliff.sh)
+git cliff --version | grep -q " ${want}$" || echo "warning: $(git cliff --version) is not the pinned git-cliff ${want} (.github/scripts/install-git-cliff.sh)" >&2
+scripts/changelog.sh
+"""
+
+[tasks.changelog-check]
+description = "Fail if CHANGELOG.md or sofleii/CHANGELOG.md is stale (what CI checks on release PRs)"
+run = """
+want=$(sed -n 's/^version=//p' .github/scripts/install-git-cliff.sh)
+git cliff --version | grep -q " ${want}$" || echo "warning: $(git cliff --version) is not the pinned git-cliff ${want} (.github/scripts/install-git-cliff.sh)" >&2
+scripts/changelog.sh --check
+"""
