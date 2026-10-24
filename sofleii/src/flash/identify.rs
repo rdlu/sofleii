@@ -25,7 +25,7 @@
 
 use std::collections::BTreeSet;
 
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 
 use super::Image;
 
@@ -45,7 +45,7 @@ pub enum Firmware {
     Unknown,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum Half {
     Left,
@@ -60,7 +60,16 @@ impl Half {
         }
     }
 
-    fn parse(s: &str) -> Option<Self> {
+    pub fn other(self) -> Self {
+        match self {
+            Half::Left => Half::Right,
+            Half::Right => Half::Left,
+        }
+    }
+
+    /// `left` or `right`, exactly (the record's spelling and what adoption
+    /// asks the user to type).
+    pub fn parse(s: &str) -> Option<Self> {
         match s {
             "left" => Some(Half::Left),
             "right" => Some(Half::Right),

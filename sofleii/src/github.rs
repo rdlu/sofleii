@@ -1,13 +1,20 @@
-//! GitHub REST API client for `update check`: a blocking `ureq` agent
-//! (rustls with the bundled webpki roots; no tokio, no `gh`, no system
-//! OpenSSL), implementing [`commands::update::Http`](crate::commands::update::Http).
+//! GitHub REST API client for `update check` and the flash sources: a
+//! blocking `ureq` agent (rustls with the bundled webpki roots; no tokio,
+//! no `gh`, no system OpenSSL), implementing
+//! [`commands::update::Http`](crate::commands::update::Http) and
+//! [`commands::flash::source::Fetch`](crate::commands::flash::source::Fetch).
 
 use std::time::Duration;
 
+use crate::commands::flash::source::Fetch;
 use crate::commands::update::{Http, Reply};
 use crate::{Error, Result};
 
 pub const API: &str = "https://api.github.com";
+
+/// A firmware download (a release's `.uf2`, a CI artifact zip of three) is
+/// a few MB; anything past this is not firmware.
+const DOWNLOAD_MAX: u64 = 32 << 20;
 
 pub struct GitHub {
     agent: ureq::Agent,
@@ -63,5 +70,35 @@ impl Http for GitHub {
             body,
             rate_limited: status == 429 || (status == 403 && remaining == Some(0)),
         })
+    }
+}
+
+impl Fetch for GitHub {
+    fn download(&mut self, url: &str) -> Result<Vec<u8>> {
+        let mut req = self.agent.get(url);
+        // Artifact archives need the token; release assets don't, and the
+        // token never leaves api.github.com (ureq drops it on the redirect
+        // to the storage host).
+        if url.starts_with(&format!("{API}/"))
+            && let Some(t) = &self.token
+        {
+            req = req.header("Authorization", format!("Bearer {}", t.trim()));
+        }
+        let mut resp = req
+            .call()
+            .map_err(|e| Error::GitHub(format!("GET {url}: {e}")))?;
+        let status = resp.status().as_u16();
+        if !(200..300).contains(&status) {
+            return Err(Error::GitHub(format!("GET {url}: HTTP {status}")));
+        }
+        resp.body_mut()
+            .with_config()
+            .limit(DOWNLOAD_MAX)
+            .read_to_vec()
+            .map_err(|e| Error::GitHub(format!("GET {url}: reading the body: {e}")))
+    }
+
+    fn has_token(&self) -> bool {
+        self.token.is_some()
     }
 }
