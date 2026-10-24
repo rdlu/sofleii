@@ -1,7 +1,7 @@
 # Changelog
 
 All notable changes to the Eyelash Sofle firmware and keymap, released as
-`vX.Y.Z` tags. The `sofleii` CLI/TUI has its own changelog in
+`sofleii-fw-vX.Y.Z` tags. The `sofleii` CLI/TUI has its own changelog in
 [`sofleii/CHANGELOG.md`](sofleii/CHANGELOG.md).
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
@@ -28,7 +28,7 @@ by [git-cliff](https://git-cliff.org) from the commit history: edit
 
 - bump crates and rust-cache, add Dependabot ([33f5066](https://github.com/rdlu/sofleii/commit/33f50666758dfcbd4db6a5d0ee4acc804795c229))
 
-## [v3.2.0](https://github.com/rdlu/sofleii/compare/v3.1.0...v3.2.0) - 2026-10-21
+## [sofleii-fw v3.2.0](https://github.com/rdlu/sofleii/compare/sofleii-fw-v3.1.0...sofleii-fw-v3.2.0) - 2026-10-21
 
 ### Features
 
@@ -43,7 +43,7 @@ by [git-cliff](https://git-cliff.org) from the commit history: edit
 - **claude:** latest release v3.1.0 ([b45d3cf](https://github.com/rdlu/sofleii/commit/b45d3cf4f436d414b4bd7a8c8f990229b76d62fb))
 - MYGAME custom slot on the site, PDF, README and CLAUDE.md ([0858966](https://github.com/rdlu/sofleii/commit/08589661d123bb6f6112fc3feef9deb68e0c403c))
 
-## [v3.1.0](https://github.com/rdlu/sofleii/compare/v3.0.0...v3.1.0) - 2026-10-19
+## [sofleii-fw v3.1.0](https://github.com/rdlu/sofleii/compare/sofleii-fw-v3.0.0...sofleii-fw-v3.1.0) - 2026-10-19
 
 ### Features
 
@@ -93,7 +93,7 @@ by [git-cliff](https://git-cliff.org) from the commit history: edit
 - use the system Python, drop the 3.12 pin and .venv ([c3b3099](https://github.com/rdlu/sofleii/commit/c3b30990e7675d22468af22e20aa75ebd80347fb))
 - **setup:** separate pacman and AUR install hints ([e565f05](https://github.com/rdlu/sofleii/commit/e565f05b6b2e0d061b28f5a8b2781253a030056f))
 
-## [v3.0.0](https://github.com/rdlu/sofleii/compare/v2.8.0...v3.0.0) - 2026-10-17
+## [sofleii-fw v3.0.0](https://github.com/rdlu/sofleii/compare/sofleii-fw-v2.8.0...sofleii-fw-v3.0.0) - 2026-10-17
 
 ### Features
 
