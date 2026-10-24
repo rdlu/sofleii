@@ -42,6 +42,10 @@ ureq = { version = "3.5.0", default-features = false, features = ["rustls"] }
 # `zbus::block_on`, on zbus's own runtime (`default-rt`, no tokio; bluer
 # would need it).
 zbus = { version = "6.1.0", default-features = false, features = ["default-rt"] }
+# CI firmware artifacts (`sofleii flash --ci`, #100) come as zip files.
+# Inflate only, through flate2's pure-Rust zlib-rs backend: no zopfli
+# compressor, no C zlib.
+zip = { version = "9.1.0", default-features = false, features = ["deflate-flate2-zlib-rs"] }
 
 [build-dependencies]
 prost-build = "0.14"

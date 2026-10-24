@@ -1,9 +1,18 @@
-//! `flash identify` (#98): find the UF2 bootloader drive, read its
-//! `INFO_UF2.TXT` and `CURRENT.UF2`, and say whose chip it is. Read-only;
-//! the identification itself is [`crate::flash::identify`].
+//! Flashing through the UF2 bootloader drive. `flash identify` (#98):
+//! find the drive, read its `INFO_UF2.TXT` and `CURRENT.UF2`, and say whose
+//! chip it is (read-only; the identification itself is
+//! [`crate::flash::identify`]). The flash job (#100) builds on it:
+//! [`source`] fetches the firmware, [`drive`] does the sysfs and file I/O,
+//! [`chips`](self::chips) keeps the chip memory on disk, and [`job`] runs
+//! the steps.
 //!
 //! The drive is found by its `INFO_UF2.TXT`, not by the `NICENANO` label:
 //! every mount in `/proc/self/mounts` is a candidate.
+
+pub mod chips;
+pub mod drive;
+pub mod job;
+pub mod source;
 
 use std::fs;
 use std::io::Read;
@@ -51,9 +60,22 @@ pub fn parse_info(text: &str) -> Bootloader {
 /// Mount points in `/proc/self/mounts` format, octal escapes (`\040` for
 /// a space) decoded.
 pub fn parse_mounts(text: &str) -> Vec<PathBuf> {
+    parse_mount_entries(text)
+        .into_iter()
+        .map(|(_, m)| m)
+        .collect()
+}
+
+/// `(device, mount point)` pairs from `/proc/self/mounts`.
+pub fn parse_mount_entries(text: &str) -> Vec<(String, PathBuf)> {
     text.lines()
-        .filter_map(|l| l.split_whitespace().nth(1))
-        .map(|m| PathBuf::from(unescape_mount(m)))
+        .filter_map(|l| {
+            let mut f = l.split_whitespace();
+            Some((
+                unescape_mount(f.next()?),
+                PathBuf::from(unescape_mount(f.next()?)),
+            ))
+        })
         .collect()
 }
 
@@ -78,12 +100,7 @@ fn unescape_mount(s: &str) -> String {
 
 /// Every mounted UF2 bootloader drive.
 pub fn find_drives() -> Result<Vec<PathBuf>> {
-    let mounts = fs::read_to_string("/proc/self/mounts")
-        .map_err(|e| Error::io("reading /proc/self/mounts", e))?;
-    Ok(parse_mounts(&mounts)
-        .into_iter()
-        .filter(|m| m.join(INFO_FILE).is_file())
-        .collect())
+    drive::Sys::default().drives()
 }
 
 /// `mount` if given (it must be a bootloader drive), else the one mounted
@@ -136,7 +153,14 @@ pub struct Identified {
     #[serde(flatten)]
     pub identity: Identity,
     pub expected: Option<Half>,
+    /// From the firmware alone, as in #98; the flash job also weighs the
+    /// chip serial ([`crate::flash::decide`]).
     pub verdict: Verdict,
+    /// The chip's USB serial (its nRF52840 device ID), `null` when sysfs
+    /// doesn't say.
+    pub serial: Option<String>,
+    /// What sofleii remembers about that chip (#100), if anything.
+    pub chip: Option<crate::flash::Chip>,
 }
 
 impl Identified {
@@ -172,6 +196,27 @@ pub fn identify(mount: Option<&Path>, expected: Option<Half>) -> Result<Identifi
         find_drives()?
     };
     let mount = pick_drive(mount, found)?;
+    let (bootloader, image) = read_drive(&mount)?;
+    let identity = flash::identify(&image);
+    let verdict = verdict(&identity, expected);
+    let serial = drive::Sys::default().serial(&mount);
+    let chip = serial
+        .as_deref()
+        .and_then(|s| chips::load(&chips::default_path()).get(s).cloned());
+    Ok(Identified {
+        mount,
+        bootloader,
+        identity,
+        expected,
+        verdict,
+        serial,
+        chip,
+    })
+}
+
+/// The bootloader (`INFO_UF2.TXT`) and the flash (`CURRENT.UF2`) of the
+/// drive at `mount`.
+pub fn read_drive(mount: &Path) -> Result<(Bootloader, flash::Image)> {
     let info_path = mount.join(INFO_FILE);
     let info = fs::read_to_string(&info_path)
         .map_err(|e| Error::io(format!("reading {}", info_path.display()), e))?;
@@ -194,15 +239,7 @@ pub fn identify(mount: Option<&Path>, expected: Option<Half>) -> Result<Identifi
     }
     let image = flash::uf2::parse(&data)
         .map_err(|e| Error::Protocol(format!("{}: {e}", current_path.display())))?;
-    let identity = flash::identify(&image);
-    let verdict = verdict(&identity, expected);
-    Ok(Identified {
-        mount,
-        bootloader: parse_info(&info),
-        identity,
-        expected,
-        verdict,
-    })
+    Ok((parse_info(&info), image))
 }
 
 #[cfg(test)]

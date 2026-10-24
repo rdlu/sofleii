@@ -296,6 +296,22 @@ pub fn flash_identify(style: Style, r: &flash_cmd::Identified) -> String {
             "half",
             or_dash(r.identity.half.map(|h| h.as_str())).to_string(),
         ),
+        (
+            "chip",
+            match (&r.serial, &r.chip) {
+                (Some(s), Some(c)) => format!(
+                    "{s} (remembered as your {} half, {})",
+                    c.half.as_str(),
+                    match c.learned {
+                        crate::flash::Learned::Verified => "verified",
+                        crate::flash::Learned::Adopted => "adopted",
+                        crate::flash::Learned::Studio => "seen over Studio",
+                    }
+                ),
+                (Some(s), None) => format!("{s} (not seen before)"),
+                (None, _) => "-".to_string(),
+            },
+        ),
     ] {
         out.push_str(&format!("{} {v}\n", label(k)));
     }

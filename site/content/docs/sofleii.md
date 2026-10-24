@@ -348,6 +348,7 @@ bootloader  nice!nano, UF2 Bootloader 0.6.0 lib/nrfx (v2.0.0) …
 firmware    settings_reset
 keyboard    eyelash_sofle
 half        left
+chip        94708422E5F2FD3E (remembered as your left half, verified)
 expected    left half: match
 note        the chip holds settings_reset; keyboard and half come from the remains of the firmware it replaced
 ```
@@ -358,7 +359,10 @@ when the drive is this keyboard (and the `--expect` half), 1 when it's
 another keyboard, the other half or can't be told: don't flash on 1.
 `firmware` is `sofleii` (identity record), `legacy` (an older build, by its
 strings), `settings_reset` or `unknown`; `verdict` in the JSON is `match`,
-`mismatch` or `unknown`.
+`mismatch` or `unknown`. `chip` is the chip's USB serial (its nRF52840 ID,
+the same in bootloader and keyboard mode) and what sofleii remembers about
+it; a chip is remembered once `sofleii flash` (coming next) has flashed it.
+The verdict itself only looks at the firmware.
 
 ### Global options
 
