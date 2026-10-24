@@ -14,6 +14,15 @@ by [git-cliff](https://git-cliff.org) from the commit history: edit
 ### Docs
 
 - note Dependabot security updates are enabled ([2cd179c](https://github.com/rdlu/sofleii/commit/2cd179c4c469359683f015e83c5ad6f12e8c3407))
+- **changelog:** release procedures with git-cliff changelogs and notes ([fccd57f](https://github.com/rdlu/sofleii/commit/fccd57fcc2b4bde6b9f8a3c043aca8ece0acc0ef))
+
+### CI
+
+- **changelog:** check release PRs' changelogs; sofleii notes from git-cliff ([e2a4cd2](https://github.com/rdlu/sofleii/commit/e2a4cd2304e32df453e72e0cf7dbbfbcb5f1af56))
+
+### Build
+
+- **changelog:** generate both changelogs with git-cliff ([8256f60](https://github.com/rdlu/sofleii/commit/8256f6072f408a937fdb85ac6ac3d6a0c6cba607))
 
 ### Dependencies
 
