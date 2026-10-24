@@ -15,14 +15,17 @@ by [git-cliff](https://git-cliff.org) from the commit history: edit
 
 - note Dependabot security updates are enabled ([2cd179c](https://github.com/rdlu/sofleii/commit/2cd179c4c469359683f015e83c5ad6f12e8c3407))
 - **changelog:** release procedures with git-cliff changelogs and notes ([fccd57f](https://github.com/rdlu/sofleii/commit/fccd57fcc2b4bde6b9f8a3c043aca8ece0acc0ef))
+- sofleii-fw-v* and sofleii-tui-v* release tags ([3e584cb](https://github.com/rdlu/sofleii/commit/3e584cb0787dc240f9f3ca129322bbaf7e9dbb61))
 
 ### CI
 
 - **changelog:** check release PRs' changelogs; sofleii notes from git-cliff ([e2a4cd2](https://github.com/rdlu/sofleii/commit/e2a4cd2304e32df453e72e0cf7dbbfbcb5f1af56))
+- **sofleii-release:** release on sofleii-tui-v* tags ([7a639d7](https://github.com/rdlu/sofleii/commit/7a639d77a812d7f12464cab63ab69678448be83d))
 
 ### Build
 
 - **changelog:** generate both changelogs with git-cliff ([8256f60](https://github.com/rdlu/sofleii/commit/8256f6072f408a937fdb85ac6ac3d6a0c6cba607))
+- **changelog:** sofleii-fw-v* and sofleii-tui-v* tag patterns ([be18d19](https://github.com/rdlu/sofleii/commit/be18d19ddc3c84129fa717c8e381958b5961cfc1))
 
 ### Dependencies
 
