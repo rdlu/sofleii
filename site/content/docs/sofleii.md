@@ -19,7 +19,7 @@ with `--json` output and exit codes meant for scripts, cron and status bars.
 
 > [!NOTE]
 > **Works today, not released yet.** You build it from the repo. The first
-> release (`sofleii-v0.1.0`, with prebuilt binaries) is tracked in
+> release (`sofleii-tui-v0.1.0`, with prebuilt binaries) is tracked in
 > [#83](https://github.com/rdlu/sofleii/issues/83); see the
 > [roadmap](#roadmap) for what's coming. Linux only: Bluetooth goes
 > through BlueZ.
@@ -59,7 +59,8 @@ usual; sofleii reuses that connection.
 > [!NOTE]
 > **Coming with v0.1.0 ([#83](https://github.com/rdlu/sofleii/issues/83)):**
 > prebuilt binaries for x86_64 and aarch64 Linux, released under
-> `sofleii-vX.Y.Z` tags (the plain `vX.Y.Z` releases are the firmware).
+> `sofleii-tui-vX.Y.Z` tags (the `sofleii-fw-vX.Y.Z` releases are the
+> firmware).
 > Install with `mise use -g github:rdlu/sofleii`; or download
 > `sofleii-<version>-<target>.tar.gz` from the
 > [releases](https://github.com/rdlu/sofleii/releases) and check it with
@@ -237,9 +238,12 @@ note            built from 0858966; differs from v3.2.0 only outside the firmwar
 sofleii         up to date: v0.1.1
 ```
 
-`update check` compares the firmware with the newest `vX.Y.Z` release and
-sofleii itself with the newest `sofleii-vX.Y.Z` release (drafts and
-prereleases don't count), from one GitHub request. Only the **firmware
+`update check` compares the firmware with the newest `sofleii-fw-vX.Y.Z`
+release and sofleii itself with the newest `sofleii-tui-vX.Y.Z` release
+(drafts and prereleases don't count), from one GitHub request. The text
+shows plain versions (`v3.2.0`); the JSON has the full tags. Since 0.2.0
+only these tag names count (they were `vX.Y.Z` and `sofleii-vX.Y.Z` until
+2026-10-24), so an older sofleii finds no releases: update it. Only the **firmware
 inputs** count, the same paths that trigger a firmware build (`config/`,
 `build.yaml`, `zmk-rgb-layer/` and the build workflow): a build from
 another commit that differs from the release only elsewhere (a PR branch
@@ -500,7 +504,7 @@ batteries ([#45](https://github.com/rdlu/sofleii/issues/45)), the build info
 Coming, roughly in this order (epic: [#44](https://github.com/rdlu/sofleii/issues/44)):
 
 - [#83](https://github.com/rdlu/sofleii/issues/83): the **first release**,
-  `sofleii-v0.1.0`: CI, prebuilt binaries, install with mise or cargo, and
+  `sofleii-tui-v0.1.0`: CI, prebuilt binaries, install with mise or cargo, and
   `update check` checking the CLI too.
 - [#76](https://github.com/rdlu/sofleii/issues/76): the **live keymap in the
   TUI**, a layer at a time with the drifted keys highlighted.

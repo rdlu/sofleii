@@ -49,7 +49,9 @@ The Studio and RPC settings are central-only and live in the left shield's
 `zmk-feature-device-info` reports which build the keyboard runs. Its
 `zmk_config_version` is `git describe --dirty --always --tags` of this repo,
 taken when the build is configured: a local build gives something like
-`v3.0.0-65-g1e468b7` (with `-dirty` if the tree had uncommitted changes), and a
+`sofleii-fw-v3.0.0-65-g1e468b7` (with `-dirty` if the tree had uncommitted
+changes; describe takes the nearest tag of any kind, so it can also be a
+`sofleii-tui-v…` crate tag, and the `-g<hash>` is what counts), and a
 CI build gives the bare short hash of the pushed commit, because the CI
 checkout is shallow and has no tags. For CI to read the repo at all, the left
 build loads `config/ci-git-safe-directory.cmake`, which marks the workspace as a
