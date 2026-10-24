@@ -18,10 +18,10 @@ only relays key presses, and the stale keymap is on the left.
 
 Fix: on the **left** half, flash `settings_reset.uf2`, wait for it to
 reboot, double-tap reset again, then flash the left firmware.
+[`sofleii flash`](../../sofleii/#flash) does both, asking for each double-tap:
 
 ```sh
-mise run flash-release-reset   # double-tap the LEFT half when asked
-mise run flash-release         # left, then right
+sofleii flash left --reset     # or: mise run sofleii -- flash left --reset
 ```
 
 This also clears the left half's Bluetooth bonds; see

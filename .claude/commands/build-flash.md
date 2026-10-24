@@ -1,58 +1,68 @@
 Build and/or flash the Eyelash Sofle firmware.
 
-## Quickest path — flash from GH Actions (no local build)
+Every flash goes through `sofleii flash` (#100): it fetches the firmware, asks
+for a double-tap of reset on each half, checks that the chip on the drive is
+the half it names (chip serial from `chips.json`, then the firmware's identity
+record), copies, and waits for the reboot. Announce each reset double-tap to the
+user in chat, and before a live flash make sure they've switched to the spare
+keyboard.
 
-One command downloads the latest successful main build and walks through flashing both halves:
+## Quickest path: no local build
 
 ```bash
-mise run flash-release
+mise run flash-release   # newest sofleii-fw release, both halves (no token)
+mise run flash-ci        # newest green main CI build, both halves (token from gh)
 ```
 
-This is the preferred path — no local toolchain, no drag-and-drop, just follow the on-screen prompts to double-tap reset on each half. Requires `gh` authenticated.
-
-To build on demand (e.g. from a feature branch) before downloading:
-```bash
-gh workflow run "Build ZMK firmware" --ref <branch-name>
-```
-Wait for the run to succeed, then `mise run flash-release` picks up the latest main artifacts. To flash from a specific non-main run, download manually with `gh run download <run-id>`.
+A branch build: dispatch it first (`gh workflow run build.yml --ref <branch>`),
+wait for it to succeed, then
+`GH_TOKEN=$(gh auth token) sofleii flash both --ci <branch>` (or `--run <id>`).
 
 ## ⚠️ ZMK Studio overlay persists across flashes
 
-If the user reports that a flashed keymap change isn't taking effect, the most likely cause is a stored ZMK Studio overlay on the **left** half. Studio edits are persisted to settings flash and re-applied on boot, overriding the compiled firmware's keymap.
+If a flashed keymap change isn't taking effect, the likely cause is a stored
+Studio overlay on the **left** half (re-applied on boot over the compiled
+keymap). Fix: settings reset, then the firmware:
 
-**Fix** — always use this two-step on the left half:
 ```bash
-mise run flash-release-reset   # double-tap LEFT — flashes settings_reset (clears overlay + BT bonds)
-mise run flash-release          # double-tap LEFT, then RIGHT — flashes normal firmware on top
+mise run flash-release-reset          # both halves: settings_reset + firmware each (4 double-taps)
+GH_TOKEN=$(gh auth token) sofleii flash left --reset --ci   # the left half only, latest main build
 ```
 
-After this, the BT pairing between halves and with the host will need to be redone.
+The BT pairing between halves and with the host has to be redone afterwards.
+
+## Unknown chips
+
+A chip sofleii has never flashed whose firmware can't vouch for it (first
+flash, vendor firmware, erased) is refused with a hint. Rerun with
+`--adopt left|right` (or a bare `--adopt` to type the half); the serial is then
+remembered (`sofleii flash chips`, `sofleii flash forget <serial>`).
 
 ## Local build (optional)
 
-Only needed if you want to iterate without pushing to GH Actions. Requires `mise run setup` on first use.
+Requires `mise run setup` on first use.
 
 ```bash
-mise run build-flash   # build both halves sequentially, then interactive flash
+mise run build-flash   # build both halves sequentially, then sofleii flash both
 mise run build-left    # left half alone (ZMK Studio enabled)
 mise run build-right   # right half alone
 mise run build-reset   # settings reset
 ```
 
-`build-flash` is the fastest local iteration path: one command, builds both halves in sequence, aborts if either build fails, then walks you through double-tap-reset on each half.
+**Do not run `build-left` and `build-right` in parallel**: they share
+`build/`. `build-flash` runs them sequentially for exactly this reason.
 
-**Do not run `build-left` and `build-right` in parallel** — they share `build/` and step on each other. `build-flash` runs them sequentially for exactly this reason.
+Output files: `eyelash_sofle_left.uf2`, `eyelash_sofle_right.uf2`,
+`settings_reset.uf2`. The names don't matter to `sofleii flash`: it identifies
+each file by its content.
 
-Output files: `eyelash_sofle_left.uf2`, `eyelash_sofle_right.uf2`, `settings_reset.uf2` (same names the `flash-release` flow uses after renaming the upstream-workflow artifacts).
-
-Flash the locally-built artifacts:
 ```bash
-mise run flash-left    # prompts, waits for NICENANO mount, copies, syncs
+mise run flash-left    # sofleii flash left --file eyelash_sofle_left.uf2
 mise run flash-right
-mise run flash-reset
+mise run flash-reset   # settings_reset only, both halves
 ```
 
-These tasks wait up to 60s for the `NICENANO` mount to appear, so you can run them first and then double-tap reset — no race condition.
+They wait up to 60 s for the drive, so run them first and then double-tap.
 
 ## First-time pairing after both halves are reflashed
 

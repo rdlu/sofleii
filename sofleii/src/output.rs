@@ -48,6 +48,16 @@ impl Style {
         }
     }
 
+    /// Human text for stderr (the flash job's running commentary, shown
+    /// under `--json` too): colour when stderr is a terminal.
+    pub fn stderr() -> Self {
+        let no_color = std::env::var_os("NO_COLOR").is_some_and(|v| !v.is_empty());
+        Self {
+            format: Format::Human,
+            color: !no_color && std::io::stderr().is_terminal(),
+        }
+    }
+
     /// No colour regardless of the terminal (tooltips, tests).
     pub fn plain(format: Format) -> Self {
         Self {
@@ -327,6 +337,311 @@ pub fn flash_identify(style: Style, r: &flash_cmd::Identified) -> String {
     out.push_str(&format!("{} {against}: {verdict}\n", label("expected")));
     for n in &r.identity.notes {
         out.push_str(&format!("{} {n}\n", label("note")));
+    }
+    out
+}
+
+fn learned_str(l: crate::flash::Learned) -> &'static str {
+    match l {
+        crate::flash::Learned::Verified => "verified",
+        crate::flash::Learned::Adopted => "adopted",
+        crate::flash::Learned::Studio => "seen over Studio",
+    }
+}
+
+fn firmware_str(f: crate::flash::Firmware) -> &'static str {
+    use crate::flash::Firmware;
+    match f {
+        Firmware::Sofleii => "sofleii",
+        Firmware::Legacy => "legacy",
+        Firmware::SettingsReset => "settings_reset",
+        Firmware::Unknown => "unknown",
+    }
+}
+
+/// `sofleii, eyelash_sofle, left` for an identity.
+fn identity_str(id: &crate::flash::Identity) -> String {
+    let mut parts = vec![firmware_str(id.firmware).to_string()];
+    parts.extend(id.keyboard.clone());
+    parts.extend(id.half.map(|h| h.as_str().to_string()));
+    parts.join(", ")
+}
+
+/// Where the firmware came from, in a line.
+pub fn flash_origin(o: &crate::flash::Origin) -> String {
+    use crate::flash::Origin;
+    match o {
+        Origin::Release { tag } => format!("release {tag}"),
+        Origin::Ci {
+            run_id,
+            branch,
+            commit,
+            created_at,
+        } => {
+            let mut s = format!("CI run {run_id}");
+            if let Some(b) = branch {
+                s.push_str(&format!(" on {b}"));
+            }
+            let short: String = commit.chars().take(7).collect();
+            s.push_str(&format!(" ({short}"));
+            if let Some(t) = created_at {
+                s.push_str(&format!(", {t}"));
+            }
+            s.push(')');
+            s
+        }
+        Origin::Files => "local files".into(),
+    }
+}
+
+/// The firmware the job will write: source, then one line per file.
+pub fn flash_bundle(style: Style, b: &crate::flash::Bundle) -> String {
+    let label = |s: &str| style.dim(&format!("{s:<10}"));
+    let mut out = format!(
+        "{} {}\n",
+        label("firmware"),
+        style.bold(&flash_origin(&b.origin))
+    );
+    for f in [&b.left, &b.right, &b.settings_reset].into_iter().flatten() {
+        out.push_str(&format!(
+            "{} {} {} KB ({})\n",
+            label(""),
+            f.name,
+            f.size / 1024,
+            identity_str(&f.identity)
+        ));
+    }
+    for n in &b.notes {
+        out.push_str(&format!("{} {n}\n", label("note")));
+    }
+    out
+}
+
+/// The double-tap instruction that opens a step.
+pub fn flash_step(
+    style: Style,
+    index: usize,
+    total: usize,
+    step: flash_cmd::job::Step,
+    file: &str,
+    again: bool,
+    wait: std::time::Duration,
+) -> String {
+    let half = step.half.as_str().to_ascii_uppercase();
+    let again = if again { " again" } else { "" };
+    format!(
+        "\n{} {} half: {file}\n{}",
+        style.dim(&format!("[{}/{total}]", index + 1)),
+        step.half.as_str(),
+        style.bold(&format!(
+            ">> Double-tap RESET on the {half} half{again} (waiting {} s)",
+            wait.as_secs()
+        ))
+    )
+}
+
+/// A progress bar for the copy, without a newline (redrawn with `\r`).
+pub fn flash_progress(written: usize, total: usize) -> String {
+    const WIDTH: usize = 24;
+    let filled = (written * WIDTH).checked_div(total).unwrap_or(WIDTH);
+    format!(
+        "{:<10} {}{} {} / {} KB",
+        "copying",
+        "█".repeat(filled),
+        "░".repeat(WIDTH - filled),
+        written / 1024,
+        total / 1024
+    )
+}
+
+/// One line (or a few) per job event; `None` for events shown otherwise
+/// (`Step`, `Writing`).
+pub fn flash_event(style: Style, e: &flash_cmd::job::Event) -> Option<String> {
+    use crate::flash::{Basis, Decision};
+    use flash_cmd::job::Event;
+    let label = |s: &str| style.dim(&format!("{s:<10}"));
+    Some(match e {
+        Event::Step { .. } | Event::Writing { .. } => return None,
+        Event::NoDisk => format!(
+            "{} a nice!nano bootloader is on USB but its disk didn't appear: usb_storage \
+             can't load, usually after a kernel upgrade without a reboot",
+            style.paint("33", "warning")
+        ),
+        Event::DriveFound { mount, serial, .. } => format!(
+            "{} {}{}",
+            label("drive"),
+            mount.display(),
+            serial
+                .as_deref()
+                .map(|s| format!(" (chip {s})"))
+                .unwrap_or_default()
+        ),
+        Event::Identified {
+            identity,
+            chip,
+            decision,
+        } => {
+            let mut out = format!("{} {}", label("on chip"), identity_str(identity));
+            if let Some(c) = chip {
+                out.push_str(&format!(
+                    "\n{} your {} half ({})",
+                    label("known as"),
+                    c.half.as_str(),
+                    learned_str(c.learned)
+                ));
+            }
+            match decision {
+                Decision::Flash { basis, notes } => {
+                    let by = match basis {
+                        Basis::Chip => "the chip is known",
+                        Basis::Firmware => "its firmware says so",
+                        Basis::Adopted => "adopted",
+                    };
+                    out.push_str(&format!(
+                        "\n{} {}",
+                        label("decision"),
+                        style.green(&format!("flash ({by})"))
+                    ));
+                    for n in notes {
+                        out.push_str(&format!("\n{} {n}", label("note")));
+                    }
+                }
+                Decision::Adopt { reason } => out.push_str(&format!(
+                    "\n{} {}",
+                    label("decision"),
+                    style.paint("33", &format!("unknown chip: {reason}"))
+                )),
+                Decision::Refuse { reason } => out.push_str(&format!(
+                    "\n{} {}",
+                    label("decision"),
+                    style.paint("31", &format!("REFUSED: {reason}"))
+                )),
+            }
+            out
+        }
+        Event::Learned {
+            serial,
+            half,
+            learned,
+        } => format!(
+            "{} chip {serial} = your {} half ({})",
+            label("remember"),
+            half.as_str(),
+            learned_str(*learned)
+        ),
+        Event::Rebooted { gone: true } => format!("{} {}", label("rebooted"), style.green("✓")),
+        Event::Rebooted { gone: false } => format!(
+            "{} {}",
+            label("rebooted"),
+            style.paint(
+                "33",
+                "the drive is still mounted: the half may not have taken the file"
+            )
+        ),
+        Event::Note { message } => format!("{} {message}", label("note")),
+    })
+}
+
+/// What the adoption question shows before asking for the half.
+pub fn flash_adopt(style: Style, p: &flash_cmd::job::Prompt<'_>) -> String {
+    let half = p.step.half.as_str();
+    format!(
+        "{}\nType `{half}` if this chip is your {half} half, anything else stops: ",
+        style.bold(&format!(
+            "Nothing vouches for this chip{}.",
+            p.serial.map(|s| format!(" ({s})")).unwrap_or_default()
+        ))
+    )
+}
+
+/// The job's result.
+pub fn flash_report(style: Style, r: &flash_cmd::job::Report) -> String {
+    use flash_cmd::job::Outcome;
+    if style.format == Format::Json {
+        #[derive(Serialize)]
+        struct Env<'a> {
+            schema: u32,
+            complete: bool,
+            #[serde(flatten)]
+            r: &'a flash_cmd::job::Report,
+        }
+        return serde_json::to_string_pretty(&Env {
+            schema: SCHEMA,
+            complete: r.complete(),
+            r,
+        })
+        .expect("serialising plain data cannot fail");
+    }
+    let label = |s: &str| style.dim(&format!("{s:<10}"));
+    let mut out = String::from("\n");
+    for s in &r.steps {
+        let what = format!("{} half: {}", s.step.half.as_str(), s.file);
+        let line = match &s.outcome {
+            Outcome::Flashed { .. } => {
+                let mut l = format!("{} {what}", style.green("flashed   "));
+                if let Some(v) = &s.running {
+                    l.push_str(&format!(", running {v}"));
+                }
+                l
+            }
+            Outcome::Refused { reason } => {
+                format!("{} {what}: {reason}", style.paint("31", "refused   "))
+            }
+            Outcome::Cancelled => format!("{} {what}", style.paint("33", "stopped   ")),
+        };
+        out.push_str(&line);
+        out.push('\n');
+        if !matches!(s.outcome, Outcome::Flashed { .. }) {
+            let half = s.step.half.as_str();
+            out.push_str(&format!(
+                "{} if this chip really is your {half} half, run again with --adopt {half}\n",
+                label("hint")
+            ));
+        }
+    }
+    let skipped = r.planned - r.steps.len();
+    if skipped > 0 {
+        out.push_str(&format!(
+            "{} {skipped} later step(s) not run\n",
+            label("skipped")
+        ));
+    }
+    out
+}
+
+/// `flash chips`: the chips sofleii remembers.
+pub fn flash_chips(style: Style, chips: &crate::flash::Chips, path: &std::path::Path) -> String {
+    if style.format == Format::Json {
+        #[derive(Serialize)]
+        struct Env<'a> {
+            schema: u32,
+            path: &'a std::path::Path,
+            chips: &'a std::collections::BTreeMap<String, crate::flash::Chip>,
+        }
+        return serde_json::to_string_pretty(&Env {
+            schema: SCHEMA,
+            path,
+            chips: &chips.chips,
+        })
+        .expect("serialising plain data cannot fail");
+    }
+    if chips.chips.is_empty() {
+        return format!(
+            "no chips remembered yet ({}); a flash learns them\n",
+            path.display()
+        );
+    }
+    let mut out = String::new();
+    for (serial, c) in &chips.chips {
+        out.push_str(&format!(
+            "{}  {} {:<5}  {:<16}  first seen {}, last flashed {}\n",
+            style.bold(serial),
+            c.keyboard,
+            c.half.as_str(),
+            learned_str(c.learned),
+            c.first_seen,
+            or_dash(c.last_flashed.as_deref())
+        ));
     }
     out
 }
@@ -1937,5 +2252,60 @@ mod tests {
         assert_eq!(v["differences"][0]["file"], "&kp LG(I)");
         assert_eq!(v["removed"][0]["name"], "MYGAME");
         assert_eq!(r.exit_code(), 1);
+    }
+
+    #[test]
+    fn flash_progress_and_report() {
+        use crate::commands::flash::job::{Outcome, Report, Step, StepReport};
+        use crate::flash::{Basis, Decision, Firmware, Half, Identity, Origin, Role};
+        assert!(flash_progress(0, 1000).contains("░░░░"));
+        assert!(flash_progress(1024 * 10, 1024 * 10).ends_with("10 / 10 KB"));
+        assert!(flash_progress(0, 0).contains("████"));
+        let step = |half, role, outcome, running: Option<&str>| StepReport {
+            step: Step { half, role },
+            file: "x.uf2".into(),
+            mount: "/m".into(),
+            serial: Some("S".into()),
+            identity: Identity {
+                firmware: Firmware::Unknown,
+                keyboard: None,
+                half: None,
+                notes: vec![],
+            },
+            decision: Decision::Adopt { reason: "r".into() },
+            outcome,
+            rebooted: None,
+            running: running.map(String::from),
+        };
+        let r = Report {
+            origin: Origin::Files,
+            steps: vec![
+                step(
+                    Half::Left,
+                    Role::Left,
+                    Outcome::Flashed {
+                        basis: Basis::Firmware,
+                    },
+                    Some("abc1234"),
+                ),
+                step(Half::Right, Role::Right, Outcome::Cancelled, None),
+            ],
+            planned: 3,
+        };
+        let t = flash_report(Style::plain(Format::Human), &r);
+        assert!(
+            t.contains("flashed    left half: x.uf2, running abc1234"),
+            "{t}"
+        );
+        assert!(t.contains("--adopt right"), "{t}");
+        assert!(t.contains("1 later step(s) not run"), "{t}");
+        let v: serde_json::Value =
+            serde_json::from_str(&flash_report(Style::plain(Format::Json), &r)).unwrap();
+        assert_eq!(v["complete"], false);
+        assert_eq!(v["steps"][0]["result"], "flashed");
+        assert_eq!(v["steps"][0]["basis"], "firmware");
+        assert_eq!(v["steps"][0]["running"], "abc1234");
+        assert_eq!(v["steps"][1]["decision"]["decision"], "adopt");
+        assert_eq!(v["origin"]["kind"], "files");
     }
 }

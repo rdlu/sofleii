@@ -118,8 +118,9 @@ enum Command {
         #[command(subcommand)]
         command: UpdateCommand,
     },
-    /// The UF2 bootloader drive of a half in bootloader mode (double-tap
-    /// reset). Read-only.
+    /// Flash firmware through the UF2 bootloader (double-tap reset on a
+    /// half), checking first that the chip is the half meant; or just
+    /// identify the drive.
     Flash {
         #[command(subcommand)]
         command: FlashCommand,
@@ -215,6 +216,57 @@ enum KeymapCommand {
 
 #[derive(Subcommand, Debug)]
 enum FlashCommand {
+    /// Flash the left half: the newest firmware release unless a source
+    /// flag says otherwise. Asks for a double-tap of reset, checks the
+    /// chip is the left half, copies, waits for the reboot. Exit 0 flashed,
+    /// 1 refused or stopped, 2 no bootloader drive in time.
+    Left {
+        #[command(flatten)]
+        args: FlashArgs,
+        /// Flash settings_reset first (clears BLE bonds and settings), then
+        /// the firmware: two double-taps.
+        #[arg(long)]
+        reset: bool,
+    },
+    /// Flash the right half (see `left`).
+    Right {
+        #[command(flatten)]
+        args: FlashArgs,
+        /// Flash settings_reset first, then the firmware.
+        #[arg(long)]
+        reset: bool,
+    },
+    /// Flash both halves, left then right (see `left`).
+    Both {
+        #[command(flatten)]
+        args: FlashArgs,
+        /// Flash settings_reset first on each half, then its firmware.
+        #[arg(long)]
+        reset: bool,
+    },
+    /// Flash only settings_reset (clears BLE bonds and settings) onto a
+    /// half or both; the half's firmware goes back on with `flash <half>`.
+    Reset {
+        #[arg(value_enum)]
+        half: HalvesArg,
+        #[command(flatten)]
+        args: FlashArgs,
+    },
+    /// The chips sofleii remembers, by USB serial (learned when flashing).
+    Chips {
+        /// Print the versioned JSON contract instead of text.
+        #[arg(long)]
+        json: bool,
+    },
+    /// Forget a chip (a controller that moved to another keyboard); its
+    /// next flash identifies it by its firmware again, or adopts it.
+    Forget {
+        /// The chip's USB serial, as `flash chips` lists it.
+        serial: String,
+        /// Print the versioned JSON contract instead of text.
+        #[arg(long)]
+        json: bool,
+    },
     /// Which keyboard and half the mounted bootloader drive belongs to,
     /// read from the firmware on the chip (its CURRENT.UF2). Exit 0 when it
     /// is this keyboard (and the --expect half), 1 when it isn't or can't
@@ -237,6 +289,71 @@ enum FlashCommand {
 enum HalfArg {
     Left,
     Right,
+}
+
+impl From<HalfArg> for Half {
+    fn from(h: HalfArg) -> Self {
+        match h {
+            HalfArg::Left => Half::Left,
+            HalfArg::Right => Half::Right,
+        }
+    }
+}
+
+#[derive(Copy, Clone, Debug, PartialEq, Eq, ValueEnum)]
+enum HalvesArg {
+    Left,
+    Right,
+    Both,
+}
+
+impl HalvesArg {
+    fn halves(self) -> Vec<Half> {
+        match self {
+            HalvesArg::Left => vec![Half::Left],
+            HalvesArg::Right => vec![Half::Right],
+            HalvesArg::Both => vec![Half::Left, Half::Right],
+        }
+    }
+}
+
+/// Where the firmware comes from, and how the flash runs.
+#[derive(clap::Args, Debug)]
+struct FlashArgs {
+    /// A firmware release by tag (default: the newest sofleii-fw-v*
+    /// release).
+    #[arg(long, value_name = "TAG", conflicts_with_all = ["ci", "run", "file"])]
+    release: Option<String>,
+    /// The newest successful CI build on BRANCH (default: main). Needs
+    /// GH_TOKEN or GITHUB_TOKEN, e.g. GH_TOKEN=$(gh auth token).
+    #[arg(long, value_name = "BRANCH", num_args = 0..=1, default_missing_value = "main",
+          conflicts_with_all = ["run", "file"])]
+    ci: Option<String>,
+    /// One CI build run by id (token as for --ci).
+    #[arg(long, value_name = "ID", conflicts_with = "file")]
+    run: Option<u64>,
+    /// Local .uf2 files (repeat for several); each is identified by its
+    /// content, so the order and names don't matter.
+    #[arg(long, value_name = "PATH")]
+    file: Vec<std::path::PathBuf>,
+    /// Flash a chip nothing vouches for (a first flash, foreign or erased
+    /// firmware) or whose firmware says it is the other half: `--adopt
+    /// left` states the half; plain `--adopt` asks you to type it.
+    /// Remembered by serial afterwards.
+    #[arg(long, value_enum, value_name = "HALF", num_args = 0..=1)]
+    adopt: Option<Option<HalfArg>>,
+    /// Seconds to wait for each bootloader drive.
+    #[arg(long, value_name = "SECS", default_value_t = 60,
+          value_parser = clap::value_parser!(u64).range(1..=600))]
+    wait: u64,
+    /// GitHub repository for --release/--ci/--run and the default release.
+    #[arg(long, value_name = "OWNER/NAME", default_value = DEFAULT_REPO,
+          value_parser = parse_repo)]
+    repo: String,
+    /// Print the versioned JSON result instead of text (the running
+    /// commentary still goes to stderr).
+    #[arg(long)]
+    json: bool,
 }
 
 #[derive(Subcommand, Debug)]
@@ -343,7 +460,10 @@ fn main() -> ExitCode {
         }
         | Command::Output { json, .. }
         | Command::Flash {
-            command: FlashCommand::Identify { json, .. },
+            command:
+                FlashCommand::Identify { json, .. }
+                | FlashCommand::Chips { json }
+                | FlashCommand::Forget { json, .. },
         }
         | Command::Keymap {
             command: KeymapCommand::Show { json, .. } | KeymapCommand::Diff { json, .. },
@@ -354,6 +474,13 @@ fn main() -> ExitCode {
                 | ProfileCommand::Rename { json, .. }
                 | ProfileCommand::Unpair { json, .. },
         } => json,
+        Command::Flash {
+            command:
+                FlashCommand::Left { ref args, .. }
+                | FlashCommand::Right { ref args, .. }
+                | FlashCommand::Both { ref args, .. }
+                | FlashCommand::Reset { ref args, .. },
+        } => args.json,
     };
     let is_battery = matches!(command, Command::Battery { .. });
     let format = match (json_flag, cli.format) {
@@ -456,6 +583,200 @@ fn confirm_unpair(
     }
 }
 
+/// `flash …`: identify, the chip memory, or a flash job.
+fn flash(cli: &Cli, command: &FlashCommand, style: Style) -> Result<(String, u8)> {
+    use commands::flash::{chips, job, source};
+    let (steps, args) = match command {
+        FlashCommand::Identify { mount, expect, .. } => {
+            let r = commands::flash::identify(mount.as_deref(), expect.map(Half::from))?;
+            return Ok((output::flash_identify(style, &r), r.exit_code()));
+        }
+        FlashCommand::Chips { .. } => {
+            let path = chips::default_path();
+            return Ok((
+                output::flash_chips(style, &chips::load(&path), &path),
+                exit::OK,
+            ));
+        }
+        FlashCommand::Forget { serial, .. } => {
+            let path = chips::default_path();
+            let mut c = chips::load(&path);
+            if !c.forget(serial) {
+                return Err(Error::Usage(format!(
+                    "no chip {serial} in {}; `sofleii flash chips` lists them",
+                    path.display()
+                )));
+            }
+            chips::save(&path, &c)?;
+            return Ok((output::flash_chips(style, &c, &path), exit::OK));
+        }
+        FlashCommand::Left { args, reset } => (job::plan(&[Half::Left], *reset), args),
+        FlashCommand::Right { args, reset } => (job::plan(&[Half::Right], *reset), args),
+        FlashCommand::Both { args, reset } => (job::plan(&[Half::Left, Half::Right], *reset), args),
+        FlashCommand::Reset { half, args } => (job::plan_reset(&half.halves()), args),
+    };
+
+    // Usage errors before the network and the double-tap.
+    let ask_half = matches!(args.adopt, Some(None));
+    if ask_half && !std::io::stdin().is_terminal() {
+        return Err(Error::Usage(
+            "--adopt without a half asks you to type it, and stdin is not a terminal; \
+             pass --adopt left or --adopt right"
+                .into(),
+        ));
+    }
+    let adopt = args.adopt.flatten().map(Half::from);
+    if let Some(h) = adopt
+        && !steps.iter().any(|s| s.half == h)
+    {
+        return Err(Error::Usage(format!(
+            "--adopt {} names a half this command doesn't flash",
+            h.as_str()
+        )));
+    }
+    let src = if !args.file.is_empty() {
+        source::Source::Files(args.file.clone())
+    } else if let Some(id) = args.run {
+        source::Source::Run(id)
+    } else if let Some(branch) = &args.ci {
+        source::Source::Ci {
+            branch: branch.clone(),
+        }
+    } else if let Some(tag) = &args.release {
+        source::Source::Release(tag.clone())
+    } else {
+        source::Source::LatestRelease
+    };
+
+    let err_style = Style::stderr();
+    let bundle = source::fetch(&src, &args.repo, &mut GitHub::new(GITHUB_TIMEOUT))?;
+    eprint!("{}", output::flash_bundle(err_style, &bundle));
+
+    let path = chips::default_path();
+    let mut known = chips::load(&path);
+    let mut save = |c: &sofleii::flash::Chips| chips::save(&path, c);
+    let now = || {
+        jiff::Timestamp::now()
+            .strftime("%Y-%m-%dT%H:%M:%SZ")
+            .to_string()
+    };
+    let mut memory = job::Memory {
+        chips: &mut known,
+        save: &mut save,
+        now: &now,
+    };
+    let opts = job::Options {
+        wait: Duration::from_secs(args.wait),
+        adopt,
+        ..job::Options::default()
+    };
+    let mut ui = CliUi {
+        style: err_style,
+        ask_half,
+        wait: opts.wait,
+        last_half: None,
+        progress: std::io::stderr().is_terminal(),
+    };
+    let mut drives = commands::flash::drive::Sys::default();
+    let mut report = job::run(&steps, &bundle, &mut memory, &mut drives, &mut ui, &opts)?;
+
+    // The left half answers over Studio once it's back: read what it runs.
+    if let Some(s) = report.steps.iter_mut().find(|s| {
+        s.step.role == sofleii::flash::Role::Left
+            && matches!(s.outcome, job::Outcome::Flashed { .. })
+    }) {
+        eprintln!(
+            "{:<10} reading the left half's version over Studio…",
+            "confirm"
+        );
+        match read_back(cli) {
+            Ok(v) => s.running = Some(v),
+            Err(e) => eprintln!("sofleii: note: couldn't read the left half's version back: {e}"),
+        }
+    }
+    Ok((output::flash_report(style, &report), report.exit_code()))
+}
+
+/// The left half's `zmk_config_version`, retried while it boots and its
+/// USB or BLE link comes up (up to 20 s).
+fn read_back(cli: &Cli) -> Result<String> {
+    let deadline = std::time::Instant::now() + Duration::from_secs(20);
+    loop {
+        let r = Connector::new(connect_config(cli))
+            .connect()
+            .and_then(|Connected { mut client, .. }| commands::update::read_running(&mut client));
+        match r {
+            Ok(running) => {
+                return running
+                    .version
+                    .ok_or_else(|| Error::Unsupported("the firmware reports no version".into()));
+            }
+            Err(e @ Error::Unsupported(_)) => return Err(e),
+            Err(e) if std::time::Instant::now() >= deadline => return Err(e),
+            Err(_) => std::thread::sleep(Duration::from_secs(1)),
+        }
+    }
+}
+
+/// The flash job's front end on a terminal: commentary on stderr, the
+/// double-tap prompts as instructions (no confirmation, so it runs without
+/// a TTY), and the typed half for `--adopt` without one.
+struct CliUi {
+    style: Style,
+    ask_half: bool,
+    wait: Duration,
+    last_half: Option<Half>,
+    progress: bool,
+}
+
+impl commands::flash::job::Ui for CliUi {
+    fn event(&mut self, e: &commands::flash::job::Event) {
+        use commands::flash::job::Event;
+        match e {
+            Event::Step {
+                index,
+                total,
+                step,
+                file,
+            } => {
+                let again = self.last_half == Some(step.half);
+                self.last_half = Some(step.half);
+                eprintln!(
+                    "{}",
+                    output::flash_step(self.style, *index, *total, *step, file, again, self.wait)
+                );
+            }
+            Event::Writing { written, total } => {
+                if self.progress {
+                    eprint!("\r{}", output::flash_progress(*written, *total));
+                    if written == total {
+                        eprintln!();
+                    }
+                }
+            }
+            e => {
+                if let Some(line) = output::flash_event(self.style, e) {
+                    eprintln!("{line}");
+                }
+            }
+        }
+    }
+
+    fn confirm(&mut self, _: &commands::flash::job::Prompt<'_>) -> bool {
+        true
+    }
+
+    fn adopt(&mut self, p: &commands::flash::job::Prompt<'_>) -> Option<Half> {
+        if !self.ask_half {
+            return None;
+        }
+        eprint!("{}", output::flash_adopt(self.style, p));
+        let mut answer = String::new();
+        std::io::stdin().lock().read_line(&mut answer).ok()?;
+        Half::parse(&answer.trim().to_ascii_lowercase())
+    }
+}
+
 /// `update check`: the keyboard first when the firmware is checked (so "not
 /// found" exits 2 without touching the network), then the shared cache or
 /// GitHub (one release list for both parts).
@@ -533,16 +854,8 @@ fn run(cli: &Cli, command: &Command, style: Style) -> Result<(String, u8)> {
         return update_check(cli, style, repo, want_fw, want_cli, *refresh);
     }
 
-    if let Command::Flash {
-        command: FlashCommand::Identify { mount, expect, .. },
-    } = command
-    {
-        let expect = expect.map(|h| match h {
-            HalfArg::Left => Half::Left,
-            HalfArg::Right => Half::Right,
-        });
-        let r = commands::flash::identify(mount.as_deref(), expect)?;
-        return Ok((output::flash_identify(style, &r), r.exit_code()));
+    if let Command::Flash { command } = command {
+        return flash(cli, command, style);
     }
 
     // Usage errors that need no keyboard come before connecting; so does

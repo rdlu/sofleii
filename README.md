@@ -26,13 +26,13 @@ Every layer, with its own page and key grid: **[sofleii.dlu.one/keymap](https://
 
 ## Quick start
 
-**Flash a release** (needs `mise` and an authenticated `gh`; double-tap reset on each half when asked):
+**Flash a release** (needs `mise` and Rust; [`sofleii flash`](https://sofleii.dlu.one/docs/sofleii/#flash) checks each half before copying; double-tap reset on each half when asked):
 
 ```bash
 mise run flash-release
 ```
 
-On a major upgrade, flash the settings reset first (`mise run flash-release-reset`), see [Upgrading to v3](https://sofleii.dlu.one/docs/upgrading-to-v3/). Flashing without `mise`: [Flashing](https://sofleii.dlu.one/docs/flashing/).
+On a major upgrade, flash with a settings reset (`mise run flash-release-reset`), see [Upgrading to v3](https://sofleii.dlu.one/docs/upgrading-to-v3/). Flashing without `mise`: [Flashing](https://sofleii.dlu.one/docs/flashing/).
 
 **Build locally** (Arch Linux; full guide in [Building](https://sofleii.dlu.one/docs/building/)):
 

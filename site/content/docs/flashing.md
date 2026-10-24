@@ -1,7 +1,7 @@
 ---
 title: Flashing
-description: Flash the Eyelash Sofle with mise run flash-release, by dragging .uf2 files onto the NICENANO drive, or with settings_reset.uf2 to clear the Studio overlay and Bluetooth bonds.
-keywords: [flash, uf2, NICENANO, double-tap reset, settings_reset, flash-release, bootloader, CURRENT.UF2, flash identify, wrong half]
+description: Flash the Eyelash Sofle with sofleii flash (or mise run flash-release), by dragging .uf2 files onto the NICENANO drive, or with settings_reset.uf2 to clear the Studio overlay and Bluetooth bonds.
+keywords: [flash, uf2, NICENANO, double-tap reset, settings_reset, flash-release, sofleii flash, bootloader, CURRENT.UF2, flash identify, wrong half, adopt, chip serial]
 weight: 3
 ---
 
@@ -28,23 +28,41 @@ and every `main` build on GitHub Actions uploads them as a `firmware`
 artifact. The local build tasks name the halves `eyelash_sofle_left.uf2` and
 `eyelash_sofle_right.uf2` instead (see [Building locally](../building/)).
 
-## With mise (recommended)
+## With sofleii (recommended)
 
-One task downloads the firmware from the latest successful `main` build on
-GitHub Actions and walks you through both halves:
+[`sofleii flash`](../sofleii/#flash) downloads the newest release and walks
+you through both halves:
 
 ```sh
-mise run flash-release
+sofleii flash both          # or, from a checkout: mise run flash-release
 ```
 
-It prompts you to double-tap reset on the **left** half, waits up to 60
-seconds for `NICENANO` to mount, [checks that it is the left
-half](#which-half-is-this), copies and syncs, waits for the drive to go
-away, then does the same for the **right** half. It needs
-[mise](https://mise.jdx.dev/) and an authenticated [`gh`](https://cli.github.com/).
+It asks you to double-tap reset on the **left** half, waits up to 60 seconds
+for its drive to mount, [checks that it is the left half](#which-half-is-this),
+copies and syncs, waits for the half to reboot, then does the same for the
+**right** half. At the end it reads the version the left half reports.
 
-The mount point it waits for is `/run/media/$USER/NICENANO`, where udisks
-mounts removable drives on most Linux desktops.
+```text
+firmware   release sofleii-fw-v3.2.0
+           eyelash_sofle_studio_left.uf2 922 KB (legacy, eyelash_sofle, left)
+           nice_view-eyelash_sofle_right-zmk.uf2 646 KB (legacy, eyelash_sofle, right)
+           settings_reset.uf2 103 KB (settings_reset)
+
+[1/2] left half: eyelash_sofle_studio_left.uf2
+>> Double-tap RESET on the LEFT half (waiting 60 s)
+drive      /run/media/rdlu/NICENANO (chip 94708422E5F2FD3E)
+on chip    sofleii, eyelash_sofle, left
+decision   flash (its firmware says so)
+copying    ████████████████████████ 922 / 922 KB
+remember   chip 94708422E5F2FD3E = your left half (verified)
+rebooted   ✓
+```
+
+Other firmware: `--release <tag>` for an older release, `--ci [branch]` for
+the newest successful CI build of `main` or a branch (`mise run flash-ci`
+for `main`; needs a GitHub token, e.g. `GH_TOKEN=$(gh auth token)`), and
+`--file` for files you built or downloaded. `sofleii flash left` or `right`
+does one half.
 
 ## By hand (drag-and-drop)
 
@@ -73,12 +91,12 @@ partition, then you flash the normal firmware on top. Use it when:
 
 It also erases the half's Bluetooth bonds, so expect to re-pair afterwards.
 
-With mise, flash the reset onto whichever half is in bootloader mode, then
-the normal firmware:
+With sofleii, `--reset` flashes the reset and then the normal firmware on
+each half (two double-taps per half); `flash reset` flashes only the reset:
 
 ```sh
-mise run flash-release-reset   # double-tap the half to clear when asked
-mise run flash-release         # left, then right
+sofleii flash both --reset     # or: mise run flash-release-reset
+sofleii flash left --reset     # only the left half
 ```
 
 By hand: double-tap reset, copy `settings_reset.uf2`, wait a couple of
@@ -88,19 +106,26 @@ half's normal firmware.
 ## Locally built firmware
 
 After a [local build](../building/), `mise run flash-left`, `flash-right` and
-`flash-reset` copy the matching file the same way, and `mise run build-flash`
-builds both halves, flashes them one after the other and prints the memory
-budget at the end.
+`flash-reset` (settings_reset on both halves) flash the matching file the
+same way (`sofleii flash left --file eyelash_sofle_left.uf2`, …), and
+`mise run build-flash` builds both halves, flashes them one after the other
+and prints the memory budget at the end.
 
 ## Which half is this?
 
 Every nice!nano mounts as the same `NICENANO` drive, both halves included,
-and its `INFO_UF2.TXT` only describes the bootloader. So every mise flash
-task (`flash-release`, `flash-release-reset`, `flash-left`, `flash-right`,
-`flash-reset`, `build-flash`) first runs
-[`sofleii flash identify`](../sofleii/#flash-identify), which reads the
-firmware **on the chip** from the drive's `CURRENT.UF2`, and refuses to copy
-when it is the other half or not this keyboard:
+and its `INFO_UF2.TXT` only describes the bootloader. So before it copies
+anything, `sofleii flash` (and every mise flash task, which runs it) checks
+two things:
+
+- **the chip's serial number**, which is the nRF52840's own ID and doesn't
+  change with the firmware. sofleii remembers each chip it has flashed
+  (`sofleii flash chips`), and a known chip decides on its own: it's flashed
+  as its half even when it carries the wrong firmware, and refused as the
+  other one;
+- **the firmware on the chip**, read from the drive's `CURRENT.UF2`, for a
+  chip it hasn't seen yet. That is what
+  [`sofleii flash identify`](../sofleii/#flash-identify) shows:
 
 ```text
 drive       /run/media/rdlu/NICENANO
@@ -117,12 +142,16 @@ expected    left half: MISMATCH: do not flash
   `legacy`.
 - After a **settings reset** the half is still recognised: the reset firmware
   is small, and the end of the firmware it replaced is still in flash.
-- An erased chip, another keyboard or contradictory leftovers come out
-  **unknown**, and nothing is flashed. If you are sure, `FORCE=1 mise run
-  flash-left` (or any of the tasks) skips the check.
+- An erased chip, vendor or other firmware, or contradictory leftovers come
+  out **unknown**: nothing is flashed until you **adopt** the chip, with
+  `--adopt left` (or `right`), or a bare `--adopt` to be asked to type the
+  half. The same goes for a new chip whose firmware says it is the other half.
+  Adoption is remembered, so it happens once per chip; a controller that moves
+  to another keyboard is dropped with `sofleii flash forget <serial>`.
 
-The check builds sofleii from this repo, so it needs Rust; dragging the file
-by hand checks nothing.
+The firmware files are checked the same way: each `.uf2` is identified by its
+content, so a right-half file can't end up on the left half by its name.
+Dragging the file by hand checks nothing.
 
 If the `NICENANO` drive never appears, or the half doesn't boot after the
 copy, see [Troubleshooting](../reference/troubleshooting/#flashing).
