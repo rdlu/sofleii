@@ -14,22 +14,6 @@ config ZMK_SPLIT_ROLE_CENTRAL
 endif # SHIELD_EYELASH_SOFLE_LEFT
 
 
-# sofleii identity record (zmk-sofleii-id, #98): which keyboard and half
-# this image is, read back from CURRENT.UF2 before flashing.
-if SHIELD_EYELASH_SOFLE_LEFT || SHIELD_EYELASH_SOFLE_RIGHT
-
-config SOFLEII_ID
-    default y
-
-config SOFLEII_ID_KEYBOARD
-    default "eyelash_sofle"
-
-config SOFLEII_ID_HALF
-    default "left" if SHIELD_EYELASH_SOFLE_LEFT
-    default "right"
-
-endif
-
 if SHIELD_EYELASH_SOFLE_LEFT || SHIELD_EYELASH_SOFLE_RIGHT
 
 config ZMK_SPLIT

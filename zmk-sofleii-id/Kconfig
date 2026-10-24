@@ -1,17 +1,25 @@
+# The defaults for this keyboard live here, keyed on the shield symbols, and
+# not in the shield's Kconfig.defconfig: Zephyr parses every shield's
+# defconfig, settings_reset's build included, which doesn't load this module,
+# so a default there names a symbol without a type and aborts the build.
+
 config SOFLEII_ID
     bool "sofleii identity record (keyboard + half) in the flash image"
+    default y if SHIELD_EYELASH_SOFLE_LEFT || SHIELD_EYELASH_SOFLE_RIGHT
     help
       Compiles a small record, found by its "SOFLEII-ID/1" magic, naming the
       keyboard and the half. sofleii reads it from the bootloader drive's
       CURRENT.UF2 to refuse flashing the wrong half or another nice!nano.
-      The shield sets the defaults below.
 
 if SOFLEII_ID
 
 config SOFLEII_ID_KEYBOARD
     string "Keyboard id in the record (at most 15 bytes)"
+    default "eyelash_sofle"
 
 config SOFLEII_ID_HALF
     string "Half in the record: left or right"
+    default "left" if SHIELD_EYELASH_SOFLE_LEFT
+    default "right" if SHIELD_EYELASH_SOFLE_RIGHT
 
 endif # SOFLEII_ID
