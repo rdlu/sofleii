@@ -456,6 +456,31 @@ fn an_action_reports_done_then_refreshes() {
 }
 
 #[test]
+fn a_suspended_link_drops_refuses_writes_and_resumes() {
+    let s = start(|c| c, Kb::default());
+    s.until("status", status_ok);
+    let opened = s.kb.lock().opened;
+    let t = s.h.send(Request::Suspend(true));
+    let (seen, r) = s.done(t);
+    assert!(r.is_ok(), "{r:?}");
+    assert!(
+        seen.iter()
+            .any(|e| matches!(e, Event::Link(LinkState::Suspended)))
+    );
+    // Refreshes answer without touching the keyboard; writes are refused.
+    let (_, r) = s.done(s.h.send(Request::Refresh(Scope::All)));
+    assert!(r.is_ok(), "{r:?}");
+    let (_, r) = s.done(s.h.send(Request::SwitchProfile(1)));
+    assert!(r.unwrap_err().message.contains("paused"));
+    assert_eq!(s.kb.lock().opened, opened, "nothing opened while paused");
+    let t = s.h.send(Request::Suspend(false));
+    let _ = s.done(t);
+    let seen = s.until("status", status_ok);
+    assert!(seen.iter().any(connected), "{seen:#?}");
+    assert_eq!(s.kb.lock().opened, opened + 1);
+}
+
+#[test]
 fn an_output_handover_is_verified_over_ble_and_the_link_follows() {
     let s = start(
         |c| c,

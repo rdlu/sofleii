@@ -147,7 +147,7 @@ fn dashboard_80x24() {
     }
     assert_eq!(
         s[23],
-        "└ q quit · r refresh · ⏎ switch · o output · u update · d debug · ? help ──────┘"
+        "└ q quit · r refresh · ⏎ switch · o output · u update · F flash · ? help ──────┘"
     );
 }
 
@@ -1340,5 +1340,269 @@ fn output_ble_that_stays_on_usb_says_so() {
     assert!(
         s.join("\n")
             .contains("17:42:10 priority is ble, but the active BLE profile")
+    );
+}
+
+/// A session that records requests and hands out a flash worker whose
+/// other ends the test holds.
+#[derive(Default)]
+struct FlashRec {
+    sent: RefCell<Vec<Request>>,
+    specs: RefCell<Vec<flash::Spec>>,
+    answers: RefCell<Option<mpsc::Receiver<flash::Answer>>>,
+    cancel: RefCell<Option<std::sync::Arc<AtomicBool>>>,
+}
+
+impl Requests for FlashRec {
+    fn send(&self, req: Request) -> Ticket {
+        let mut v = self.sent.borrow_mut();
+        v.push(req);
+        Ticket(v.len() as u64)
+    }
+    fn flash(&self, spec: flash::Spec) -> Option<flash::Worker> {
+        self.specs.borrow_mut().push(spec);
+        let (tx, rx) = mpsc::channel();
+        let cancel = std::sync::Arc::new(AtomicBool::new(false));
+        *self.answers.borrow_mut() = Some(rx);
+        *self.cancel.borrow_mut() = Some(std::sync::Arc::clone(&cancel));
+        Some(flash::Worker {
+            answers: tx,
+            cancel,
+        })
+    }
+}
+
+fn fpress(app: &mut App, s: &dyn Requests, code: KeyCode) {
+    app.handle(Input::Term(TermEvent::Key(key(code))), s, t0());
+}
+
+fn msg(app: &mut App, s: &dyn Requests, m: flash::Msg, now: SystemTime) {
+    app.handle(Input::Flash(Box::new(m)), s, now);
+}
+
+fn left_step() -> crate::commands::flash::job::Step {
+    crate::commands::flash::job::Step {
+        half: crate::flash::Half::Left,
+        role: crate::flash::Role::Left,
+    }
+}
+
+#[test]
+fn flash_setup_picks_source_and_plan() {
+    let rec = FlashRec::default();
+    let mut app = demo();
+    fpress(&mut app, &rec, KeyCode::Char('F'));
+    assert!(app.flash_mode.is_some());
+    // The real environment decides the token; pin it for the test.
+    app.flash_mode = Some(flash::Mode::new(flash::Setup::new(false, vec![])));
+    let s = text(&app);
+    for k in [
+        "Firmware",
+        "‹ newest release ›",
+        "[ ] settings reset first",
+        "[x] left half",
+        "[x] right half",
+        "⏎ start",
+    ] {
+        assert!(s.contains(k), "{k}:\n{s}");
+    }
+    // CI without a token, then no half: why ⏎ did nothing.
+    fpress(&mut app, &rec, KeyCode::Char('s'));
+    assert!(text(&app).contains("needs GH_TOKEN"));
+    assert!(text(&app).contains("Branch"));
+    fpress(&mut app, &rec, KeyCode::Enter);
+    assert!(
+        text(&app).contains("CI builds need a GitHub token"),
+        "{}",
+        text(&app)
+    );
+    fpress(&mut app, &rec, KeyCode::Char('s'));
+    fpress(&mut app, &rec, KeyCode::Char('s'));
+    for _ in 0..3 {
+        fpress(&mut app, &rec, KeyCode::Down);
+    }
+    fpress(&mut app, &rec, KeyCode::Char(' '));
+    fpress(&mut app, &rec, KeyCode::Up);
+    fpress(&mut app, &rec, KeyCode::Char(' '));
+    fpress(&mut app, &rec, KeyCode::Enter);
+    assert!(text(&app).contains("pick a half"), "{}", text(&app));
+    assert!(rec.specs.borrow().is_empty());
+    // Esc goes back to the dashboard; nothing was sent.
+    fpress(&mut app, &rec, KeyCode::Esc);
+    assert!(app.flash_mode.is_none() && !app.quit);
+    assert!(rec.sent.borrow().is_empty());
+}
+
+#[test]
+fn flash_run_suspends_asks_and_resumes() {
+    use crate::commands::flash::job::{Event as JobEvent, Report};
+    let rec = FlashRec::default();
+    let mut app = demo();
+    let mut setup = flash::Setup::new(false, vec![]);
+    setup.right = false;
+    setup.reset = true;
+    app.flash_mode = Some(flash::Mode::new(setup));
+    fpress(&mut app, &rec, KeyCode::Enter);
+    let spec = rec.specs.borrow()[0].clone();
+    assert_eq!(spec.steps.len(), 2, "reset, then the left firmware");
+    assert_eq!(*rec.sent.borrow(), [Request::Suspend(true)]);
+    assert!(text(&app).contains("fetching the firmware"));
+
+    msg(
+        &mut app,
+        &rec,
+        flash::Msg::Fetched(vec!["firmware   release sofleii-fw-v3.3.0".into()]),
+        at(1),
+    );
+    msg(
+        &mut app,
+        &rec,
+        flash::Msg::Event(JobEvent::Step {
+            index: 0,
+            total: 2,
+            step: spec.steps[0],
+            file: "settings_reset.uf2".into(),
+        }),
+        at(1),
+    );
+    app.tick(at(13));
+    let s = text(&app);
+    assert!(s.contains("Double-tap RESET on the LEFT half"), "{s}");
+    assert!(s.contains("waiting 0:12"), "{s}");
+    assert!(s.contains("1 Left half: settings reset"), "{s}");
+    assert!(s.contains("2 Left half"), "{s}");
+
+    // Esc while waiting cancels the job.
+    fpress(&mut app, &rec, KeyCode::Esc);
+    assert!(
+        rec.cancel
+            .borrow()
+            .as_ref()
+            .unwrap()
+            .load(std::sync::atomic::Ordering::SeqCst)
+    );
+    assert!(app.flash_mode.is_some(), "stays open until the worker ends");
+
+    // A write in progress: Esc and Ctrl-C don't interrupt it.
+    msg(
+        &mut app,
+        &rec,
+        flash::Msg::Event(JobEvent::Writing {
+            written: 1024,
+            total: 4096,
+        }),
+        at(14),
+    );
+    assert!(text(&app).contains("1 / 4 KB"), "{}", text(&app));
+    app.handle(
+        Input::Term(TermEvent::Key(KeyEvent::new(
+            KeyCode::Char('c'),
+            KeyModifiers::CONTROL,
+        ))),
+        &rec,
+        at(14),
+    );
+    assert!(!app.quit);
+
+    // The confirmation: only y flashes.
+    msg(
+        &mut app,
+        &rec,
+        flash::Msg::Ask(flash::Ask::Confirm {
+            step: left_step(),
+            file: "l.uf2".into(),
+        }),
+        at(15),
+    );
+    let s = text(&app);
+    assert!(s.contains("Flash the left half?"), "{s}");
+    fpress(&mut app, &rec, KeyCode::Enter);
+    let answers = rec.answers.borrow_mut().take().unwrap();
+    assert_eq!(answers.try_recv().unwrap(), flash::Answer::Confirm(false));
+
+    // Adoption takes the typed half.
+    msg(
+        &mut app,
+        &rec,
+        flash::Msg::Ask(flash::Ask::Adopt {
+            step: left_step(),
+            serial: Some("94708422E5F2FD3E".into()),
+            reason: "unknown firmware".into(),
+        }),
+        at(16),
+    );
+    for c in "Left".chars() {
+        fpress(&mut app, &rec, KeyCode::Char(c));
+    }
+    let s = text(&app);
+    assert!(
+        s.contains("Unknown chip") && s.contains("Half: Left"),
+        "{s}"
+    );
+    fpress(&mut app, &rec, KeyCode::Enter);
+    assert_eq!(
+        answers.try_recv().unwrap(),
+        flash::Answer::Adopt(Some(crate::flash::Half::Left))
+    );
+
+    // The end: the link resumes, the outcome stays until ⏎.
+    let report = Report {
+        origin: crate::flash::Origin::Files,
+        steps: vec![],
+        planned: 2,
+    };
+    msg(&mut app, &rec, flash::Msg::Finished(Ok(report)), at(17));
+    assert_eq!(rec.sent.borrow().last(), Some(&Request::Suspend(false)));
+    let s = text(&app);
+    assert!(s.contains("✕ stopped"), "{s}");
+    assert!(s.contains("flash: stopped"), "the log has it:\n{s}");
+    fpress(&mut app, &rec, KeyCode::Enter);
+    assert!(app.flash_mode.is_none());
+}
+
+#[test]
+fn flash_right_only_keeps_the_link_and_errors_show() {
+    let rec = FlashRec::default();
+    let mut app = demo();
+    let mut setup = flash::Setup::new(false, vec![]);
+    setup.left = false;
+    app.flash_mode = Some(flash::Mode::new(setup));
+    fpress(&mut app, &rec, KeyCode::Enter);
+    assert!(
+        rec.sent.borrow().is_empty(),
+        "the right half alone doesn't suspend the link"
+    );
+    let e = ErrorView {
+        kind: "not_found",
+        message: "no bootloader drive appeared within 60 s".into(),
+        exit_code: 2,
+    };
+    msg(&mut app, &rec, flash::Msg::Finished(Err(e)), at(5));
+    assert!(rec.sent.borrow().is_empty());
+    assert!(
+        text(&app).contains("✕ no bootloader drive appeared"),
+        "{}",
+        text(&app)
+    );
+}
+
+#[test]
+fn the_paused_link_renders() {
+    let mut app = demo();
+    app.apply(&Event::Link(LinkState::Suspended), t0());
+    assert!(text(&app).contains("paused for flashing"), "{}", text(&app));
+}
+
+#[test]
+fn studio_serial_teaches_the_left_chip_once() {
+    let mut c = crate::flash::Chips::default();
+    assert!(flash::learn_from_studio(&mut c, "94708422e5f2fd3e", "t"));
+    assert_eq!(
+        c.get("94708422E5F2FD3E").unwrap().learned,
+        crate::flash::Learned::Studio
+    );
+    assert!(
+        !flash::learn_from_studio(&mut c, "94708422E5F2FD3E", "t2"),
+        "known chips stay as they are"
     );
 }

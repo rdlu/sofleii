@@ -156,6 +156,11 @@ pub enum Request {
     /// The front end gained (`true`) or lost focus: slower polling while
     /// it's in the background.
     Focus(bool),
+    /// Pauses (`true`) or resumes the link: dropped and not polled while a
+    /// half is in its bootloader (flashing, #100), so its disappearance is
+    /// no lost/deaf noise. Writes are refused while paused; resuming
+    /// searches at once.
+    Suspend(bool),
     /// Stops every thread. Gets no [`Event::Done`].
     Quit,
 }
@@ -228,6 +233,7 @@ impl Request {
             | Request::CheckUpdate
             | Request::Reconnect
             | Request::Focus(_)
+            | Request::Suspend(_)
             | Request::Quit => Risk::None,
         }
     }
@@ -284,6 +290,8 @@ pub enum LinkState {
         kind: Option<TransportKind>,
         hint: Option<String>,
     },
+    /// Paused by [`Request::Suspend`] (a half is being flashed).
+    Suspended,
     /// The transport failed; the next try is `retry_in` away.
     Lost {
         reason: String,

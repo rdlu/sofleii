@@ -4,8 +4,8 @@
 Runs `sofleii` with SOFLEII_TUI_DEMO=1 (a fixture snapshot: no keyboard, no
 real addresses) in a detached 80x24 tmux session on a private socket,
 captures the pane with its ANSI colours (`capture-pane -p -e`), opens the
-help overlay with `?` and captures again, then turns each capture into an
-SVG. Standard library only; needs tmux and a built binary.
+help overlay with `?` and Flash mode's setup with `F`, capturing each, then
+turns each capture into an SVG. Standard library only; needs tmux and a built binary.
 
     scripts/tui-screenshot.py [--bin PATH] [--out DIR] [--ansi FILE NAME]
 
@@ -280,6 +280,10 @@ def capture(binary: Path) -> dict[str, str]:
         time.sleep(0.5)
         shots["help"] = tmux("capture-pane", "-p", "-e", "-t", "shot")
         tmux("send-keys", "-t", "shot", "Escape")
+        tmux("send-keys", "-t", "shot", "F")
+        time.sleep(0.5)
+        shots["flash"] = tmux("capture-pane", "-p", "-e", "-t", "shot")
+        tmux("send-keys", "-t", "shot", "Escape")
         tmux("send-keys", "-t", "shot", "q")
         return shots
     finally:
@@ -289,6 +293,7 @@ def capture(binary: Path) -> dict[str, str]:
 TITLES = {
     "dashboard": "The sofleii TUI dashboard (demo fixture, 80x24)",
     "help": "The sofleii TUI help overlay (demo fixture, 80x24)",
+    "flash": "The sofleii TUI Flash mode setup (demo fixture, 80x24)",
 }
 
 

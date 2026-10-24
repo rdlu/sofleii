@@ -58,6 +58,9 @@ remember   chip 94708422E5F2FD3E = your left half (verified)
 rebooted   ✓
 ```
 
+In the [TUI](../sofleii/#flash-mode), `F` runs the same flash step by
+step, asking before it writes to each half.
+
 Other firmware: `--release <tag>` for an older release, `--ci [branch]` for
 the newest successful CI build of `main` or a branch (`mise run flash-ci`
 for `main`; needs a GitHub token, e.g. `GH_TOKEN=$(gh auth token)`), and

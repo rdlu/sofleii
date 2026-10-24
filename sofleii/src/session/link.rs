@@ -182,6 +182,8 @@ struct Link {
     presence: Option<Presence>,
     /// The front end went away.
     closed: bool,
+    /// [`Request::Suspend`]: no client, no polling, writes refused.
+    suspended: bool,
 }
 
 impl Link {
@@ -213,18 +215,23 @@ impl Link {
             deaf_streak: 0,
             presence: None,
             closed: false,
+            suspended: false,
         }
     }
 
     fn run(mut self, rx: Receiver<Msg>) {
         self.emit(Event::Link(LinkState::Searching));
         while !self.closed {
-            if Instant::now() >= self.due {
+            if !self.suspended && Instant::now() >= self.due {
                 let _ = self.poll();
                 continue;
             }
             self.release_if_idle();
-            let mut wake = self.due;
+            let mut wake = if self.suspended {
+                Instant::now() + Duration::from_secs(3600)
+            } else {
+                self.due
+            };
             if self.client.is_some() {
                 wake = wake.min(self.last_used + self.cfg.lease_idle);
             }
@@ -485,7 +492,31 @@ impl Link {
     }
 
     fn handle(&mut self, t: Ticket, req: Request) {
+        if self.suspended && !matches!(req, Request::Suspend(_) | Request::Focus(_)) {
+            let r = match req {
+                Request::Refresh(_) | Request::Reconnect | Request::CheckUpdate => Ok(Outcome::Ok),
+                _ => Err(crate::Error::Unsupported(
+                    "the link is paused while a half is being flashed".into(),
+                )
+                .view()),
+            };
+            return self.done(t, r);
+        }
         match req {
+            Request::Suspend(true) => {
+                self.drop_link(true);
+                self.suspended = true;
+                self.set_state(LinkState::Suspended);
+                self.done(t, Ok(Outcome::Ok));
+            }
+            Request::Suspend(false) => {
+                self.suspended = false;
+                self.attempt = 0;
+                self.deaf_streak = 0;
+                self.set_state(LinkState::Searching);
+                self.due = Instant::now();
+                self.done(t, Ok(Outcome::Ok));
+            }
             Request::Refresh(scope) => {
                 if matches!(scope, Scope::All | Scope::Info) {
                     self.need_info = true;
@@ -586,6 +617,9 @@ impl Link {
         let prev = self.presence.replace(p);
         // The first report is the starting point, not an edge.
         if prev.is_none() || prev == Some(p) {
+            return;
+        }
+        if self.suspended {
             return;
         }
         log::debug!("presence changed: usb {} ble {}", p.usb, p.ble);

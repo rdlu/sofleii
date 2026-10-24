@@ -18,6 +18,10 @@
 //! stays there briefly (an error until the next key) and goes to the log.
 //! `SOFLEII_TUI_DEMO=1` shows a fixture instead, with no session.
 //!
+//! **Flash mode** (`F`, [`flash`]): a full-screen wizard that flashes the
+//! halves through the same job as `sofleii flash`, on a worker thread
+//! whose messages arrive on the loop's channel too.
+//!
 //! The terminal is restored on every way out: a normal quit (`q`, `Esc`,
 //! `Ctrl-C`), SIGTERM/SIGHUP/SIGINT (flags checked by the event loop), and a
 //! panic: `ratatui::try_init` installs a panic hook that restores first, and
@@ -26,6 +30,7 @@
 //! process exit takes any thread still blocked in I/O.
 
 pub mod actions;
+pub mod flash;
 pub mod log_pane;
 pub mod snapshot;
 pub mod view;
@@ -64,17 +69,39 @@ pub enum Input {
     Term(TermEvent),
     /// Boxed: an event is much larger than a key.
     Session(Box<Event>),
+    /// The Flash mode's worker.
+    Flash(Box<flash::Msg>),
 }
 
 /// Where the loop sends requests: a [`SessionHandle`], or a fake in tests
 /// and the demo.
 pub trait Requests {
     fn send(&self, req: Request) -> Ticket;
+    /// Starts a flash worker; `None` where flashing isn't available (the
+    /// demo).
+    fn flash(&self, _spec: flash::Spec) -> Option<flash::Worker> {
+        None
+    }
 }
 
 impl Requests for SessionHandle {
     fn send(&self, req: Request) -> Ticket {
         SessionHandle::send(self, req)
+    }
+}
+
+/// The live session, plus the loop's channel for a flash worker.
+struct Live {
+    handle: SessionHandle,
+    tx: Sender<Input>,
+}
+
+impl Requests for Live {
+    fn send(&self, req: Request) -> Ticket {
+        self.handle.send(req)
+    }
+    fn flash(&self, spec: flash::Spec) -> Option<flash::Worker> {
+        Some(flash::spawn(spec, self.tx.clone()))
     }
 }
 
@@ -118,6 +145,11 @@ pub struct App {
     pub action: Option<Pending>,
     /// The last write's result (or why a key did nothing).
     pub flash: Option<Flash>,
+    /// Flash mode, while it's open.
+    pub flash_mode: Option<flash::Mode>,
+    /// The chip memory to learn Studio's serial into; `None` (the demo,
+    /// tests) learns nothing.
+    pub chips_path: Option<std::path::PathBuf>,
 }
 
 impl App {
@@ -141,6 +173,8 @@ impl App {
             confirm: None,
             action: None,
             flash: None,
+            flash_mode: None,
+            chips_path: None,
         };
         app.follow_active();
         app
@@ -325,6 +359,102 @@ impl App {
         }
     }
 
+    /// `F`: opens Flash mode (not while a write is in flight). Learns the
+    /// left chip from Studio's serial number on the way, if it's new.
+    fn open_flash(&mut self) {
+        if self.action.is_some() {
+            return;
+        }
+        let token = ["GH_TOKEN", "GITHUB_TOKEN"]
+            .iter()
+            .any(|v| std::env::var_os(v).is_some_and(|t| !t.is_empty()));
+        let local = std::env::current_dir()
+            .map(|d| flash::find_local(&d))
+            .unwrap_or_default();
+        if let Some(path) = self.chips_path.clone()
+            && let Some(serial) = self
+                .session
+                .info
+                .value
+                .as_ref()
+                .and_then(|i| i.device.serial_number.clone())
+        {
+            use crate::commands::flash::chips;
+            let mut known = chips::load(&path);
+            if flash::learn_from_studio(&mut known, &serial, &flash::now_iso()) {
+                let now = self.now;
+                match chips::save(&path, &known) {
+                    Ok(()) => self.note(
+                        LogLevel::Info,
+                        now,
+                        &format!("flash: chip {serial} is your left half (from Studio)"),
+                    ),
+                    Err(e) => self.note(LogLevel::Warn, now, &format!("flash: {e}")),
+                }
+            }
+        }
+        self.help = false;
+        self.flash = None;
+        self.flash_mode = Some(flash::Mode::new(flash::Setup::new(token, local)));
+    }
+
+    /// What Flash mode asks for.
+    fn flash_effect(&mut self, fx: flash::Effect, session: &dyn Requests, now: SystemTime) {
+        match fx {
+            flash::Effect::None => {}
+            flash::Effect::Close => self.flash_mode = None,
+            flash::Effect::Log(level, text) => self.note(level, now, &text),
+            flash::Effect::Send(req) => {
+                session.send(req);
+            }
+            flash::Effect::Start(spec) => {
+                let Some(mode) = self.flash_mode.as_mut() else {
+                    return;
+                };
+                match session.flash(spec.clone()) {
+                    Some(w) => {
+                        if mode.started(&spec, w) {
+                            session.send(Request::Suspend(true));
+                        }
+                    }
+                    None => {
+                        if let flash::Stage::Setup(s) = &mut mode.stage {
+                            s.problem = Some("flashing isn't available here (demo)".into());
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    /// A key while Flash mode is open. `Ctrl-C` quits, except mid-write.
+    fn flash_key(&mut self, key: KeyEvent, session: &dyn Requests, now: SystemTime) {
+        if key.kind != KeyEventKind::Press {
+            return;
+        }
+        let writing = self
+            .flash_mode
+            .as_ref()
+            .is_some_and(|m| matches!(&m.stage, flash::Stage::Running(r) if r.writing()));
+        if key.modifiers.contains(KeyModifiers::CONTROL) && key.code == KeyCode::Char('c') {
+            if writing {
+                self.note(
+                    LogLevel::Warn,
+                    now,
+                    "writing to the half: wait for the copy to finish",
+                );
+            } else {
+                self.quit = true;
+            }
+            return;
+        }
+        let Some(mode) = self.flash_mode.as_mut() else {
+            return;
+        };
+        let fx = mode.on_key(key.code);
+        self.flash_effect(fx, session, now);
+    }
+
     /// Handles a key; returns the request it asks for, if any.
     pub fn on_key(&mut self, key: KeyEvent) -> Option<Request> {
         if key.kind != KeyEventKind::Press {
@@ -350,6 +480,7 @@ impl App {
             KeyCode::Char('r') => return Some(Request::Refresh(Scope::All)),
             KeyCode::Char('u') => return Some(Request::CheckUpdate),
             KeyCode::Char('d') => self.debug = !self.debug,
+            KeyCode::Char('F' | 'f') if !busy => self.open_flash(),
             // One write at a time: ignored while one is in flight.
             KeyCode::Enter | KeyCode::Char('s') if !busy => {
                 let req = self.switch_request();
@@ -376,6 +507,17 @@ impl App {
     /// or a session event.
     pub fn handle(&mut self, input: Input, session: &dyn Requests, now: SystemTime) {
         match input {
+            Input::Term(TermEvent::Key(key)) if self.flash_mode.is_some() => {
+                self.flash_key(key, session, now);
+            }
+            Input::Flash(msg) => {
+                if let Some(mode) = self.flash_mode.as_mut() {
+                    let fx = mode.apply(*msg, now);
+                    for f in fx {
+                        self.flash_effect(f, session, now);
+                    }
+                }
+            }
             Input::Term(TermEvent::Key(key)) => {
                 if let Some(req) = self.on_key(key) {
                     let write = actions::is_action(&req);
@@ -437,7 +579,13 @@ pub fn run(link: connect::Config) -> io::Result<()> {
         let snap = session::Snapshot::new(&config);
         let (handle, events) = Session::spawn(config, link);
         forward(events, tx.clone());
-        (App::new(snap, color, now), Box::new(handle))
+        let live = Live {
+            handle,
+            tx: tx.clone(),
+        };
+        let mut app = App::new(snap, color, now);
+        app.chips_path = Some(crate::commands::flash::chips::default_path());
+        (app, Box::new(live))
     };
 
     let mut terminal = ratatui::try_init()?;

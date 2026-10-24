@@ -9,6 +9,10 @@
 //! columns the summary collapses to one column. Stale values are dimmed,
 //! and a field's latest error shows as a `! …` note next to its last good
 //! value.
+//!
+//! Flash mode replaces the summary and profiles with its own body (setup,
+//! the steps as they run, the outcome); the link corner and the Log pane
+//! stay, and its questions are centred modals like the confirm.
 
 use std::time::Duration;
 
@@ -21,6 +25,7 @@ use ratatui::text::{Line, Span};
 use ratatui::widgets::{Block, BorderType, Clear, Paragraph};
 
 use super::actions::Confirm;
+use super::flash::{self, Ask, Mode, Row as FlashRow, SourceKind, Stage, StepState};
 use super::log_pane;
 use super::snapshot::{Health, Keyboard, Snapshot};
 use super::{App, TICK};
@@ -126,9 +131,17 @@ pub fn render(f: &mut Frame, app: &App) {
         .border_style(t.border())
         .title_top(header(&snap, t))
         .title_top(corner(&snap, t).right_aligned())
-        .title_bottom(bottom(app, area.width, wide, t));
+        .title_bottom(match &app.flash_mode {
+            Some(m) => flash_keys(m, t),
+            None => bottom(app, area.width, wide, t),
+        });
     let inner = outer.inner(area);
     f.render_widget(outer, area);
+
+    if let Some(mode) = &app.flash_mode {
+        flash_screen(f, area, inner, app, &snap, mode, t);
+        return;
+    }
 
     let rows = summary(&snap, wide, t);
     let selected = app.selected.min(
@@ -224,6 +237,7 @@ fn corner(snap: &Snapshot, t: Theme) -> Line<'static> {
             t.good(),
         ),
         LinkState::Deaf { kind, .. } => ("◐", format!("{}not answering", lower(*kind)), t.warn()),
+        LinkState::Suspended => ("◇", "paused for flashing".into(), t.warn()),
         LinkState::Lost { retry_in, .. } => (
             "✕",
             format!("lost, retrying in {}s", secs_up(*retry_in)),
@@ -277,7 +291,7 @@ fn footer(wide: bool, t: Theme) -> Line<'static> {
             ("⏎", "switch"),
             ("o", "output"),
             ("u", "update"),
-            ("d", "debug"),
+            ("F", "flash"),
             ("?", "help"),
         ]
     } else {
@@ -351,6 +365,7 @@ fn link_rows(link: &LinkState, wide: bool, t: Theme) -> Vec<Row<'static>> {
             ),
             hint.clone(),
         ),
+        LinkState::Suspended => (Span::styled("Paused while flashing", t.warn()), None),
         LinkState::Lost { reason, retry_in } => (
             Span::styled(
                 format!("Lost; retrying in {}s", secs_up(*retry_in)),
@@ -502,6 +517,7 @@ fn transport(k: &Keyboard, link: &LinkState, t: Theme) -> Vec<Span<'static>> {
             Span::styled(format!("lost, retry in {}s", secs_up(*retry_in)), t.bad())
         }
         LinkState::Deaf { .. } => Span::styled("not answering", t.warn()),
+        LinkState::Suspended => Span::styled("paused", t.warn()),
         LinkState::Connecting { .. } => Span::styled("connecting…", t.warn()),
         LinkState::Searching | LinkState::Connected { .. } => Span::styled("searching…", t.warn()),
     }]
@@ -754,6 +770,7 @@ const HELP: &[(&str, &str)] = &[
     ("r", "refresh everything now"),
     ("u", "check for a firmware update now"),
     ("d", "debug lines in the log on / off"),
+    ("F", "flash firmware onto the halves"),
     ("?", "this help"),
     ("", "risky switches ask first; only y confirms"),
 ];
@@ -839,6 +856,351 @@ fn help(f: &mut Frame, area: Rect, t: Theme) {
         .border_style(t.border())
         .title_top(pane_title("Help", t.title(), t))
         .title_bottom(Line::from(" ? or Esc closes "));
+    f.render_widget(Clear, r);
+    f.render_widget(Paragraph::new(lines).block(block), r);
+}
+
+/// Flash mode's keys for the bottom edge.
+fn flash_keys(m: &Mode, t: Theme) -> Line<'static> {
+    let keys: &[(&str, &str)] = match &m.stage {
+        Stage::Setup(s) if s.editing => &[("⏎", "done"), ("⌫", "erase")],
+        Stage::Setup(_) => &[
+            ("⏎", "start"),
+            ("s", "source"),
+            ("space", "toggle"),
+            ("↑↓", "move"),
+            ("Esc", "back"),
+        ],
+        Stage::Running(r) if r.ask.is_some() => &[],
+        Stage::Running(r) if r.writing() => &[("", "writing: don't unplug the half")],
+        Stage::Running(r) if r.cancelling => &[("", "cancelling…")],
+        Stage::Running(_) => &[("Esc", "cancel (before anything is written)")],
+        Stage::Done(_) => &[("⏎", "back to the dashboard")],
+    };
+    let mut spans = vec![Span::raw(" ")];
+    for (i, (k, what)) in keys.iter().enumerate() {
+        if i > 0 {
+            spans.push(Span::styled(" · ", t.label()));
+        }
+        if !k.is_empty() {
+            spans.push(Span::styled(*k, Style::new().add_modifier(Modifier::BOLD)));
+            spans.push(Span::raw(" "));
+        }
+        spans.push(Span::raw(*what));
+    }
+    spans.push(Span::raw(" "));
+    Line::from(spans)
+}
+
+fn mark(on: bool) -> &'static str {
+    if on { "[x]" } else { "[ ]" }
+}
+
+/// Setup: source, branch, plan.
+fn flash_setup(s: &flash::Setup, width: u16, t: Theme) -> Vec<Line<'static>> {
+    let text_w = usize::from(width.saturating_sub(3)).max(20);
+    let source = match s.source {
+        SourceKind::Release => "newest release".to_string(),
+        SourceKind::Ci if s.token => "newest green CI build".to_string(),
+        SourceKind::Ci => "newest green CI build (needs GH_TOKEN)".to_string(),
+        SourceKind::Local if s.local.is_empty() => "local build (none found)".to_string(),
+        SourceKind::Local => format!(
+            "local build: {}",
+            s.local
+                .iter()
+                .filter_map(|p| p.file_name().map(|n| n.to_string_lossy().into_owned()))
+                .collect::<Vec<_>>()
+                .join(", ")
+        ),
+    };
+    let mut lines = vec![Line::raw("")];
+    for row in s.rows() {
+        let (label, value) = match row {
+            FlashRow::Source => ("Firmware", format!("‹ {source} ›")),
+            FlashRow::Branch if s.editing => ("Branch", format!("{}▏", s.branch)),
+            FlashRow::Branch => ("Branch", s.branch.clone()),
+            FlashRow::Reset => ("Plan", format!("{} settings reset first", mark(s.reset))),
+            FlashRow::Left => ("", format!("{} left half", mark(s.left))),
+            FlashRow::Right => ("", format!("{} right half", mark(s.right))),
+        };
+        let style = if row == s.cursor {
+            Style::new().add_modifier(Modifier::REVERSED)
+        } else {
+            Style::new()
+        };
+        lines.push(Line::from(vec![
+            Span::styled(format!(" {label:<LABEL$}"), t.label()),
+            Span::styled(format!(" {value} "), style),
+        ]));
+    }
+    lines.push(Line::raw(""));
+    let hint = if s.reset {
+        "settings reset clears the half's settings and Bluetooth bonds: two double-taps per half"
+    } else {
+        "each half: double-tap reset when asked; sofleii checks the chip before writing"
+    };
+    for l in wrap(hint, text_w) {
+        lines.push(Line::styled(format!(" {l}"), t.label()));
+    }
+    if let Some(p) = &s.problem {
+        for (i, l) in wrap(p, text_w.saturating_sub(2)).into_iter().enumerate() {
+            let mark = if i == 0 { "!" } else { " " };
+            lines.push(Line::styled(format!(" {mark} {l}"), t.warn()));
+        }
+    }
+    lines
+}
+
+fn step_mark(state: &StepState, t: Theme) -> Span<'static> {
+    match state {
+        StepState::Pending => Span::styled("○", t.label()),
+        StepState::Waiting(_) | StepState::Active | StepState::Writing { .. } => {
+            Span::styled("●", t.warn())
+        }
+        StepState::Flashed => Span::styled("✓", t.good()),
+        StepState::Stopped => Span::styled("✕", t.bad()),
+    }
+}
+
+/// The steps, the current one with its commentary.
+fn flash_steps(
+    steps: &[flash::StepView],
+    current: Option<usize>,
+    now: std::time::SystemTime,
+    width: u16,
+    t: Theme,
+) -> Vec<Line<'static>> {
+    let mut lines = Vec::new();
+    for (i, s) in steps.iter().enumerate() {
+        lines.push(Line::from(vec![
+            Span::raw(" "),
+            step_mark(&s.state, t),
+            Span::styled(
+                format!(" {} {}", i + 1, flash::step_title(&s.step)),
+                Style::new().add_modifier(Modifier::BOLD),
+            ),
+        ]));
+        if current != Some(i) && !matches!(s.state, StepState::Stopped) {
+            continue;
+        }
+        if let StepState::Waiting(since) = s.state {
+            let secs = now
+                .duration_since(since)
+                .unwrap_or(Duration::ZERO)
+                .as_secs();
+            lines.push(Line::from(vec![
+                Span::styled(
+                    format!(
+                        "     Double-tap RESET on the {} half…",
+                        s.step.half.as_str().to_ascii_uppercase()
+                    ),
+                    t.warn().add_modifier(Modifier::BOLD),
+                ),
+                Span::styled(
+                    format!("  waiting {}:{:02}", secs / 60, secs % 60),
+                    t.label(),
+                ),
+            ]));
+        }
+        for l in &s.lines {
+            let style = if l.contains("REFUSED") {
+                t.bad()
+            } else if l.starts_with("decision") && l.contains("flash (") {
+                t.good()
+            } else {
+                Style::new()
+            };
+            lines.push(Line::styled(format!("     {l}"), style));
+        }
+        if let StepState::Writing { written, total } = s.state {
+            let cells = usize::from(width.saturating_sub(30)).clamp(10, 40);
+            let filled = (written * cells).checked_div(total).unwrap_or(cells);
+            lines.push(Line::from(vec![
+                Span::styled("     copying    ", t.label()),
+                Span::styled("█".repeat(filled), t.good()),
+                Span::styled("░".repeat(cells - filled), t.label()),
+                Span::raw(format!(" {} / {} KB", written / 1024, total / 1024)),
+            ]));
+        }
+    }
+    lines
+}
+
+/// The outcome, and the left half's version once the resumed link reads
+/// it.
+fn flash_done(
+    d: &flash::Done,
+    session: &crate::session::Snapshot,
+    now: std::time::SystemTime,
+    t: Theme,
+) -> Vec<Line<'static>> {
+    let mut lines = vec![Line::raw("")];
+    lines.extend(flash_steps(&d.steps, None, now, 60, t));
+    lines.push(Line::raw(""));
+    match &d.result {
+        Ok(r) if r.complete() => {
+            lines.push(Line::styled(
+                " ✓ flashed",
+                t.good().add_modifier(Modifier::BOLD),
+            ));
+            let left = r.steps.iter().any(|s| {
+                s.step.role == crate::flash::Role::Left
+                    && matches!(
+                        s.outcome,
+                        crate::commands::flash::job::Outcome::Flashed { .. }
+                    )
+            });
+            if left {
+                let info = &session.info;
+                let fresh = info
+                    .value
+                    .as_ref()
+                    .filter(|_| info.at.is_some_and(|at| at > d.at))
+                    .and_then(|i| i.build.zmk_config_version.clone());
+                lines.push(Line::raw(match fresh {
+                    Some(v) => format!(" left half now runs {v}"),
+                    None => " reading the left half's version once it's back…".into(),
+                }));
+            }
+        }
+        Ok(r) => {
+            lines.push(Line::styled(
+                " ✕ stopped",
+                t.bad().add_modifier(Modifier::BOLD),
+            ));
+            if let Some(s) = r.steps.last() {
+                let half = s.step.half.as_str();
+                lines.push(Line::styled(
+                    format!(
+                        " if that chip really is your {half} half: sofleii flash {half} --adopt {half}"
+                    ),
+                    t.label(),
+                ));
+            }
+        }
+        Err(e) => {
+            lines.push(Line::styled(format!(" ✕ {}", e.message), t.bad()));
+        }
+    }
+    lines
+}
+
+#[allow(clippy::too_many_arguments)]
+fn flash_screen(
+    f: &mut Frame,
+    area: Rect,
+    inner: Rect,
+    app: &App,
+    snap: &Snapshot,
+    mode: &Mode,
+    t: Theme,
+) {
+    let body = match &mode.stage {
+        Stage::Setup(s) => flash_setup(s, inner.width, t),
+        Stage::Running(r) => {
+            let mut l = vec![Line::raw("")];
+            if r.fetched.is_empty() {
+                l.push(Line::styled(" fetching the firmware…", t.warn()));
+            } else {
+                l.extend(r.fetched.iter().map(|x| Line::raw(format!(" {x}"))));
+            }
+            l.push(Line::raw(""));
+            l.extend(flash_steps(&r.steps, r.current, app.now, inner.width, t));
+            l
+        }
+        Stage::Done(d) => flash_done(d, &app.session, app.now, t),
+    };
+    let log_h = 6.min(inner.height / 3);
+    let body_h = inner.height.saturating_sub(log_h + 1);
+    let [top, sep, log] = Layout::vertical([
+        Constraint::Length(body_h),
+        Constraint::Length(1),
+        Constraint::Fill(1),
+    ])
+    .areas(inner);
+    // The newest lines when the steps overflow.
+    let skip = body.len().saturating_sub(usize::from(top.height));
+    f.render_widget(
+        Paragraph::new(body.into_iter().skip(skip).collect::<Vec<_>>()),
+        top,
+    );
+    separator(f.buffer_mut(), area, sep, "Log", None, t);
+    f.render_widget(
+        Paragraph::new(log_lines(snap, log.height, app.debug, &app.tz, t)),
+        log,
+    );
+    if let Stage::Running(r) = &mode.stage
+        && let Some(a) = &r.ask
+    {
+        flash_ask(f, area, a, &r.typed, t);
+    }
+}
+
+/// The job's question as a modal.
+fn flash_ask(f: &mut Frame, area: Rect, a: &Ask, typed: &str, t: Theme) {
+    let w = 64.min(area.width.saturating_sub(4));
+    let text_w = usize::from(w.saturating_sub(4)).max(10);
+    let (title, text, prompt, keys): (String, String, Line, Vec<Span>) = match a {
+        Ask::Confirm { step, file } => (
+            format!("Flash the {} half?", step.half.as_str()),
+            format!(
+                "Write {file} to this chip ({})? The half reboots into it when the copy is done.",
+                flash::step_title(step)
+            ),
+            Line::styled(" Flash it?", Style::new().add_modifier(Modifier::BOLD)),
+            vec![
+                Span::raw(" "),
+                Span::styled("y", Style::new().add_modifier(Modifier::BOLD)),
+                Span::raw(" flash · any other key stops "),
+            ],
+        ),
+        Ask::Adopt {
+            step,
+            serial,
+            reason,
+        } => (
+            "Unknown chip".to_string(),
+            format!(
+                "{reason}. Nothing vouches for this chip{}. If it is your {h} half, type {h}: \
+                 sofleii remembers it by serial from then on.",
+                serial
+                    .as_deref()
+                    .map(|s| format!(" ({s})"))
+                    .unwrap_or_default(),
+                h = step.half.as_str()
+            ),
+            Line::from(vec![
+                Span::styled(" Half: ", Style::new().add_modifier(Modifier::BOLD)),
+                Span::raw(format!("{typed}▏")),
+            ]),
+            vec![
+                Span::raw(" "),
+                Span::styled("⏎", Style::new().add_modifier(Modifier::BOLD)),
+                Span::raw(" adopt · "),
+                Span::styled("Esc", Style::new().add_modifier(Modifier::BOLD)),
+                Span::raw(" stop "),
+            ],
+        ),
+    };
+    let mut lines = vec![Line::raw("")];
+    lines.extend(
+        wrap(&text, text_w)
+            .into_iter()
+            .map(|l| Line::raw(format!(" {l}"))),
+    );
+    lines.push(Line::raw(""));
+    lines.push(prompt);
+    let h = lines.len() as u16 + 2;
+    let r = centred(area, w, h);
+    let style = match a {
+        Ask::Adopt { .. } => t.warn().add_modifier(Modifier::BOLD),
+        Ask::Confirm { .. } => t.title(),
+    };
+    let block = Block::bordered()
+        .border_type(BorderType::Plain)
+        .border_style(t.border())
+        .title_top(pane_title(&title, style, t))
+        .title_bottom(Line::from(keys));
     f.render_widget(Clear, r);
     f.render_widget(Paragraph::new(lines).block(block), r);
 }
