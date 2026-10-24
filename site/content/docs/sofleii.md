@@ -34,10 +34,43 @@ running build (see [Firmware](../reference/firmware/#modules)). The
 batteries are read separately, over Bluetooth GATT through BlueZ, because
 they aren't part of Studio RPC.
 
-## Running it
+## Installing it
 
-From a clone of the repo (needs Rust 1.99+ and `protoc`, both from pacman:
-`pacman -S rust protobuf`):
+Prebuilt binaries for x86_64 and aarch64 Linux come with each
+[`sofleii-tui-vX.Y.Z` release](https://github.com/rdlu/sofleii/releases)
+(the `sofleii-fw-vX.Y.Z` releases are the firmware).
+
+**With mise** (its `github` backend; `version_prefix` keeps it to the CLI's
+releases, since GitHub's "latest" release is always the firmware):
+
+```bash
+mise use -g 'github:rdlu/sofleii[version_prefix=sofleii-tui-v]'
+sofleii status
+```
+
+mise holds back releases younger than its `minimum_release_age` setting, so
+for a day or so after a release `latest` still resolves to the previous one.
+Name the version to get it at once:
+`mise use -g 'github:rdlu/sofleii[version_prefix=sofleii-tui-v]@0.2.0'`.
+
+**By hand:** download `sofleii-<version>-<target>.tar.gz` and its `.sha256`
+from the release, check them, and put the binary on your `PATH`:
+
+```bash
+sha256sum -c sofleii-<version>-<target>.tar.gz.sha256
+gh attestation verify sofleii-<version>-<target>.tar.gz -R rdlu/sofleii
+tar xzf sofleii-<version>-<target>.tar.gz
+install -Dm755 sofleii-<version>-<target>/sofleii ~/.local/bin/sofleii
+```
+
+**From source** (Rust 1.99+ and `protoc`, both from pacman:
+`pacman -S rust protobuf`), into `~/.cargo/bin`:
+
+```bash
+cargo install --git https://github.com/rdlu/sofleii sofleii --locked
+```
+
+Or, from a clone of the repo, without installing:
 
 ```bash
 mise run sofleii                    # the TUI
@@ -45,29 +78,11 @@ mise run sofleii -- status          # any subcommand after --
 mise run sofleii -- profiles --json
 ```
 
-Or install the binary into `~/.cargo/bin`:
-
-```bash
-cargo install --path sofleii --locked
-sofleii status
-```
+`sofleii update check --cli` tells you when a newer release is out.
 
 Over USB your user needs access to the serial port (the `uucp` group on
 Arch). Over Bluetooth, the keyboard only has to be paired and connected as
 usual; sofleii reuses that connection.
-
-> [!NOTE]
-> **Coming with v0.1.0 ([#83](https://github.com/rdlu/sofleii/issues/83)):**
-> prebuilt binaries for x86_64 and aarch64 Linux, released under
-> `sofleii-tui-vX.Y.Z` tags (the `sofleii-fw-vX.Y.Z` releases are the
-> firmware).
-> Install with `mise use -g github:rdlu/sofleii`; or download
-> `sofleii-<version>-<target>.tar.gz` from the
-> [releases](https://github.com/rdlu/sofleii/releases) and check it with
-> `sha256sum -c sofleii-<version>-<target>.tar.gz.sha256` and
-> `gh attestation verify sofleii-<version>-<target>.tar.gz -R rdlu/sofleii`;
-> or `cargo install --git https://github.com/rdlu/sofleii sofleii --locked`
-> (Rust 1.99+ and `protoc`).
 
 ## The TUI
 

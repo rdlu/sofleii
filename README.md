@@ -61,7 +61,7 @@ mise run sofleii -- battery --format waybar   # for a waybar module
 mise run sofleii -- update check || notify-send "Sofle firmware update"
 ```
 
-Not released yet: build it from the repo (or `cargo install --path sofleii --locked`); prebuilt binaries come with v0.1.0 ([#83](https://github.com/rdlu/sofleii/issues/83)). Docs: **[sofleii.dlu.one/docs/sofleii](https://sofleii.dlu.one/docs/sofleii/)** · roadmap [#44](https://github.com/rdlu/sofleii/issues/44).
+Prebuilt x86_64/aarch64 Linux binaries on the [`sofleii-tui-v*` releases](https://github.com/rdlu/sofleii/releases); install with `mise use -g 'github:rdlu/sofleii[version_prefix=sofleii-tui-v]'`, by hand, or with `cargo install`. Docs: **[sofleii.dlu.one/docs/sofleii](https://sofleii.dlu.one/docs/sofleii/)** · roadmap [#44](https://github.com/rdlu/sofleii/issues/44).
 
 ## More
 
