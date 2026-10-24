@@ -1,0 +1,87 @@
+name: changelog
+
+# Fails a release PR whose changelog wasn't regenerated. A release PR is one
+# that bumps the firmware version (params.firmware.version in
+# site/hugo.toml) or the crate's (version in sofleii/Cargo.toml); it must
+# carry that version's section, which `mise run changelog` writes (see
+# scripts/changelog.sh). A PR that edits a changelog or its generator gets
+# the same check.
+#
+# The check (scripts/changelog.sh --check) ignores the Unreleased section,
+# which goes stale with every feature commit by design, so it runs only on
+# PRs that touch these paths, never on push to main. Dependabot's
+# Cargo.toml bumps don't change the version and skip the check.
+on:
+  pull_request:
+    paths:
+      - 'site/hugo.toml'
+      - 'sofleii/Cargo.toml'
+      - 'CHANGELOG.md'
+      - 'sofleii/CHANGELOG.md'
+      - 'cliff.toml'
+      - 'scripts/changelog.sh'
+      - '.github/scripts/install-git-cliff.sh'
+      - '.github/workflows/changelog.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: changelog-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      # Full history and the tags: git-cliff walks both. The PR's merge ref
+      # is what gets checked, so a release PR behind main has to take main's
+      # commits into its section (update the branch, regenerate).
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+
+      - name: what to check
+        id: which
+        env:
+          EVENT: ${{ github.event_name }}
+          BASE: ${{ github.event.pull_request.base.sha }}
+        run: |
+          if [ "$EVENT" != pull_request ]; then
+            echo "Manual run: checking both."
+            echo "files=firmware sofleii" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          fw() { git show "$1:site/hugo.toml" | sed -n 's/^ *version = "\(v[0-9][0-9.]*\)"$/\1/p' | head -n1; }
+          crate() { git show "$1:sofleii/Cargo.toml" | sed -n 's/^version = "\(.*\)"$/\1/p' | head -n1; }
+          changed=$(git diff --name-only "$BASE" HEAD)
+          generator=$(grep -qxE 'cliff\.toml|scripts/changelog\.sh|\.github/scripts/install-git-cliff\.sh|\.github/workflows/changelog\.yml' <<<"$changed" && echo y || true)
+          files=()
+          if [ "$(fw "$BASE")" != "$(fw HEAD)" ]; then
+            echo "Firmware release PR: $(fw "$BASE") -> $(fw HEAD)"
+            files+=(firmware)
+          elif [ -n "$generator" ] || grep -qx 'CHANGELOG.md' <<<"$changed"; then
+            files+=(firmware)
+          fi
+          if [ "$(crate "$BASE")" != "$(crate HEAD)" ]; then
+            echo "sofleii release PR: $(crate "$BASE") -> $(crate HEAD)"
+            files+=(sofleii)
+          elif [ -n "$generator" ] || grep -qx 'sofleii/CHANGELOG.md' <<<"$changed"; then
+            files+=(sofleii)
+          fi
+          echo "Checking: ${files[*]:-nothing (no version bump, changelogs untouched)}"
+          echo "files=${files[*]}" >> "$GITHUB_OUTPUT"
+
+      - name: git-cliff (pinned, checksum-verified)
+        if: steps.which.outputs.files != ''
+        run: .github/scripts/install-git-cliff.sh "$RUNNER_TEMP/git-cliff"
+
+      - name: changelogs are regenerated
+        if: steps.which.outputs.files != ''
+        env:
+          FILES: ${{ steps.which.outputs.files }}
+        run: |
+          # shellcheck disable=SC2086 # FILES is a space-separated list
+          scripts/changelog.sh --check $FILES
