@@ -451,14 +451,14 @@ fn a_field_error_keeps_the_last_good_value() {
 fn update_states() {
     let row = |a: &App| screen(a, 80, 24)[4].clone();
     assert!(row(&demo()).contains("up to date with v3.1.0"));
-    let r = row(&with_update(update::Status::Behind, "v3.2.0"));
+    let r = row(&with_update(update::Status::Behind, "sofleii-fw-v3.2.0"));
     assert!(r.contains("· update: v3.2.0"), "{r}");
     assert!(r.contains("checked 2m ago"), "{r}");
-    let r = row(&with_update(update::Status::Ahead, "v3.1.0"));
+    let r = row(&with_update(update::Status::Ahead, "sofleii-fw-v3.1.0"));
     assert!(r.contains("· ahead of v3.1.0"), "{r}");
-    let r = row(&with_update(update::Status::Unknown, "v3.1.0"));
+    let r = row(&with_update(update::Status::Unknown, "sofleii-fw-v3.1.0"));
     assert!(r.contains("· unknown build (v3.1.0)"), "{r}");
-    assert!(!r.contains("sofleii-v"), "{r}");
+    assert!(!r.contains("sofleii-fw"), "{r}");
 
     // A newer sofleii release is named after the firmware verdict.
     let mut app = demo();
@@ -466,7 +466,7 @@ fn update_states() {
     u.cli = update::cli_check(
         "0.1.0",
         Some(&update::Listed {
-            tag: "sofleii-v0.2.0".into(),
+            tag: "sofleii-tui-v0.2.0".into(),
             published_at: None,
         }),
     );
@@ -474,6 +474,31 @@ fn update_states() {
     let r = screen(&app, 120, 24)[4].clone();
     assert!(
         r.contains("up to date with v3.1.0 · sofleii v0.2.0 available"),
+        "{r}"
+    );
+
+    // A local build's describe string names the release: shown with the
+    // plain version, not the tag.
+    let mut app = with_update(update::Status::Ahead, "sofleii-fw-v3.1.0");
+    app.session
+        .info
+        .value
+        .as_mut()
+        .unwrap()
+        .build
+        .zmk_config_version = Some("sofleii-fw-v3.1.0-2-gabc1234".into());
+    {
+        let u = app.session.update.value.as_mut().unwrap();
+        u.check.running.release = Some(update::Release {
+            tag: "sofleii-fw-v3.1.0".into(),
+            exact: false,
+            commits_after: 2,
+            equivalent: false,
+        });
+    }
+    let r = row(&app);
+    assert!(
+        r.contains("Firmware   v3.1.0-2-gabc1234 · ahead of v3.1.0"),
         "{r}"
     );
 

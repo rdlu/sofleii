@@ -9,7 +9,7 @@
 //! `$XDG_CACHE_HOME/sofleii/update.json` (falling back to
 //! `~/.cache/sofleii/`), keyed by the repo, with a firmware part (keyed by
 //! the running `zmk_config_version`) and a CLI part (the newest
-//! `sofleii-v*` release; the verdict is worked out against the running
+//! `sofleii-tui-v*` release; the verdict is worked out against the running
 //! binary on read, so two installed versions share it), each with its own
 //! timestamp and honoured for [`Config::update_ttl`]. One release list
 //! answers both parts, so a refresh always renews the CLI part. A failed
@@ -37,8 +37,9 @@ pub const CACHE_FILE: &str = "update.json";
 /// Bumped when [`CacheFile`] changes shape; other schemas are ignored (and
 /// replaced by the next check). 2 (#83): separate firmware and CLI parts.
 /// 3 (v0.1.1): the firmware-inputs rule, so a cached false "behind" from
-/// 0.1.0 isn't served again.
-const CACHE_SCHEMA: u32 = 3;
+/// 0.1.0 isn't served again. 4 (v0.2.0): tags renamed to `sofleii-fw-v*`
+/// and `sofleii-tui-v*`, so entries naming the old tags aren't trusted.
+const CACHE_SCHEMA: u32 = 4;
 /// How long a cached check is honoured, by the TUI and `update check` alike.
 pub const UPDATE_TTL: Duration = Duration::from_secs(6 * 3600);
 
@@ -76,7 +77,7 @@ struct FirmwareEntry {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 struct CliEntry {
     checked_at_ms: u64,
-    /// The newest `sofleii-v*` release; `null` when there was none.
+    /// The newest `sofleii-tui-v*` release; `null` when there was none.
     latest: Option<Listed>,
 }
 
@@ -484,7 +485,7 @@ mod tests {
 
         // Another running build doesn't use it.
         let other = Build {
-            zmk_config_version: Some("v3.1.0-2-gabcdef1".into()),
+            zmk_config_version: Some("sofleii-fw-v3.1.0-2-gabcdef1".into()),
             ..build()
         };
         let mut http = FakeHttp::released();
@@ -547,7 +548,10 @@ mod tests {
 
     /// A list with a sofleii release newer than this binary.
     fn with_cli_release() -> FakeHttp {
-        FakeHttp::with_releases(&[("sofleii-v99.0.0", false, false), ("v3.1.0", false, false)])
+        FakeHttp::with_releases(&[
+            ("sofleii-tui-v99.0.0", false, false),
+            ("sofleii-fw-v3.1.0", false, false),
+        ])
     }
 
     #[test]
@@ -638,7 +642,7 @@ mod tests {
 
         // Another running build misses the firmware part only.
         let other = Running {
-            version: Some("v3.1.0-2-gabcdef1".into()),
+            version: Some("sofleii-fw-v3.1.0-2-gabcdef1".into()),
             ..r.clone()
         };
         assert!(
@@ -657,7 +661,9 @@ mod tests {
             .unwrap();
         // The list works, the tag lookup fails.
         let mut broken = FakeHttp::released();
-        broken.replies.remove("/repos/rdlu/sofleii/commits/v3.1.0");
+        broken
+            .replies
+            .remove("/repos/rdlu/sofleii/commits/sofleii-fw-v3.1.0");
         let later = t0() + 7 * HOUR;
         assert!(c.check(&mut broken, Some(&r), true, false, later).is_err());
         let file = load(&dir.0.join(CACHE_FILE)).unwrap();

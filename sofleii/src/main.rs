@@ -209,8 +209,8 @@ enum KeymapCommand {
 #[derive(Subcommand, Debug)]
 enum UpdateCommand {
     /// Compare the running firmware with the newest firmware release (a
-    /// `v*` tag), and this sofleii with the newest sofleii release (a
-    /// `sofleii-v*` tag). Answers from the shared 6 h cache when it can.
+    /// `sofleii-fw-v*` tag), and this sofleii with the newest sofleii
+    /// release (a `sofleii-tui-v*` tag). Answers from the shared 6 h cache when it can.
     /// Exit 0 when nothing needs doing, 1 when either checked part is
     /// behind (or the firmware build is unknown; no sofleii release yet is
     /// not a failure).

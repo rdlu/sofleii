@@ -459,7 +459,7 @@ fn running_version(r: &update::Running) -> String {
 /// `v3.1.0 available, running v3.0.0+68 (f9a665f)`, `ahead of v3.1.0:
 /// running v3.1.0+3 (abc1234)`. The commit counts stay in the JSON.
 pub fn update_headline(c: &update::Check) -> String {
-    let tag = &c.latest.tag;
+    let tag = c.latest.label();
     let mut running = running_version(&c.running);
     if c.running.release.is_none() {
         running.push_str(" (no release)");
@@ -608,7 +608,7 @@ fn firmware_check(style: Style, c: &update::Check) -> String {
         w,
         "{}{} {}{published}",
         label("latest"),
-        c.latest.tag,
+        c.latest.label(),
         short(&c.latest.commit)
     );
     if r.dirty {
@@ -1404,7 +1404,7 @@ mod tests {
                 }),
             },
             latest: update::Latest {
-                tag: "v3.1.0".into(),
+                tag: "sofleii-fw-v3.1.0".into(),
                 commit: "5c53b30fce99031611442b1a3ccbbe7052327020".into(),
                 published_at: Some("2026-10-19T19:20:31Z".into()),
             },
@@ -1434,7 +1434,7 @@ mod tests {
             UpToDate,
             1,
             0,
-            Some(("v3.1.0", 0)),
+            Some(("sofleii-fw-v3.1.0", 0)),
         ));
         assert_eq!(
             out,
@@ -1443,11 +1443,11 @@ mod tests {
              latest          v3.1.0 5c53b30, published 2026-10-19T19:20:31Z\n"
         );
         let out = human(&update_sample(
-            "v3.0.0-68-gf9a665f-dirty",
+            "sofleii-fw-v3.0.0-68-gf9a665f-dirty",
             Behind,
             3,
             0,
-            Some(("v3.0.0", 68)),
+            Some(("sofleii-fw-v3.0.0", 68)),
         ));
         assert!(
             out.starts_with("v3.1.0 available, running v3.0.0+68 (f9a665f)\n"),
@@ -1464,11 +1464,11 @@ mod tests {
         );
         for (c, want) in [
             (
-                update_sample("abc1234", Ahead, 0, 3, Some(("v3.1.0", 3))),
+                update_sample("abc1234", Ahead, 0, 3, Some(("sofleii-fw-v3.1.0", 3))),
                 "ahead of v3.1.0: running v3.1.0+3 (abc1234)\n",
             ),
             (
-                update_sample("abc1234", Behind, 4, 2, Some(("v3.0.0", 9))),
+                update_sample("abc1234", Behind, 4, 2, Some(("sofleii-fw-v3.0.0", 9))),
                 "v3.1.0 available, running v3.0.0+9 (abc1234)\n",
             ),
             (
@@ -1484,7 +1484,7 @@ mod tests {
             assert!(out.starts_with(want), "{out}");
         }
         // An exact tag shows the commit it resolved to.
-        let mut c = update_sample("v3.1.0", UpToDate, 0, 0, Some(("v3.1.0", 0)));
+        let mut c = update_sample("v3.1.0", UpToDate, 0, 0, Some(("sofleii-fw-v3.1.0", 0)));
         c.running.commit = Some(c.latest.commit.clone());
         assert!(human(&c).contains("running         v3.1.0 (5c53b30)\n"));
     }
@@ -1496,7 +1496,7 @@ mod tests {
             update::Status::UpToDate,
             0,
             0,
-            Some(("v3.1.0", 0)),
+            Some(("sofleii-fw-v3.1.0", 0)),
         );
         let v: Value = serde_json::from_str(&update_check(
             Style::plain(Format::Json),
@@ -1511,9 +1511,9 @@ mod tests {
                 "schema": 1,
                 "transport": {"kind": "usb", "device": "/dev/ttyACM1"},
                 "running": {"version": "5c53b30", "commit": "5c53b30", "dirty": false,
-                            "release": {"tag": "v3.1.0", "exact": true, "commits_after": 0,
+                            "release": {"tag": "sofleii-fw-v3.1.0", "exact": true, "commits_after": 0,
                                         "equivalent": false}},
-                "latest": {"tag": "v3.1.0",
+                "latest": {"tag": "sofleii-fw-v3.1.0",
                            "commit": "5c53b30fce99031611442b1a3ccbbe7052327020",
                            "published_at": "2026-10-19T19:20:31Z"},
                 "status": "up_to_date",
@@ -1522,7 +1522,7 @@ mod tests {
                 "files_changed": 0,
                 "firmware_files_changed": 0,
                 "note": null,
-                "cli": {"version": "0.1.0", "latest": "0.2.0", "tag": "sofleii-v0.2.0",
+                "cli": {"version": "0.1.0", "latest": "0.2.0", "tag": "sofleii-tui-v0.2.0",
                         "published_at": "2026-10-20T12:00:00Z", "status": "behind",
                         "note": null},
                 "checked_at_ms": 1_800_000_000_000u64 - 2 * 3_600_000,
@@ -1592,7 +1592,7 @@ mod tests {
 
     fn cli_sample(mine: &str, latest: Option<&str>) -> update::CliCheck {
         let l = latest.map(|v| update::Listed {
-            tag: format!("sofleii-v{v}"),
+            tag: format!("sofleii-tui-v{v}"),
             published_at: Some("2026-10-20T12:00:00Z".into()),
         });
         update::cli_check(mine, l.as_ref())
@@ -1635,7 +1635,7 @@ mod tests {
             update::Status::UpToDate,
             0,
             0,
-            Some(("v3.1.0", 0)),
+            Some(("sofleii-fw-v3.1.0", 0)),
         );
         let out = human(&checked(Some(fw), Some(cli_sample("0.1.0", None)), true));
         assert_eq!(
