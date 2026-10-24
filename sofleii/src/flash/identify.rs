@@ -4,9 +4,9 @@
 //!
 //! 1. **The identity record** (`zmk-sofleii-id`, every build since #98): a
 //!    `SOFLEII-ID/1` magic, the image's reset handler, the keyboard id and
-//!    the half. It only counts when that reset handler is the vector table's
-//!    reset entry (the word at offset 4), i.e. the record belongs to the
-//!    image that boots.
+//!    the half. It only counts when that reset handler is the reset entry
+//!    of the application's vector table (see [`app_start`]), i.e. the record
+//!    belongs to the image that boots.
 //! 2. **Remains of an older image.** The bootloader only rewrites the pages
 //!    a new image covers, so the tail of a longer, earlier image survives
 //!    behind a shorter one: records whose reset handler doesn't match, and
@@ -144,6 +144,28 @@ fn has_cstr(img: &Image, s: &str) -> bool {
     find(&img.bytes, &needle).is_some()
 }
 
+/// Nordic's SoftDevice info struct sits at SoftDevice base + 0x2000: its
+/// size, then this magic, then the SoftDevice's end, which is where the
+/// application starts (`0x26000` for S140 6.1.1).
+const SD_INFO: u32 = 0x3000;
+const SD_MAGIC: u32 = 0x51B1_E5DB;
+
+/// The address of the application's vector table. The Adafruit bootloader's
+/// `CURRENT.UF2` starts at the SoftDevice (`0x1000`), not at the
+/// application, so the app start comes from the SoftDevice info struct when
+/// the image has one; an image without it (a `.uf2` build) starts at the
+/// application.
+pub fn app_start(img: &Image) -> u32 {
+    let at = |addr: u32| {
+        addr.checked_sub(img.base)
+            .and_then(|o| img.word(o as usize))
+    };
+    match (at(SD_INFO + 4), at(SD_INFO + 8)) {
+        (Some(SD_MAGIC), Some(app)) if app > SD_INFO => app,
+        _ => img.base,
+    }
+}
+
 /// Identifies the image; see the module docs for the rules.
 pub fn identify(img: &Image) -> Identity {
     let (records, unknown_layouts) = records(img);
@@ -152,8 +174,12 @@ pub fn identify(img: &Image) -> Identity {
         notes.push("found an identity record in a newer layout; update sofleii".into());
     }
 
-    // The reset entry of the vector table, without the Thumb bit.
-    let boot = img.word(4).map(|w| w & !1);
+    // The reset entry of the application's vector table, without the
+    // Thumb bit.
+    let boot = (app_start(img) - img.base)
+        .checked_add(4)
+        .and_then(|o| img.word(o as usize))
+        .map(|w| w & !1);
     let (current, stale): (Vec<_>, Vec<_>) = records
         .into_iter()
         .partition(|r| Some(r.reset & !1) == boot);
@@ -340,6 +366,40 @@ mod tests {
         // in the tail but doesn't boot.
         let i = id(flash_over(&left_v4(), &right_v4()));
         assert_eq!((i.firmware, i.half), (Firmware::Sofleii, Some(Half::Right)));
+    }
+
+    /// What the Adafruit bootloader's `CURRENT.UF2` holds: the SoftDevice
+    /// from 0x1000 (its own vector table first, its info struct at 0x3000)
+    /// and the application from 0x26000.
+    fn with_softdevice(app: &[u8]) -> Image {
+        let mut b = vec![0xFF; (BASE - 0x1000) as usize];
+        b[4..8].copy_from_slice(&0x257B1u32.to_le_bytes());
+        b[0x2004..0x2008].copy_from_slice(&SD_MAGIC.to_le_bytes());
+        b[0x2008..0x200C].copy_from_slice(&BASE.to_le_bytes());
+        b.extend_from_slice(app);
+        Image {
+            base: 0x1000,
+            bytes: b,
+        }
+    }
+
+    #[test]
+    fn current_uf2_starts_at_the_softdevice() {
+        let img = with_softdevice(&left_v4());
+        assert_eq!(app_start(&img), BASE);
+        let i = identify(&img);
+        assert_eq!((i.firmware, i.half), (Firmware::Sofleii, Some(Half::Left)));
+        assert!(i.notes.is_empty(), "{:?}", i.notes);
+        // A record whose reset is the SoftDevice's is not the app's.
+        let mut app = image(2048, 0x35605);
+        record(&mut app, 0x400, 0x257B1, KEYBOARD, "left");
+        assert_eq!(identify(&with_softdevice(&app)).firmware, Firmware::Unknown);
+        // No info struct (a plain build): the image starts at the app.
+        let plain = Image {
+            base: BASE,
+            bytes: left_v4(),
+        };
+        assert_eq!(app_start(&plain), BASE);
     }
 
     #[test]

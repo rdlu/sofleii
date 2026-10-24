@@ -795,9 +795,15 @@ task) runs it before copying, and the planned `sofleii flash` will too.
 - **The identity record** (`zmk-sofleii-id/`, both halves, ~80 B of flash):
   `SOFLEII-ID/1` NUL-padded to 16 bytes, the reset handler (u32 LE),
   keyboard id (16 bytes), half (8 bytes), 4-byte aligned. It counts only if
-  its reset handler equals the vector table's reset entry (offset 4, Thumb
-  bit ignored): the bootloader rewrites only the pages a new image covers, so
-  a longer earlier image's tail (and record) survives behind a shorter one.
+  its reset handler equals the reset entry (Thumb bit ignored) of the
+  **application's** vector table: the bootloader rewrites only the pages a
+  new image covers, so a longer earlier image's tail (and record) survives
+  behind a shorter one. `CURRENT.UF2` starts at the SoftDevice (`0x1000`),
+  not the app, so `identify::app_start` reads the app start from the
+  SoftDevice info struct (magic `0x51B1E5DB` at `0x3004`, end address at
+  `0x3008` = `0x26000` for S140 6.1.1); an image without one (a built
+  `.uf2`) starts at the app. Seen on the real bootloader 2026-10-24: blocks
+  `0x1000`–`0xacf00`, family `0x239a00b3`.
 - **Remains as evidence:** stale records and the legacy strings
   (`Eyelash Sofle` + `ble_central` = left, `ble_peripheral` = right; whole
   NUL-delimited strings, measured on the v3.2.0 release builds) say what the
