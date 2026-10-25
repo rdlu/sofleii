@@ -170,7 +170,16 @@ pub trait Ui {
     /// says it isn't the target ([`Decision::Refuse`]): the half the user
     /// types, or `None` to stop. Only the step's own half adopts.
     fn adopt(&mut self, p: &Prompt<'_>) -> Option<Half>;
+    /// Asked on every poll while waiting for a drive: `true` ends the job
+    /// with [`CANCELLED`] (nothing written for that step). The CLI never
+    /// cancels; the TUI's `Esc` does.
+    fn cancelled(&mut self) -> bool {
+        false
+    }
 }
+
+/// The error a [`Ui::cancelled`] wait ends with.
+pub const CANCELLED: &str = "flash cancelled while waiting for the drive; nothing was written";
 
 #[derive(Debug, Clone)]
 pub struct Options {
@@ -327,6 +336,9 @@ fn wait_for_drive(drives: &mut dyn Drives, ui: &mut dyn Ui, opts: &Options) -> R
                         .join(", ")
                 )));
             }
+        }
+        if ui.cancelled() {
+            return Err(Error::Usage(CANCELLED.into()));
         }
         let no_disk = drives.without_disk();
         if no_disk && !warned {

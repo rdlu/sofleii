@@ -108,7 +108,8 @@ src/
                  (Snapshot, the pure reducer); fake.rs + tests.rs (a fake keyboard, no hardware)
   tui/           the TUI: the session, input thread and event loop, terminal restore, signals
                  (mod.rs); snapshot.rs (the view derived from session::Snapshot, demo fixture);
-                 view.rs (rendering); log_pane.rs (the TUI's logger); tests.rs (TestBackend renders
+                 view.rs (rendering); flash.rs (Flash mode: setup/running/done state, the worker
+                 thread and its channel Ui); log_pane.rs (the TUI's logger); tests.rs (TestBackend renders
                  from scripted events, keys, the loop against a fake session). Nothing in
                  transport/, client/, commands/ or session/ depends on it
   main.rs        clap CLI, exit codes, the unpair confirmation; no subcommand on a TTY opens the TUI
@@ -196,6 +197,21 @@ What the user sees (the screenshot, the keys, the link states) is on the
   `Done`, then the result (5 s; an error until the next key) and log lines.
   After a handover the session follows Studio (`◌ ble connecting`, then
   `● ble …`).
+- **Flash mode** (`F`, `tui/flash.rs`): `Mode` is plain data (`Setup` →
+  `Running` → `Done`), so the flow is tested without threads. `⏎` in
+  setup yields `Effect::Start(Spec)`; `Requests::flash` spawns the worker
+  (the demo and `NoSession` return `None`). The worker fetches the
+  firmware and runs `commands::flash::job::run` with a `ChannelUi` that
+  sends `Input::Flash(Msg)` on the loop's channel and blocks on an
+  `Answer` channel for `confirm` (only `y`) and `adopt` (the typed half);
+  `Ui::cancelled` reads an `AtomicBool` that `Esc` sets, checked while
+  waiting for the drive (never mid-write: Esc and Ctrl-C are refused
+  then). A plan with the left half sends `Request::Suspend(true)` first:
+  the link thread drops the client, refuses writes, skips polling and
+  shows `LinkState::Suspended` (`◇ paused for flashing`) until
+  `Suspend(false)` on `Msg::Finished`. Opening the mode learns the left
+  chip from Studio's `serial_number` as `Learned::Studio` if unknown
+  (`App::chips_path`, `None` in tests and the demo).
 - **Output BLE and the active profile:** the firmware selects BLE only
   while the *active* profile is connected and otherwise falls back to USB
   (`get_selected_transport`, `zmk/app/src/endpoints.c`). Studio then

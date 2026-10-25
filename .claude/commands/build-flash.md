@@ -7,6 +7,8 @@ record), copies, and waits for the reboot. Announce each reset double-tap to the
 user in chat, and before a live flash make sure they've switched to the spare
 keyboard.
 
+The TUI does the same interactively: `mise run sofleii`, then `F` (Flash mode).
+
 ## Quickest path: no local build
 
 ```bash

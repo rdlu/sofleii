@@ -122,6 +122,37 @@ only held while a batch of requests runs, so a waybar module calling
 | `q`, `Esc`, `Ctrl-C` | Quit |
 | `⏎` / `s` | Switch to the selected profile |
 | `o` | Toggle the output priority USB ↔ BLE |
+| `F` | [Flash mode](#flash-mode): flash firmware onto the halves |
+
+### Flash mode
+
+`F` opens a guided flash over the dashboard: the same job as
+[`sofleii flash`](#flash), one screen at a time.
+
+![Flash mode's setup: the firmware source and the plan](/img/sofleii/tui-flash.svg)
+
+1. **Setup.** `s` picks the firmware: the newest release (default), the
+   newest successful CI build of a branch (`b` edits the branch; needs
+   `GH_TOKEN` in sofleii's environment), or the local build's files
+   (`eyelash_sofle_{left,right}.uf2`, `settings_reset.uf2` in the working
+   directory or above). `↑` `↓` and `space` set the plan: settings reset
+   first, left, right. `⏎` starts; `Esc` goes back.
+2. **Each half.** It asks you to double-tap reset on the half and waits for
+   its drive, then shows what's on the chip and what it decided (the same
+   check as the CLI). Before writing it asks: **only `y` flashes**, any other
+   key stops. A chip nothing vouches for opens an **Unknown chip** box: type
+   the half to adopt it, or `Esc` to stop. During the copy a progress bar
+   runs and no key interrupts it (`Ctrl-C` included); before that, `Esc`
+   cancels without writing anything.
+3. **Done.** Each step's outcome. After a left flash it shows the version
+   the left half reports once it's back.
+
+While the left half is in the plan, the dashboard's link is **paused**
+(`◇ paused for flashing` in the corner): the left half drops off USB and
+Bluetooth in its bootloader, and that isn't a lost link. It resumes when the
+flash ends. Opening Flash mode while connected also remembers the left
+half's chip from its Studio serial number, so it's known before its first
+flash through sofleii.
 
 ### Switching from the TUI
 
@@ -615,8 +646,8 @@ Coming, roughly in this order (epic: [#44](https://github.com/rdlu/sofleii/issue
   on the game picker, with sofleii game presets.
 - [#80](https://github.com/rdlu/sofleii/issues/80): **bake** live changes
   into the firmware: write them into the `.keymap`, draw, PR, flash.
-- [#100](https://github.com/rdlu/sofleii/issues/100): `sofleii flash` is in;
-  a guided **Flash mode in the TUI** comes next.
+- [#100](https://github.com/rdlu/sofleii/issues/100): flashing, `sofleii flash`
+  and the TUI's Flash mode, is in.
 - Later: the repo's mise routines as commands ([#48](https://github.com/rdlu/sofleii/issues/48)).
 
 Until editing lands, use [Studio](../studio/) for live keymap edits.

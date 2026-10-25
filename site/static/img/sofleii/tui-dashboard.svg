@@ -52,7 +52,7 @@ text{font-family:'0xProto',ui-monospace,'DejaVu Sans Mono','Noto Sans Mono',mono
 <text x="20.4" y="194.92" fill="#e2e2e2" textLength="336" lengthAdjust="spacingAndGlyphs" opacity="0.55">   3  —                            empty</text>
 <text x="20.4" y="211.92" fill="#e2e2e2" textLength="336" lengthAdjust="spacingAndGlyphs" opacity="0.55">   4  —                            empty</text>
 <text x="37.2" y="228.92" fill="#ffade1" textLength="84" lengthAdjust="spacingAndGlyphs" font-weight="bold">Log (info)</text>
-<text x="20.4" y="245.92" fill="#e2e2e2" textLength="84" lengthAdjust="spacingAndGlyphs" opacity="0.55"> 20:31:13 </text>
+<text x="20.4" y="245.92" fill="#e2e2e2" textLength="84" lengthAdjust="spacingAndGlyphs" opacity="0.55"> 20:12:13 </text>
 <text x="104.4" y="245.92" fill="#e2e2e2" textLength="571.2" lengthAdjust="spacingAndGlyphs">connected over usb /dev/ttyACM1 (auto)                              </text>
 <text x="28.8" y="415.92" fill="#ffade1" textLength="8.4" lengthAdjust="spacingAndGlyphs" font-weight="bold">q</text>
 <text x="37.2" y="415.92" fill="#ffade1" textLength="42" lengthAdjust="spacingAndGlyphs"> quit</text>
@@ -69,8 +69,8 @@ text{font-family:'0xProto',ui-monospace,'DejaVu Sans Mono','Noto Sans Mono',mono
 <text x="390" y="415.92" fill="#ffade1" textLength="8.4" lengthAdjust="spacingAndGlyphs" font-weight="bold">u</text>
 <text x="398.4" y="415.92" fill="#ffade1" textLength="58.8" lengthAdjust="spacingAndGlyphs"> update</text>
 <text x="457.2" y="415.92" fill="#ffade1" textLength="25.2" lengthAdjust="spacingAndGlyphs" opacity="0.55"> · </text>
-<text x="482.4" y="415.92" fill="#ffade1" textLength="8.4" lengthAdjust="spacingAndGlyphs" font-weight="bold">d</text>
-<text x="490.8" y="415.92" fill="#ffade1" textLength="50.4" lengthAdjust="spacingAndGlyphs"> debug</text>
+<text x="482.4" y="415.92" fill="#ffade1" textLength="8.4" lengthAdjust="spacingAndGlyphs" font-weight="bold">F</text>
+<text x="490.8" y="415.92" fill="#ffade1" textLength="50.4" lengthAdjust="spacingAndGlyphs"> flash</text>
 <text x="541.2" y="415.92" fill="#ffade1" textLength="25.2" lengthAdjust="spacingAndGlyphs" opacity="0.55"> · </text>
 <text x="566.4" y="415.92" fill="#ffade1" textLength="8.4" lengthAdjust="spacingAndGlyphs" font-weight="bold">?</text>
 <text x="574.8" y="415.92" fill="#ffade1" textLength="109.2" lengthAdjust="spacingAndGlyphs"> help        </text>
