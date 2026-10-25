@@ -40,17 +40,19 @@ body = """
 {%- set repo = "https://github.com/rdlu/sofleii" -%}
 {#- The sofleii file shows no "sofleii:" scope: every entry has it. -#}
 {%- if component == "sofleii" %}{% set own_scope = "sofleii" %}{% else %}{% set own_scope = "" %}{% endif -%}
-{#- Scopes: the firmware file drops the crate's own commits (scope sofleii);
-    the crate's file keeps its own, unscoped and deps commits and drops
-    commits scoped to another part (firmware, keymap, site...) that happen
-    to touch sofleii/ too, e.g. a proto bump that follows a firmware pin. -#}
+{#- Scopes: the firmware file drops the crate's own commits (scope sofleii
+    or tui); the crate's file keeps its own (sofleii, tui, flash), unscoped
+    and deps commits and drops commits scoped to another part (firmware,
+    keymap, site...) that happen to touch sofleii/ too, e.g. a proto bump
+    that follows a firmware pin. flash is in both: it spans the firmware's
+    identity record, the mise flash tasks and the crate. -#}
 {%- set_global kept = [] -%}
 {%- for commit in commits -%}
   {%- if component == "sofleii" -%}
-    {%- if not commit.scope or commit.scope == "sofleii" or commit.scope == "deps" -%}
+    {%- if not commit.scope or commit.scope in ["sofleii", "tui", "flash", "deps"] -%}
       {%- set_global kept = kept | concat(with=commit) -%}
     {%- endif -%}
-  {%- elif commit.scope != "sofleii" -%}
+  {%- elif commit.scope not in ["sofleii", "tui"] -%}
     {%- set_global kept = kept | concat(with=commit) -%}
   {%- endif -%}
 {%- endfor -%}

@@ -9,7 +9,18 @@ and the project uses [Semantic Versioning](https://semver.org/). Generated
 by [git-cliff](https://git-cliff.org) from the commit history: edit
 `cliff.toml`, not this file.
 
-## [Unreleased]
+## [sofleii-fw v3.3.0](https://github.com/rdlu/sofleii/compare/sofleii-fw-v3.2.0...sofleii-fw-v3.3.0) - 2026-10-25
+
+### Features
+
+- **flash:** identify the keyboard and half from CURRENT.UF2 before flashing ([6d5cbfa](https://github.com/rdlu/sofleii/commit/6d5cbfa08cdd10de83614626e1d91cdaac07f906))
+- **flash:** the core flash job: sources, chip memory, decision, runner ([#100](https://github.com/rdlu/sofleii/pull/100)) ([1531946](https://github.com/rdlu/sofleii/commit/153194632e872c8981f2ca559e0882de49fba81c))
+- **flash:** sofleii flash CLI; mise flash tasks run on it ([#100](https://github.com/rdlu/sofleii/pull/100)) ([1669bcd](https://github.com/rdlu/sofleii/commit/1669bcd45b6217dc76db4ef2aed91b2dc0c3b9fa))
+
+### Fixes
+
+- **firmware:** keep the identity defaults in the module, not the shield ([5a7f788](https://github.com/rdlu/sofleii/commit/5a7f78836ddff6941bd1243201522816ed7c6b03))
+- **flash:** find the app's vector table via the SoftDevice info struct ([7a0d3f0](https://github.com/rdlu/sofleii/commit/7a0d3f059bc124b9790fc291156b2e84191d332c))
 
 ### Docs
 
