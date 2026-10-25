@@ -91,7 +91,7 @@ hero:
 
 <div class="hx:mt-6"></div>
 
-A terminal dashboard plus a **scriptable CLI**: every reading is a subcommand with `--json`, stable exit codes and a waybar module. Build it from the repo today; the first release is [coming (#83)](https://github.com/rdlu/sofleii/issues/83), and the roadmap lives in [#44](https://github.com/rdlu/sofleii/issues/44).
+A terminal dashboard plus a **scriptable CLI**: every reading is a subcommand with `--json`, stable exit codes and a waybar module. [Install](docs/sofleii/#installing-it) a release binary or build it from the repo; the roadmap lives in [#44](https://github.com/rdlu/sofleii/issues/44).
 
 <div class="hx:mt-6"></div>
 
@@ -111,7 +111,7 @@ A terminal dashboard plus a **scriptable CLI**: every reading is a subcommand wi
   {{< hextra/feature-card
     title="Scripts and status bars"
     icon="terminal"
-    subtitle="JSON with a versioned schema, exit codes for checks, a waybar module and an update check against the releases. Coming later: flashing and the keymap from the tool."
+    subtitle="JSON with a versioned schema, exit codes for checks, a waybar module and an update check against the releases. Coming later: editing the keymap from the tool."
     link="docs/sofleii/"
   >}}
 {{< /hextra/feature-grid >}}
@@ -127,7 +127,7 @@ A terminal dashboard plus a **scriptable CLI**: every reading is a subcommand wi
     title="Flashing"
     icon="download"
     link="docs/flashing/"
-    subtitle="One mise task, or drag-and-drop .uf2 files onto each half."
+    subtitle="sofleii flash, or F in its TUI: fetches the firmware and checks which half it is writing to. Drag-and-drop .uf2 files still works."
   >}}
   {{< hextra/feature-card
     title="Upgrading to v3"

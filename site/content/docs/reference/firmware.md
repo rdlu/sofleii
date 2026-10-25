@@ -91,6 +91,10 @@ From `config/eyelash_sofle.conf`:
 
 ## Memory budget
 
+Unchanged in v3.3.0: rebuilt locally on 2026-10-25, the left half is
+472660 B / 128354 B (+4 B of flash, a longer version string) and the right
+half and settings reset are byte-for-byte the same sizes as below.
+
 Left half: a **local build** (2026-10-24) with the identity record
 ([#98](https://github.com/rdlu/sofleii/issues/98)), 472656 B of flash and
 128354 B of RAM: +84 B of flash and no RAM over the 2026-10-21 build of the
