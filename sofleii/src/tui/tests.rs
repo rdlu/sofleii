@@ -1606,3 +1606,55 @@ fn studio_serial_teaches_the_left_chip_once() {
         "known chips stay as they are"
     );
 }
+
+#[test]
+fn the_flash_question_leaves_the_decision_readable() {
+    use crate::commands::flash::job::Event as JobEvent;
+    let rec = FlashRec::default();
+    let mut app = demo();
+    let mut setup = flash::Setup::new(false, vec![]);
+    setup.right = false;
+    app.flash_mode = Some(flash::Mode::new(setup));
+    fpress(&mut app, &rec, KeyCode::Enter);
+    msg(
+        &mut app,
+        &rec,
+        flash::Msg::Fetched(vec!["firmware   local files".into()]),
+        at(1),
+    );
+    let step = rec.specs.borrow()[0].steps[0];
+    msg(
+        &mut app,
+        &rec,
+        flash::Msg::Event(JobEvent::Step {
+            index: 0,
+            total: 1,
+            step,
+            file: "l.uf2".into(),
+        }),
+        at(1),
+    );
+    msg(
+        &mut app,
+        &rec,
+        flash::Msg::Event(JobEvent::Note {
+            message: "decision   flash (the chip is known)".into(),
+        }),
+        at(2),
+    );
+    msg(
+        &mut app,
+        &rec,
+        flash::Msg::Ask(flash::Ask::Confirm {
+            step: left_step(),
+            file: "l.uf2".into(),
+        }),
+        at(2),
+    );
+    let s = text(&app);
+    assert!(s.contains("Flash the left half?"), "{s}");
+    assert!(
+        s.contains("flash (the chip is known)"),
+        "the modal covers the decision:\n{s}"
+    );
+}

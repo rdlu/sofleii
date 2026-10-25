@@ -1120,6 +1120,7 @@ fn flash_screen(
     .areas(inner);
     // The newest lines when the steps overflow.
     let skip = body.len().saturating_sub(usize::from(top.height));
+    let shown = (body.len() - skip) as u16;
     f.render_widget(
         Paragraph::new(body.into_iter().skip(skip).collect::<Vec<_>>()),
         top,
@@ -1132,12 +1133,19 @@ fn flash_screen(
     if let Stage::Running(r) = &mode.stage
         && let Some(a) = &r.ask
     {
-        flash_ask(f, area, a, &r.typed, t);
+        // Below the steps, so the decision it asks about stays readable.
+        let below = Rect {
+            y: top.y + shown,
+            height: top.height.saturating_sub(shown),
+            ..top
+        };
+        flash_ask(f, area, below, a, &r.typed, t);
     }
 }
 
-/// The job's question as a modal.
-fn flash_ask(f: &mut Frame, area: Rect, a: &Ask, typed: &str, t: Theme) {
+/// The job's question as a modal, at the top of `below` (the free space
+/// under the steps) when it fits, else as low as the body allows.
+fn flash_ask(f: &mut Frame, area: Rect, below: Rect, a: &Ask, typed: &str, t: Theme) {
     let w = 64.min(area.width.saturating_sub(4));
     let text_w = usize::from(w.saturating_sub(4)).max(10);
     let (title, text, prompt, keys): (String, String, Line, Vec<Span>) = match a {
@@ -1191,7 +1199,12 @@ fn flash_ask(f: &mut Frame, area: Rect, a: &Ask, typed: &str, t: Theme) {
     lines.push(Line::raw(""));
     lines.push(prompt);
     let h = lines.len() as u16 + 2;
-    let r = centred(area, w, h);
+    let mut r = centred(area, w, h);
+    r.y = if h <= below.height {
+        below.y
+    } else {
+        below.bottom().saturating_sub(h).max(area.y)
+    };
     let style = match a {
         Ask::Adopt { .. } => t.warn().add_modifier(Modifier::BOLD),
         Ask::Confirm { .. } => t.title(),
