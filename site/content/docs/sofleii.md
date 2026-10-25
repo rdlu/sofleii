@@ -51,7 +51,7 @@ sofleii status
 mise holds back releases younger than its `minimum_release_age` setting, so
 for a day or so after a release `latest` still resolves to the previous one.
 Name the version to get it at once:
-`mise use -g 'github:rdlu/sofleii[version_prefix=sofleii-tui-v]@0.2.0'`.
+`mise use -g 'github:rdlu/sofleii[version_prefix=sofleii-tui-v]@0.3.0'`.
 
 **By hand:** download `sofleii-<version>-<target>.tar.gz` and its `.sha256`
 from the release, check them, and put the binary on your `PATH`:
@@ -629,13 +629,13 @@ new transport.
 Done: the CLI above, the live TUI dashboard with profile and output
 switching, the BLE transport, both
 batteries ([#45](https://github.com/rdlu/sofleii/issues/45)), the build info
-([#46](https://github.com/rdlu/sofleii/issues/46)), the update check, and
-`keymap show`/`keymap diff` ([#76](https://github.com/rdlu/sofleii/issues/76), CLI part).
+([#46](https://github.com/rdlu/sofleii/issues/46)), the update check and
+prebuilt releases ([#83](https://github.com/rdlu/sofleii/issues/83)),
+`keymap show`/`keymap diff` ([#76](https://github.com/rdlu/sofleii/issues/76), CLI part),
+and flashing: `sofleii flash` and the TUI's Flash mode
+([#100](https://github.com/rdlu/sofleii/issues/100), sofleii 0.3.0).
 Coming, roughly in this order (epic: [#44](https://github.com/rdlu/sofleii/issues/44)):
 
-- [#83](https://github.com/rdlu/sofleii/issues/83): the **first release**,
-  `sofleii-tui-v0.1.0`: CI, prebuilt binaries, install with mise or cargo, and
-  `update check` checking the CLI too.
 - [#76](https://github.com/rdlu/sofleii/issues/76): the **live keymap in the
   TUI**, a layer at a time with the drifted keys highlighted.
 - [#77](https://github.com/rdlu/sofleii/issues/77): **live keymap editing**:
@@ -646,8 +646,6 @@ Coming, roughly in this order (epic: [#44](https://github.com/rdlu/sofleii/issue
   on the game picker, with sofleii game presets.
 - [#80](https://github.com/rdlu/sofleii/issues/80): **bake** live changes
   into the firmware: write them into the `.keymap`, draw, PR, flash.
-- [#100](https://github.com/rdlu/sofleii/issues/100): flashing, `sofleii flash`
-  and the TUI's Flash mode, is in.
 - Later: the repo's mise routines as commands ([#48](https://github.com/rdlu/sofleii/issues/48)).
 
 Until editing lands, use [Studio](../studio/) for live keymap edits.

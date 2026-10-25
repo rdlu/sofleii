@@ -9,7 +9,7 @@ and the project uses [Semantic Versioning](https://semver.org/). Generated
 by [git-cliff](https://git-cliff.org) from the commit history: edit
 `cliff.toml`, not this file.
 
-## [Unreleased]
+## [sofleii-tui v0.3.0](https://github.com/rdlu/sofleii/compare/sofleii-tui-v0.2.0...sofleii-tui-v0.3.0) - 2026-10-25
 
 ### Features
 
