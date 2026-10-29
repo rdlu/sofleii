@@ -9,6 +9,12 @@ and the project uses [Semantic Versioning](https://semver.org/). Generated
 by [git-cliff](https://git-cliff.org) from the commit history: edit
 `cliff.toml`, not this file.
 
+## [sofleii-fw v3.4.0](https://github.com/rdlu/sofleii/compare/sofleii-fw-v3.3.0...sofleii-fw-v3.4.0) - 2026-10-29
+
+### Features
+
+- **keymap:** Alt/Ctrl hold on NAV's S/D, screenshot column ([dd4c4a0](https://github.com/rdlu/sofleii/commit/dd4c4a0e051437798ce9e82761d22c65c4c50148))
+
 ## [sofleii-fw v3.3.0](https://github.com/rdlu/sofleii/compare/sofleii-fw-v3.2.0...sofleii-fw-v3.3.0) - 2026-10-25
 
 ### Features
