@@ -196,12 +196,12 @@ layers:
   - {t: '$$mdi:transfer$$', type: trans}
   - {t: '$$mdi:transfer$$', type: trans}
   MEDIA:
-  - {t: '$$mdi:transfer$$', type: trans}
-  - {t: '$$mdi:transfer$$', type: trans}
-  - {t: '$$mdi:transfer$$', type: trans}
-  - {t: '$$mdi:transfer$$', type: trans}
-  - {t: '$$mdi:transfer$$', type: trans}
-  - {t: '$$mdi:transfer$$', type: trans}
+  - F14
+  - F15
+  - F16
+  - F17
+  - F18
+  - F19
   - $$mdi:volume-high$$
   - {t: '$$mdi:transfer$$', type: trans}
   - {t: '$$mdi:transfer$$', type: trans}
@@ -214,7 +214,7 @@ layers:
   - Gui+$$mdi:brightness-5$$
   - $$mdi:brightness-5$$
   - {t: '$$mdi:transfer$$', type: trans}
-  - {t: '$$mdi:transfer$$', type: trans}
+  - F24
   - $$mdi:volume-low$$
   - {t: '$$mdi:transfer$$', type: trans}
   - {t: '$$mdi:transfer$$', type: trans}
@@ -286,7 +286,7 @@ layers:
   - KP 5
   - KP 6
   - KP PLUS
-  - {t: '$$mdi:transfer$$', type: trans}
+  - SysRq
   - {t: '$$mdi:minus-circle-outline$$', type: none}
   - RGB SAD
   - RGB HUD
@@ -312,7 +312,7 @@ layers:
   - {t: ',', s: <}
   - KP DOT
   - '%'
-  - SysRq
+  - {t: '$$mdi:transfer$$', type: trans}
   - {t: '$$mdi:transfer$$', type: trans}
   - {type: held}
   - {t: '$$mdi:transfer$$', type: trans}

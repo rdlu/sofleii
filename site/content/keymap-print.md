@@ -26,7 +26,7 @@ captions:
   BASE: "Always on. Hold-tap keys: tap for the big legend, hold for the small one under it."
   NAV: "Hold the left thumb's NAV key. Arrows on HJKL, function keys on the top row, window-manager shortcuts on the left."
   CODE: "Hold the right thumb's CODE key. Brackets, digraphs and code snippets as one-key macros; ▏ is where the cursor ends up."
-  MEDIA: "Hold the right thumb's outer key (MEDIA). Volume, playback, Delete."
+  MEDIA: "Hold the right thumb's outer key (MEDIA). Volume, playback, brightness, Delete, touchpad (F21), spare F14–F19/F24 for host binds."
   "SYS|NUM": "Hold the left thumb's outer key. Bluetooth, underglow and the mouse on the left, a numpad on the right; the outer right-thumb key opens GAME?."
   "GAME?": "The game picker: push the joystick to choose, press its centre to cancel. Every other key does nothing."
   MINECRFT: "F3 top-left. No hold-taps: plain keys, Ctrl on the pinky, Shift on the left thumb, F13 push-to-talk."

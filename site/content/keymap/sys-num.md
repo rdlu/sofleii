@@ -35,7 +35,7 @@ left hand, a numpad on the right. Release the key to go back to BASE.
   which arrives as `XF86Calculator` (bind it to your calculator app).
 - **Lock** on the <kbd>B</kbd> spot: `Super+Alt+L`, a common lock-screen
   shortcut (bind it on the host if yours differs).
-- **SysRq** on the bottom-right corner: Alt + PrintScreen, the kernel's
+- **SysRq** right below the calculator: Alt + PrintScreen, the kernel's
   Magic SysRq key. Alt stays down while you hold it, so hold SYS|NUM, press
   and keep holding SysRq, release SYS|NUM, and tap the command letter on
   BASE (e.g. <kbd>S</kbd> = sync). Which commands the kernel accepts is the
