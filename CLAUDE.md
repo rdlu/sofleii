@@ -92,13 +92,19 @@ Locked gaming layers that strip all HRM/hold-tap/caps_word so WASD + modifiers a
 The keymap has 64 positions (used in `hold-trigger-key-positions`):
 
 ```
-Rows 0–3: 13 keys each (6 left + 1 encoder-click + 6 right), positions 0–51
-Row 4:    12 keys      (5 left + 1 encoder-click + 5 right, + 1 encoder), positions 52–63
+Rows 0–3: 13 keys each (6 left + 1 joystick direction + 6 right), positions 0–51
+Row 4:    12 keys      (encoder press + 5 left thumbs, joystick centre + 5 right thumbs), positions 52–63
 
-Left half:  cols 0–5 of each row
-Right half: cols 7–12 of each row (col 6 = encoder click)
+Joystick (5-way): 6 = up, 19 = down, 32 = left, 45 = right, 58 = centre press
+Encoder:          52 = press (BASE &kp C_MUTE); rotation is the layers' sensor-bindings, not a position
 ```
 
+Source: `config/boards/shields/eyelash_sofle/eyelash_sofle-layouts.dtsi`. The
+joystick is wired on the right half (matrix column 7 = the right half's first
+column, `col-offset = <7>`) but sits between the halves; the hold-tap trigger
+lists count 6/19/32/45 with the **left** hand and 58 with the right.
+
+By hand, without the joystick directions (`hmr`'s list adds 6/19/32/45 to the left side):
 Left-side positions:  `0-5, 13-18, 26-31, 39-44, 52-57`
 Right-side positions: `7-12, 20-25, 33-38, 46-51, 58-63`
 

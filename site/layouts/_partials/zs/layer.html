@@ -32,7 +32,7 @@
           {{- $o = false -}}
         {{- end -}}
         {{- if $o }}{{ $k = merge $k (dict "t" $o.label "type" "module") }}{{ end -}}
-        {{- $len := strings.RuneCount (string $k.t) -}}
+        {{- $len := strings.RuneCount (replaceRE `\$\$[a-z]+:[a-z0-9-]+\$\$` "G" (string $k.t)) -}}
         {{- $cls := slice "zs-k" -}}
         {{- with $k.type }}{{ $cls = $cls | append . }}{{ end -}}
         {{- if $k.h }}{{ $cls = $cls | append "ht" }}{{ end -}}

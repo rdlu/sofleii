@@ -91,6 +91,13 @@ From `config/eyelash_sofle.conf`:
 
 ## Memory budget
 
+Unreleased (Magic SysRq, calculator and lock on SYS|NUM; brightness, touchpad
+toggle and spare F-keys on MEDIA): a local build on 2026-10-29 puts the left
+half at 472840 B / 128530 B, +184 B of flash and +176 B of RAM over v3.4.0.
+That is the new `SYSRQ` macro; the key changes swap bindings in place and
+measured nothing (the same size with and without the MEDIA F-keys and the
+SysRq move). The right half doesn't carry the keymap, so it is unchanged.
+
 Unchanged in v3.4.0 (NAV hold-taps and screenshot keys, no new layer):
 rebuilt locally on 2026-10-29, the left half is 472656 B / 128354 B, the
 same as the 2026-10-24 build below. v3.3.0 (local, 2026-10-25) was
@@ -123,7 +130,7 @@ from v3.0.0, measured from that CI run.
 
 | Build | Flash used | Flash free | RAM used | RAM free |
 | --- | ---: | ---: | ---: | ---: |
-| Left (Studio, nice!view; local build) | 461 KB / 792 KB (58.28%) | **331 KB** | 125 KB / 256 KB (48.96%) | **131 KB** |
+| Left (Studio, nice!view; local build) | 462 KB / 792 KB (58.30%) | **330 KB** | 126 KB / 256 KB (49.03%) | **130 KB** |
 | Right (nice!view) | 323 KB / 792 KB (40.8%) | **469 KB** | 77 KB / 256 KB (30.1%) | **179 KB** |
 | Settings reset | 51 KB / 792 KB (6.5%) | | 13 KB / 256 KB (4.9%) | |
 

@@ -31,5 +31,15 @@ left hand, a numpad on the right. Release the key to go back to BASE.
   press is a left click.
 - **Right, numpad**, aligned with the 7 8 9 of the number row, with `/ * =`
   down the left edge and `- + Enter %` down the right.
+- **Calculator** on the top-right corner, beside the numpad: `C_AL_CALC`,
+  which arrives as `XF86Calculator` (bind it to your calculator app).
+- **Lock** on the <kbd>B</kbd> spot: `Super+Alt+L`, a common lock-screen
+  shortcut (bind it on the host if yours differs).
+- **SysRq** right below the calculator: Alt + PrintScreen, the kernel's
+  Magic SysRq key. Alt stays down while you hold it, so hold SYS|NUM, press
+  and keep holding SysRq, release SYS|NUM, and tap the command letter on
+  BASE (e.g. <kbd>S</kbd> = sync). Which commands the kernel accepts is the
+  `kernel.sysrq` bitmask (systemd's default, 16, allows only sync; 1 allows
+  all). See the [kernel docs](https://docs.kernel.org/admin-guide/sysrq.html).
 - **Right-thumb outer key**: `&to 5`, which opens the
   [game picker](../gaming/#game-picker).

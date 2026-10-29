@@ -215,6 +215,14 @@ parse_config:
       tap: $$mdi:star-outline$$
     "&GAME_EXIT":
       tap: $$mdi:exit-run$$
+    "&SYSRQ":
+      tap: SysRq
+    # XF86TouchpadToggle (the standard keyboard tables map F21 to it)
+    "&kp F21":
+      tap: $$mdi:gesture-tap-button$$
+    # Super+Alt+L = lock screen
+    "&kp LG(LA(L))":
+      tap: $$mdi:lock$$
 
     # Per-layer RGB feedback is handled by the zmk-rgb-layer firmware module
     # (event-driven), so the layer keys are plain &mo/&lt and need no labels.
@@ -505,6 +513,7 @@ parse_config:
     # System
     C_POWER: $$mdi:power-standby$$
     C_AL_LOCK: $$mdi:lock$$
+    C_AL_CALC: $$mdi:calculator$$
     K_CANCEL: $$mdi:close-box$$
     K_FIND: $$mdi:apple-finder$$
     # Command + 

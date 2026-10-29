@@ -12,18 +12,25 @@
   "mdi:volume-high" "Volume up" "mdi:volume-low" "Volume down"
   "mdi:volume-off" "Mute" "mdi:play-pause" "Play/pause" "mdi:skip-next" "Next"
   "mdi:skip-previous" "Previous" "mdi:bluetooth-off" "Bluetooth clear"
-  "mdi:bluetooth-connect" "Bluetooth profile" -}}
-{{- with findRESubmatch `^\$\$([a-z]+:[a-z0-9-]+)\$\$$` $t 1 -}}
-  {{- $g := index . 0 1 -}}
+  "mdi:bluetooth-connect" "Bluetooth profile"
+  "mdi:brightness-5" "Brightness up" "mdi:brightness-7" "Brightness down"
+  "mdi:gesture-tap-button" "Touchpad toggle" "mdi:calculator" "Calculator"
+  "mdi:lock" "Lock screen" -}}
+{{- /* A break opportunity after | and +, so "SYS|NUM" wraps as SYS| / NUM
+  and "Gui+Sft+H" at a +, never mid-word. <wbr> is markup, not a character:
+  copy, search and tooltips still see the plain label. Glyphs may stand alone
+  ("$$mdi:transfer$$") or sit inside text ("Ctl+$$mdi:printer-outline$$",
+  keymap-drawer's form for a modified key): each $$set:name$$ becomes its
+  glyph, or its name when the render has no such glyph. Escaping leaves the
+  $$...$$ tokens intact, so they are swapped in after it. */ -}}
+{{- $out := htmlEscape $t | replaceRE `([|+])` "$1<wbr>" -}}
+{{- range findRESubmatch `\$\$([a-z]+:[a-z0-9-]+)\$\$` $t -1 -}}
+  {{- $g := index . 1 -}}
   {{- $label := index $names $g | default (replace (index (split $g ":") 1) "-" " ") -}}
+  {{- $html := htmlEscape $label -}}
   {{- with index $.glyphs $g -}}
-    <span class="g" role="img" aria-label="{{ $label }}">{{ . | safeHTML }}</span>
-  {{- else -}}
-    {{ $label }}
+    {{- $html = printf `<span class="g" role="img" aria-label="%s">%s</span>` (htmlEscape $label) . -}}
   {{- end -}}
-{{- else -}}
-  {{- /* A break opportunity after | and +, so "SYS|NUM" wraps as SYS| / NUM
-    and "Gui+Sft+H" at a +, never mid-word. <wbr> is markup, not a
-    character: copy, search and tooltips still see the plain label. */ -}}
-  {{ htmlEscape $t | replaceRE `([|+])` "$1<wbr>" | safeHTML }}
+  {{- $out = replace $out (index . 0) $html -}}
 {{- end -}}
+{{ $out | safeHTML }}
