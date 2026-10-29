@@ -91,9 +91,11 @@ From `config/eyelash_sofle.conf`:
 
 ## Memory budget
 
-Unchanged in v3.3.0: rebuilt locally on 2026-10-25, the left half is
-472660 B / 128354 B (+4 B of flash, a longer version string) and the right
-half and settings reset are byte-for-byte the same sizes as below.
+Unchanged in v3.4.0 (NAV hold-taps and screenshot keys, no new layer):
+rebuilt locally on 2026-10-29, the left half is 472656 B / 128354 B, the
+same as the 2026-10-24 build below. v3.3.0 (local, 2026-10-25) was
+472660 B / 128354 B (+4 B of flash, a longer version string); the right half
+and settings reset are byte-for-byte the same sizes as below.
 
 Left half: a **local build** (2026-10-24) with the identity record
 ([#98](https://github.com/rdlu/sofleii/issues/98)), 472656 B of flash and
