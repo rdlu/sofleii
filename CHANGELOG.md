@@ -9,6 +9,22 @@ and the project uses [Semantic Versioning](https://semver.org/). Generated
 by [git-cliff](https://git-cliff.org) from the commit history: edit
 `cliff.toml`, not this file.
 
+## [sofleii-fw v3.5.0](https://github.com/rdlu/sofleii/compare/sofleii-fw-v3.4.0...sofleii-fw-v3.5.0) - 2026-10-29
+
+### Features
+
+- **keymap:** Magic SysRq key on SYS|NUM ([dacc1b0](https://github.com/rdlu/sofleii/commit/dacc1b02894fcbda7dc8dc1ffe216f3ec1f70ac7))
+- **keymap:** brightness and touchpad on MEDIA, calculator and lock on SYS|NUM ([3d57e87](https://github.com/rdlu/sofleii/commit/3d57e87105a5e633f6bcab2e84f78288a1f4727a))
+- **keymap:** SysRq below the calculator, spare F-keys on MEDIA ([982d0b3](https://github.com/rdlu/sofleii/commit/982d0b3aa44d7730d19d1d516deee1ecc5343dc0))
+
+### Fixes
+
+- **site:** render glyphs inside text legends ([1843de8](https://github.com/rdlu/sofleii/commit/1843de83c6d8d8945be60ef676393a3936cd415f))
+
+### Docs
+
+- **claude:** fix key-position numbering: col 6 is the joystick ([17bd037](https://github.com/rdlu/sofleii/commit/17bd0376de57634ab65a44465ffa2ca6ce92c622))
+
 ## [sofleii-fw v3.4.0](https://github.com/rdlu/sofleii/compare/sofleii-fw-v3.3.0...sofleii-fw-v3.4.0) - 2026-10-29
 
 ### Features

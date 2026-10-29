@@ -91,7 +91,7 @@ From `config/eyelash_sofle.conf`:
 
 ## Memory budget
 
-Unreleased (Magic SysRq, calculator and lock on SYS|NUM; brightness, touchpad
+v3.5.0 (Magic SysRq, calculator and lock on SYS|NUM; brightness, touchpad
 toggle and spare F-keys on MEDIA): a local build on 2026-10-29 puts the left
 half at 472840 B / 128530 B, +184 B of flash and +176 B of RAM over v3.4.0.
 That is the new `SYSRQ` macro; the key changes swap bindings in place and
