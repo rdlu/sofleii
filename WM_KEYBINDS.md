@@ -10,8 +10,8 @@ The NAV layer sends standard Super-key combos for workspace and monitor navigati
 | Q | `Super+I` | Focus workspace above / prev |
 | Esc | `Super+Shift+H` | Focus monitor left |
 | A | `Super+Shift+J` | Focus monitor down |
-| S | `Super+Shift+K` | Focus monitor up |
-| D | `Super+Shift+L` | Focus monitor right |
+| S (tap; hold = Alt) | `Super+Shift+K` | Focus monitor up |
+| D (tap; hold = Ctrl) | `Super+Shift+L` | Focus monitor right |
 | `\` | `Super+Ctrl+U` | Move column/window to workspace below |
 | Z | `Super+Ctrl+I` | Move column/window to workspace above |
 | X | `Super+Ctrl+Shift+H` | Move column/window to monitor left |

@@ -449,9 +449,9 @@
         layer_1 {
             bindings = <
 &kp F12        &kp F1         &kp F2             &kp F3             &kp F4     &kp F5      &kp UP_ARROW     &kp F6      &kp F7     &kp F8     &kp F9      &kp F10        &kp F11
-&kp LG(U)      &kp LG(I)      &trans             &trans             &trans     &trans      &kp DOWN_ARROW   &kp HOME    &kp PG_DN  &kp PG_UP  &kp END     &kp INS        &kp PRINTSCREEN
-&kp LG(LS(H))  &kp LG(LS(J))  &kp LG(LS(K))      &kp LG(LS(L))      &trans     &trans      &kp LEFT_ARROW   &kp LEFT    &kp DOWN   &kp UP     &kp RIGHT   &kp DEL        &kp PAUSE_BREAK
-&kp LG(LC(U))  &kp LG(LC(I))  &kp LG(LS(LC(H)))  &kp LG(LS(LC(L)))  &trans     &trans      &kp RIGHT_ARROW  &kp LG(N1)  &kp LG(U)  &kp LG(I)  &kp LG(N9)  &kp LG(LS(H))  &kp LG(LS(L))
+&kp LG(U)      &kp LG(I)      &trans             &trans             &trans     &kp LC(PSCRN)  &kp DOWN_ARROW   &kp HOME    &kp PG_DN  &kp PG_UP  &kp END     &kp INS        &kp PRINTSCREEN
+&kp LG(LS(H))  &kp LG(LS(J))  &hml LALT LG(LS(K))  &hml LCTRL LG(LS(L))  &trans     &kp LA(PSCRN)  &kp LEFT_ARROW   &kp LEFT    &kp DOWN   &kp UP     &kp RIGHT   &kp DEL        &kp PAUSE_BREAK
+&kp LG(LC(U))  &kp LG(LC(I))  &kp LG(LS(LC(H)))  &kp LG(LS(LC(L)))  &trans     &kp LS(PSCRN)  &kp RIGHT_ARROW  &kp LG(N1)  &kp LG(U)  &kp LG(I)  &kp LG(N9)  &kp LG(LS(H))  &kp LG(LS(L))
 &trans         &trans         &trans             &trans             &trans     &kp DEL     &kp ENTER        &kp K_APP   &kp LCTRL  &kp LEFT   &kp RIGHT   &trans
             >;
 

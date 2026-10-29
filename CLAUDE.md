@@ -110,7 +110,7 @@ keymap, so treat the keymap as the source of truth for the numbers below.
 
 | Behavior | Used on | Flavor | `require-prior-idle-ms` | Positional restriction |
 |----------|---------|--------|-------------------------|------------------------|
-| `hml` | S(LALT) D(LCTRL) | balanced | 230 | right-hand keys **+ left S/D/F (28–30)** |
+| `hml` | S(LALT) D(LCTRL); also NAV S/D (tap = Super+Shift+K/L) | balanced | 230 | right-hand keys **+ left S/D/F (28–30)** |
 | `hml_idx` | F(LSHFT) | hold-preferred | 70 | same list as `hml` |
 | `hmr` | L(LALT) K(RCTRL) | balanced | 230 | left-hand keys incl. centre column 6/19/32/45 **+ right J/K/L (34–36)** |
 | `hmr_idx` | J(RSHFT) | hold-preferred | 70 | same list as `hmr` |
