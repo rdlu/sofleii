@@ -19,6 +19,15 @@ and window-manager shortcuts. Release the key to go back to BASE.
 - **Left side**: Super-key combos for workspaces and monitors (focus one, or
   move a window to it). The right bottom row has more: workspace 1, next,
   previous, last, and monitor left and right.
+- **Screenshots**: a column on the inner edge, one tap each: `Ctrl+PrtSc`
+  on <kbd>T</kbd>, `Alt+PrtSc` on <kbd>G</kbd>, `Shift+PrtSc` on <kbd>B</kbd>.
+- **Home-row mods stay live**: <kbd>S</kbd> and <kbd>D</kbd> are hold-taps
+  on NAV too. Tapped, they send the monitor-up/right shortcuts; held, they are
+  `Alt` and `Ctrl` (the same `hml` behaviour as on BASE), and <kbd>F</kbd>
+  passes through as `Shift`. So NAV + a held mod + a right-hand NAV key works
+  (Alt+PrtSc, Ctrl+Home, Shift+arrows…). Because they're hold-taps, the
+  shortcut fires on release, and a mod only holds against right-hand keys
+  (or S/D/F), so Alt + the screenshot column comes out as the shortcut.
 - **Joystick**: arrows, with Enter on the centre press.
 - **Thumbs**: `Del` on the left; app menu, `Ctrl`, `Left` and `Right` on the
   right, so the right thumb can hold Ctrl and step by word.

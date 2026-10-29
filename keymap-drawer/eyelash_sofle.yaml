@@ -84,7 +84,7 @@ layers:
   - {t: '$$mdi:transfer$$', type: trans}
   - {t: '$$mdi:transfer$$', type: trans}
   - {t: '$$mdi:transfer$$', type: trans}
-  - {t: '$$mdi:transfer$$', type: trans}
+  - Ctl+$$mdi:printer-outline$$
   - $$mdi:arrow-down-bold$$
   - HOME
   - PG DN
@@ -94,10 +94,10 @@ layers:
   - PRINTSCREEN
   - Gui+Sft+H
   - Gui+Sft+J
-  - Gui+Sft+K
-  - Gui+Sft+L
+  - {t: Gui+Sft+K, h: '$$mdi:apple-keyboard-option$$'}
+  - {t: Gui+Sft+L, h: '$$mdi:apple-keyboard-control$$'}
   - {t: '$$mdi:transfer$$', type: trans}
-  - {t: '$$mdi:transfer$$', type: trans}
+  - Alt+$$mdi:printer-outline$$
   - $$mdi:arrow-left-bold$$
   - $$mdi:arrow-left-bold$$
   - $$mdi:arrow-down-bold$$
@@ -110,7 +110,7 @@ layers:
   - Gui+Sft+Ctl+H
   - Gui+Sft+Ctl+L
   - {t: '$$mdi:transfer$$', type: trans}
-  - {t: '$$mdi:transfer$$', type: trans}
+  - Sft+$$mdi:printer-outline$$
   - $$mdi:arrow-right-bold$$
   - {t: Gui+1, s: Gui+!}
   - Gui+U
