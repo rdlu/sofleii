@@ -211,8 +211,8 @@ layers:
   - {t: '$$mdi:transfer$$', type: trans}
   - {t: '$$mdi:transfer$$', type: trans}
   - {t: '$$mdi:transfer$$', type: trans}
-  - {t: '$$mdi:transfer$$', type: trans}
-  - {t: '$$mdi:transfer$$', type: trans}
+  - Gui+$$mdi:brightness-5$$
+  - $$mdi:brightness-5$$
   - {t: '$$mdi:transfer$$', type: trans}
   - {t: '$$mdi:transfer$$', type: trans}
   - $$mdi:volume-low$$
@@ -224,8 +224,8 @@ layers:
   - {t: '$$mdi:transfer$$', type: trans}
   - {t: '$$mdi:transfer$$', type: trans}
   - {t: '$$mdi:transfer$$', type: trans}
-  - {t: '$$mdi:transfer$$', type: trans}
-  - {t: '$$mdi:transfer$$', type: trans}
+  - Gui+$$mdi:brightness-7$$
+  - $$mdi:brightness-7$$
   - $$mdi:backspace-reverse-outline$$
   - {t: '$$mdi:transfer$$', type: trans}
   - $$mdi:play-pause$$
@@ -240,7 +240,7 @@ layers:
   - {t: '$$mdi:transfer$$', type: trans}
   - {t: '$$mdi:transfer$$', type: trans}
   - {t: '$$mdi:transfer$$', type: trans}
-  - {t: '$$mdi:transfer$$', type: trans}
+  - $$mdi:gesture-tap-button$$
   - $$mdi:skip-next$$
   - F20
   - $$mdi:volume-off$$
@@ -273,7 +273,7 @@ layers:
   - KP 8
   - KP 9
   - KP MINUS
-  - {t: '$$mdi:transfer$$', type: trans}
+  - $$mdi:calculator$$
   - {t: '$$mdi:minus-circle-outline$$', type: none}
   - RGB SAI
   - RGB HUI
@@ -305,7 +305,7 @@ layers:
   - {t: '$$mdi:minus-circle-outline$$', type: none}
   - {t: '$$mdi:minus-circle-outline$$', type: none}
   - $$mdi:mouse-scroll-wheel$$
-  - {t: '$$mdi:transfer$$', type: trans}
+  - $$mdi:lock$$
   - {t: '$$mdi:menu-right$$', s: '$$mdi:mouse$$'}
   - KP EQUAL
   - KP 0

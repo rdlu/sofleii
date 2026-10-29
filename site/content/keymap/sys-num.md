@@ -31,6 +31,10 @@ left hand, a numpad on the right. Release the key to go back to BASE.
   press is a left click.
 - **Right, numpad**, aligned with the 7 8 9 of the number row, with `/ * =`
   down the left edge and `- + Enter %` down the right.
+- **Calculator** on the top-right corner, beside the numpad: `C_AL_CALC`,
+  which arrives as `XF86Calculator` (bind it to your calculator app).
+- **Lock** on the <kbd>B</kbd> spot: `Super+Alt+L`, a common lock-screen
+  shortcut (bind it on the host if yours differs).
 - **SysRq** on the bottom-right corner: Alt + PrintScreen, the kernel's
   Magic SysRq key. Alt stays down while you hold it, so hold SYS|NUM, press
   and keep holding SysRq, release SYS|NUM, and tap the command letter on
