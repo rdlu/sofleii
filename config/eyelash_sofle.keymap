@@ -383,6 +383,18 @@
             label = "EEX_NONPRINT";
         };
 
+        // Magic SysRq: on Linux PrintScreen *is* KEY_SYSRQ (HID SysReq, 0x9A,
+        // maps to nothing), and the kernel takes it as SysRq while Alt is down.
+        // Alt stays held until this key is released, so: hold SYS, press and
+        // keep holding this key, let go of SYS, tap the command letter on BASE
+        // (R E I S U B, ...). Which commands work is kernel.sysrq's bitmask.
+        SYSRQ: SYSRQ {
+            compatible = "zmk,behavior-macro";
+            #binding-cells = <0>;
+            bindings = <&macro_press &kp LALT>, <&macro_tap &kp PSCRN>, <&macro_pause_for_release>, <&macro_release &kp LALT>;
+            label = "SYSRQ";
+        };
+
         // Game-mode entry macros: enable RGB underglow, set a solid per-game
         // color, then activate the matching layer. The color shows on USB and
         // on battery alike (CONFIG_ZMK_RGB_UNDERGLOW_AUTO_OFF_USB=n since
@@ -490,7 +502,7 @@
 &bt BT_CLR       &bt BT_SEL 0     &bt BT_SEL 1     &bt BT_SEL 2     &bt BT_SEL 3  &bt BT_SEL 4    &mmv MOVE_UP     &kp KP_NUM       &kp KP_N7  &kp KP_N8  &kp KP_N9   &kp KP_MINUS  &trans
 &none            &rgb_ug RGB_SAI  &rgb_ug RGB_HUI  &rgb_ug RGB_EFF  &mkp MB4      &mkp MB5        &mmv MOVE_DOWN   &kp KP_SLASH     &kp KP_N4  &kp KP_N5  &kp KP_N6   &kp KP_PLUS   &trans
 &none            &rgb_ug RGB_SAD  &rgb_ug RGB_HUD  &rgb_ug RGB_EFR  &mkp LCLK     &mkp RCLK       &mmv MOVE_LEFT   &kp KP_ASTERISK  &kp KP_N1  &kp KP_N2  &kp KP_N3   &kp KP_ENTER  &trans
-&rgb_ug RGB_TOG  &none            &none            &none            &mkp MCLK     &trans          &mmv MOVE_RIGHT  &kp KP_EQUAL     &kp KP_N0  &kp COMMA  &kp KP_DOT  &kp PERCENT   &trans
+&rgb_ug RGB_TOG  &none            &none            &none            &mkp MCLK     &trans          &mmv MOVE_RIGHT  &kp KP_EQUAL     &kp KP_N0  &kp COMMA  &kp KP_DOT  &kp PERCENT   &SYSRQ
 &trans           &trans           &trans           &trans           &trans        &trans          &mkp LCLK        &trans           &trans     &trans     &trans      &to 5
             >;
 

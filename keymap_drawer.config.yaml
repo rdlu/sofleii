@@ -215,6 +215,8 @@ parse_config:
       tap: $$mdi:star-outline$$
     "&GAME_EXIT":
       tap: $$mdi:exit-run$$
+    "&SYSRQ":
+      tap: SysRq
 
     # Per-layer RGB feedback is handled by the zmk-rgb-layer firmware module
     # (event-driven), so the layer keys are plain &mo/&lt and need no labels.

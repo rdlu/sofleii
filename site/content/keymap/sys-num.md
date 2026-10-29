@@ -31,5 +31,11 @@ left hand, a numpad on the right. Release the key to go back to BASE.
   press is a left click.
 - **Right, numpad**, aligned with the 7 8 9 of the number row, with `/ * =`
   down the left edge and `- + Enter %` down the right.
+- **SysRq** on the bottom-right corner: Alt + PrintScreen, the kernel's
+  Magic SysRq key. Alt stays down while you hold it, so hold SYS|NUM, press
+  and keep holding SysRq, release SYS|NUM, and tap the command letter on
+  BASE (e.g. <kbd>S</kbd> = sync). Which commands the kernel accepts is the
+  `kernel.sysrq` bitmask (systemd's default, 16, allows only sync; 1 allows
+  all). See the [kernel docs](https://docs.kernel.org/admin-guide/sysrq.html).
 - **Right-thumb outer key**: `&to 5`, which opens the
   [game picker](../gaming/#game-picker).

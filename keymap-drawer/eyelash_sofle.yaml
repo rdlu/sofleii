@@ -312,7 +312,7 @@ layers:
   - {t: ',', s: <}
   - KP DOT
   - '%'
-  - {t: '$$mdi:transfer$$', type: trans}
+  - SysRq
   - {t: '$$mdi:transfer$$', type: trans}
   - {type: held}
   - {t: '$$mdi:transfer$$', type: trans}
