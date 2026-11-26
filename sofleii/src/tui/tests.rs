@@ -20,7 +20,7 @@ use crate::transport::{TransportInfo, TransportKind};
 /// 17:42:10 UTC; the tests draw in UTC.
 fn t0() -> SystemTime {
     let ts: jiff::Timestamp = "2026-10-19T17:42:10Z".parse().unwrap();
-    SystemTime::from(ts)
+    SystemTime::try_from(ts).unwrap()
 }
 
 fn at(secs: u64) -> SystemTime {

@@ -13,13 +13,13 @@ name = "sofleii"
 path = "src/main.rs"
 
 [dependencies]
-clap = { version = "4", features = ["derive"] }
+clap = { version = "4.6.10", features = ["derive"] }
 # Local wall-clock time for the TUI log pane (`HH:MM:SS`): the system zone
 # (TZ, /etc/localtime, /usr/share/zoneinfo), no bundled tzdb.
-jiff = { version = "0.2.38", default-features = false, features = ["std", "tz-system", "tzdb-zoneinfo"] }
+jiff = { version = "1.0.3", default-features = false, features = ["std", "tz-system", "tzdb-zoneinfo"] }
 # Core diagnostics; the CLI and the TUI each install a logger (no env_logger).
-log = "0.4"
-prost = "0.14"
+log = "0.4.35"
+prost = "0.14.6"
 # The TUI. Only the crossterm backend (used through ratatui::crossterm, no
 # direct crossterm dependency), no extra widgets or macros.
 ratatui = { version = "0.30.2", default-features = false, features = ["crossterm"] }
@@ -30,25 +30,25 @@ serde_json = "1"
 serialport = { version = "4", default-features = false }
 # SIGTERM/SIGHUP/SIGINT set a flag the TUI event loop checks, so the terminal
 # is restored on the way out.
-signal-hook = "0.4.5"
+signal-hook = "0.4.6"
 # HTTPS for `update check` (GitHub REST API): blocking, so no tokio; rustls
 # with ring and the bundled webpki roots, so no OpenSSL and no system CA
 # lookup. No gzip/json features (serde_json is already here). Costs about
 # 1.26 MB of release binary (1.69 -> 2.95 MB, measured 2026-10-19; the
 # roots are ~65 KB of that, the rest is rustls + ring).
-ureq = { version = "3.5.0", default-features = false, features = ["rustls"] }
+ureq = { version = "3.5.2", default-features = false, features = ["rustls"] }
 # BlueZ over the system D-Bus for `battery` and the BLE transport. Pure Rust
 # (no libdbus). zbus 6 has no blocking API: `bluez::call` wraps each call in
 # `zbus::block_on`, on zbus's own runtime (`default-rt`, no tokio; bluer
 # would need it).
-zbus = { version = "6.1.0", default-features = false, features = ["default-rt"] }
+zbus = { version = "6.5.0", default-features = false, features = ["default-rt"] }
 # CI firmware artifacts (`sofleii flash --ci`, #100) come as zip files.
 # Inflate only, through flate2's pure-Rust zlib-rs backend: no zopfli
 # compressor, no C zlib.
-zip = { version = "9.1.0", default-features = false, features = ["deflate-flate2-zlib-rs"] }
+zip = { version = "9.8.2", default-features = false, features = ["deflate-flate2-zlib-rs"] }
 
 [build-dependencies]
-prost-build = "0.14"
+prost-build = "0.14.6"
 
 [profile.release]
 # Size over peak speed: sofleii is I/O-bound (serial, D-Bus), so the extra
