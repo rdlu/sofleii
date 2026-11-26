@@ -33,8 +33,10 @@ updates:
     ignore:
       # Pinned to a ZMK-main SHA (`# track: main`) because it picks the build
       # container, which must match Zephyr 4.1; Dependabot would move it to
-      # the newest tag (the v0.3 line).
-      - dependency-name: zmkfirmware/zmk
+      # the newest tag (the v0.3 line). A reusable workflow's dependency name
+      # is its full path (zmkfirmware/zmk/.github/workflows/...), so the bare
+      # repo name never matched (#112, #114): match by prefix.
+      - dependency-name: "zmkfirmware/zmk/*"
       # Its SHA goes with keymap-drawer's version in .mise.toml and draw.yml's
       # `install_version`; bumped by hand, all three together.
-      - dependency-name: caksoylar/keymap-drawer
+      - dependency-name: "caksoylar/keymap-drawer*"

@@ -59,7 +59,11 @@ pub fn text(level: LogLevel, args: &std::fmt::Arguments<'_>) -> String {
 pub fn clock(at: SystemTime, tz: &TimeZone) -> String {
     jiff::Timestamp::try_from(at).map_or_else(
         |_| "--:--:--".into(),
-        |t| t.to_zoned(tz.clone()).strftime("%H:%M:%S").to_string(),
+        |t| {
+            t.to_zoned_datetime(tz.clone())
+                .strftime("%H:%M:%S")
+                .to_string()
+        },
     )
 }
 
